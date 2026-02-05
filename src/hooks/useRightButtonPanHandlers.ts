@@ -1,0 +1,70 @@
+import { useCallback, useRef, useState } from "react";
+
+export function useRightButtonPanHandlers(
+  setPanX: (p: number | ((prev: number) => number)) => void,
+  setPanY: (p: number | ((prev: number) => number)) => void
+): {
+  isPanning: boolean;
+  onContextMenu: (e: React.MouseEvent) => void;
+  onPointerDown: (e: React.PointerEvent) => void;
+  onPointerMove: (e: React.PointerEvent) => void;
+  onPointerUp: (e: React.PointerEvent) => void;
+  onPointerLeave: (e: React.PointerEvent) => void;
+} {
+  const [isPanning, setIsPanning] = useState(false);
+  const isPanningRef = useRef(false);
+  const hasMovedRef = useRef(false);
+  const lastPointer = useRef({ x: 0, y: 0 });
+
+  const stopPanning = useCallback(() => {
+    isPanningRef.current = false;
+    hasMovedRef.current = false;
+    setIsPanning(false);
+  }, []);
+
+  const onContextMenu = useCallback((e: React.MouseEvent) => {
+    if (hasMovedRef.current) e.preventDefault();
+  }, []);
+
+  const onPointerDown = useCallback((e: React.PointerEvent) => {
+    if (e.button !== 2) return;
+    isPanningRef.current = true;
+    lastPointer.current = { x: e.clientX, y: e.clientY };
+    (e.target as Element).setPointerCapture?.(e.pointerId);
+  }, []);
+
+  const onPointerMove = useCallback((e: React.PointerEvent) => {
+    if (!isPanningRef.current) return;
+    const dx = e.clientX - lastPointer.current.x;
+    const dy = e.clientY - lastPointer.current.y;
+    lastPointer.current = { x: e.clientX, y: e.clientY };
+    setPanX((p) => p + dx);
+    setPanY((p) => p + dy);
+    hasMovedRef.current = true;
+    setIsPanning(true);
+  }, [setPanX, setPanY]);
+
+  const onPointerUp = useCallback((e: React.PointerEvent) => {
+    if (e.button !== 2) return;
+    stopPanning();
+    if (e.buttons === 0) {
+      (e.target as Element).releasePointerCapture?.(e.pointerId);
+    }
+  }, [stopPanning]);
+
+  const onPointerLeave = useCallback(
+    (e: React.PointerEvent) => {
+      if (e.buttons === 0) stopPanning();
+    },
+    [stopPanning]
+  );
+
+  return {
+    isPanning,
+    onContextMenu,
+    onPointerDown,
+    onPointerMove,
+    onPointerUp,
+    onPointerLeave,
+  };
+}

@@ -1,3 +1,6 @@
+import { WhiteboardCanvas } from "./components/WhiteboardCanvas";
+import "./App.css";
+
 function App(): JSX.Element {
   return (
     <div className="app">
@@ -5,6 +8,7 @@ function App(): JSX.Element {
         <h1>Whiteboard</h1>
         <p>Infinite whiteboard — text, images, videos, links, post-it notes, arrows.</p>
       </header>
+      <WhiteboardCanvas />
     </div>
   );
 }

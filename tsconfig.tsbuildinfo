@@ -1,1 +1,1 @@
-{"root":["./src/app.tsx","./src/main.tsx","./src/vite-env.d.ts"],"version":"5.6.3"}
+{"root":["./src/app.tsx","./src/main.tsx","./src/vite-env.d.ts","./src/components/dotgridpattern.tsx","./src/components/whiteboardcanvas.tsx","./src/components/whiteboardcanvassvg.tsx","./src/hooks/panzoomutils.ts","./src/hooks/usecanvaseventlisteners.ts","./src/hooks/usecanvassize.ts","./src/hooks/usepanzoom.ts","./src/hooks/userightbuttonpanhandlers.ts","./src/hooks/useselectionbox.ts","./src/hooks/usetouchpanzoomhandlers.ts","./src/hooks/usewheelzoomhandlers.ts"],"version":"5.6.3"}
