@@ -1,0 +1,19 @@
+---
+description: Follow NASA-style coding guidelines (Power of 10, SWE-061) adapted for TypeScript/React
+alwaysApply: true
+---
+
+# NASA Coding Guidelines (This Project)
+
+This project follows principles from **NASA's Power of 10** (JPL) and **SWE-061**, adapted for TypeScript/React. See `docs/NASA_CODING_GUIDELINES.md` for the full document.
+
+## Summary
+
+- **Small functions**: Keep functions to ~≤60 lines; one clear responsibility; extract helpers.
+- **Bounded logic**: Prefer bounded iterations; avoid unbounded loops without clear exit.
+- **Minimal scope**: Declare variables at the smallest possible scope; prefer `const`/`let` in narrow scope.
+- **Explicit checks**: Check return values and validate parameters; handle errors explicitly (no silent failures in critical paths).
+- **Zero warnings**: TypeScript strict mode and ESLint must pass with **no warnings**; fix all lint/compile issues before merge.
+- **Structure**: Clear project layout; consistent naming; error handling and comments for non-obvious logic.
+
+When editing code, keep these practices in mind and align with the guidelines in `docs/NASA_CODING_GUIDELINES.md`.
