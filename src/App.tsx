@@ -52,7 +52,7 @@ function App(): JSX.Element {
             <span />
           </span>
         </button>
-        <span className="app-header-title">Whiteboard</span>
+        <h1 className="app-header-title">Whiteboard</h1>
       </header>
       <WhiteboardCanvas />
       <main
