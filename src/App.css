@@ -12,7 +12,7 @@
   position: fixed;
   top: 0.75rem;
   left: 0.75rem;
-  z-index: 10;
+  z-index: 30;
   display: flex;
   align-items: center;
   gap: 0.5rem;
@@ -66,6 +66,7 @@
 .management-page {
   position: absolute;
   inset: 0;
+  z-index: 20;
   display: flex;
   align-items: flex-start;
   justify-content: flex-start;
@@ -165,9 +166,98 @@
   outline: none;
 }
 
+.whiteboard-toolbar {
+  position: fixed;
+  top: 3.75rem;
+  left: 1.25rem;
+  z-index: 10;
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+  padding: 0.25rem;
+  border-radius: 9999px;
+  border: 1px solid #e0e0e0;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+}
+
+.whiteboard-toolbar-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.4rem;
+  border-radius: 9999px;
+  border: none;
+  background: transparent;
+  color: #333;
+  cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.whiteboard-toolbar-btn-icon {
+  display: inline-flex;
+  line-height: 0;
+}
+
+.whiteboard-toolbar-btn:hover {
+  background: #f0f0f0;
+}
+
+.whiteboard-toolbar-btn.is-active {
+  background: #2f2f2f;
+  border-color: #2f2f2f;
+  color: #fff;
+}
+
+.whiteboard-toolbar-btn:focus-visible {
+  outline: 2px solid #3f3f3f;
+  outline-offset: 2px;
+}
+
 .whiteboard-canvas {
   display: block;
   width: 100%;
   height: 100%;
   color: #666;
+}
+
+.whiteboard-text-edit {
+  overflow: visible;
+}
+
+.whiteboard-text-input {
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: #666;
+  font-size: 16px;
+  line-height: 16px;
+  font-family: inherit;
+  box-sizing: border-box;
+  vertical-align: top;
+}
+
+.whiteboard-text-input:focus {
+  outline: none;
+  box-shadow: none;
+}
+
+.whiteboard-text-display {
+  width: 100%;
+  height: 100%;
+  color: #666;
+  font-size: 16px;
+  line-height: 16px;
+  font-family: inherit;
+  box-sizing: border-box;
+  white-space: pre;
+  background: transparent;
+  border: none;
+}
+
+.whiteboard-text-display:focus {
+  outline: none;
 }

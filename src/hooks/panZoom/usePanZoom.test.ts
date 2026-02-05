@@ -43,7 +43,8 @@ describe("usePanZoom", () => {
 
     const { result } = renderHook(() => usePanZoom());
 
-    result.current.containerRef.current = container;
+    (result.current.containerRef as { current: HTMLElement | null }).current =
+      container;
 
     act(() => {
       result.current.handleWheelRaw({

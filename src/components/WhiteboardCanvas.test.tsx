@@ -1,4 +1,4 @@
-import { render } from "@testing-library/react";
+import { render, fireEvent } from "@testing-library/react";
 import { WhiteboardCanvas } from "./WhiteboardCanvas";
 
 describe("WhiteboardCanvas", () => {
@@ -16,5 +16,29 @@ describe("WhiteboardCanvas", () => {
     const { container } = render(<WhiteboardCanvas />);
     const svg = container.querySelector(".whiteboard-canvas");
     expect(svg).toBeInTheDocument();
+  });
+
+  it("renders the toolbar with an add-text button", () => {
+    const { container } = render(<WhiteboardCanvas />);
+    const toolbar = container.querySelector(".whiteboard-toolbar");
+    expect(toolbar).toBeInTheDocument();
+    const button = container.querySelector(
+      "button.whiteboard-toolbar-btn[aria-label='Add text']"
+    );
+    expect(button).toBeInTheDocument();
+  });
+
+  it("creates a text element when clicking the add-text button", () => {
+    const { container } = render(<WhiteboardCanvas />);
+    const button = container.querySelector<HTMLButtonElement>(
+      "button.whiteboard-toolbar-btn[aria-label='Add text']"
+    );
+    expect(button).toBeInTheDocument();
+    if (!button) return;
+
+    fireEvent.click(button);
+
+    const textDisplay = container.querySelector(".whiteboard-text-display");
+    expect(textDisplay).toBeInTheDocument();
   });
 });

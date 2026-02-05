@@ -5,16 +5,20 @@ function createTouchEvent(
   type: string,
   touches: Array<{ clientX: number; clientY: number }>
 ): TouchEvent {
-  const touchList = touches.map((t, i) => ({
-    ...t,
-    identifier: i,
-    target: document.createElement("div"),
-  }));
-  const event = new TouchEvent(type, {
-    touches: touchList as unknown as TouchList,
-    changedTouches: touchList as unknown as TouchList,
+  const touchStore: {
+    length: number;
+    [index: number]: { clientX: number; clientY: number };
+  } = { length: touches.length };
+  touches.forEach((t, i) => {
+    touchStore[i] = { clientX: t.clientX, clientY: t.clientY };
   });
-  return event;
+  return {
+    type,
+    touches: touchStore,
+    preventDefault: () => {
+      // no-op for tests
+    },
+  } as unknown as TouchEvent;
 }
 
 describe("useTouchPanZoomHandlers", () => {
@@ -60,10 +64,6 @@ describe("useTouchPanZoomHandlers", () => {
     );
 
     const event = createTouchEvent("touchstart", [{ clientX: 0, clientY: 0 }]);
-    Object.defineProperty(event, "touches", {
-      value: { length: 1 },
-      configurable: true,
-    });
     result.current.handleTouchStart(event);
 
     result.current.handleTouchMove(
@@ -94,36 +94,16 @@ describe("useTouchPanZoomHandlers", () => {
       )
     );
 
-    const startEvent = new TouchEvent("touchstart", {
-      touches: [
-        { clientX: 0, clientY: 0 } as Touch,
-        { clientX: 100, clientY: 0 } as Touch,
-      ] as unknown as TouchList,
-    });
-    Object.defineProperty(startEvent, "touches", {
-      value: {
-        length: 2,
-        0: { clientX: 0, clientY: 0 },
-        1: { clientX: 100, clientY: 0 },
-      },
-      configurable: true,
-    });
+    const startEvent = createTouchEvent("touchstart", [
+      { clientX: 0, clientY: 0 },
+      { clientX: 100, clientY: 0 },
+    ]);
     result.current.handleTouchStart(startEvent);
 
-    const moveEvent = new TouchEvent("touchmove", {
-      touches: [
-        { clientX: 0, clientY: 0 } as Touch,
-        { clientX: 200, clientY: 0 } as Touch,
-      ] as unknown as TouchList,
-    });
-    Object.defineProperty(moveEvent, "touches", {
-      value: {
-        length: 2,
-        0: { clientX: 0, clientY: 0 },
-        1: { clientX: 200, clientY: 0 },
-      },
-      configurable: true,
-    });
+    const moveEvent = createTouchEvent("touchmove", [
+      { clientX: 0, clientY: 0 },
+      { clientX: 200, clientY: 0 },
+    ]);
     result.current.handleTouchMove(moveEvent);
 
     expect(setZoom).toHaveBeenCalled();
@@ -150,22 +130,13 @@ describe("useTouchPanZoomHandlers", () => {
       )
     );
 
-    const startEvent = new TouchEvent("touchstart");
-    Object.defineProperty(startEvent, "touches", {
-      value: {
-        length: 2,
-        0: { clientX: 0, clientY: 0 },
-        1: { clientX: 100, clientY: 0 },
-      },
-      configurable: true,
-    });
+    const startEvent = createTouchEvent("touchstart", [
+      { clientX: 0, clientY: 0 },
+      { clientX: 100, clientY: 0 },
+    ]);
     result.current.handleTouchStart(startEvent);
 
-    const endEvent = new TouchEvent("touchend");
-    Object.defineProperty(endEvent, "touches", {
-      value: { length: 0 },
-      configurable: true,
-    });
+    const endEvent = createTouchEvent("touchend", []);
     result.current.handleTouchEnd(endEvent);
 
     expect(result.current.handleTouchEnd).toBeDefined();

@@ -1,4 +1,5 @@
 import { useCallback, useState, RefObject } from "react";
+import { clientToViewBox } from "../canvas/canvasCoords";
 
 export interface Point {
   x: number;
@@ -10,29 +11,6 @@ export interface SelectionRect {
   y: number;
   width: number;
   height: number;
-}
-
-/**
- * Convert client coordinates to SVG viewBox coordinates.
- * Uses container rect and viewBox dimensions so the selection box aligns with the SVG.
- * Returns null if element is missing or any dimension is non-positive (avoids division by zero).
- */
-function clientToViewBox(
-  el: HTMLElement | null,
-  clientX: number,
-  clientY: number,
-  viewBoxWidth: number,
-  viewBoxHeight: number
-): Point | null {
-  if (!el || viewBoxWidth <= 0 || viewBoxHeight <= 0) return null;
-  const rect = el.getBoundingClientRect();
-  if (rect.width <= 0 || rect.height <= 0) return null;
-  const scaleX = viewBoxWidth / rect.width;
-  const scaleY = viewBoxHeight / rect.height;
-  return {
-    x: (clientX - rect.left) * scaleX,
-    y: (clientY - rect.top) * scaleY,
-  };
 }
 
 function toSelectionRect(

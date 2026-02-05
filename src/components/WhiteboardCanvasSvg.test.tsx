@@ -16,6 +16,11 @@ const defaultProps = {
   onPointerLeave: noop,
   onContextMenu: noop,
   isPanning: false,
+  elements: [],
+  editingElementId: null,
+  onElementDoubleClick: noop,
+  onUpdateElementContent: noop,
+  onFinishEditElement: noop,
 };
 
 describe("WhiteboardCanvasSvg", () => {
@@ -88,5 +93,91 @@ describe("WhiteboardCanvasSvg", () => {
     const g = container.querySelector("g");
     fireEvent.contextMenu(g!, { button: 2 });
     expect(onContextMenu).toHaveBeenCalled();
+  });
+
+  it("renders a text element as a foreignObject with display div", () => {
+    const { container } = render(
+      <WhiteboardCanvasSvg
+        {...defaultProps}
+        elements={[
+          { id: "t1", kind: "text", x: 10, y: 20, content: "Hello" },
+        ]}
+      />
+    );
+    const fo = container.querySelector("foreignObject.whiteboard-text-edit");
+    expect(fo).toBeInTheDocument();
+    const div = fo!.querySelector(".whiteboard-text-display");
+    expect(div).toBeInTheDocument();
+    expect(div).toHaveTextContent("Hello");
+  });
+
+  it("calls onElementDoubleClick when double-clicking a non-editing text element", () => {
+    const onElementDoubleClick = vi.fn();
+    const { container } = render(
+      <WhiteboardCanvasSvg
+        {...defaultProps}
+        elements={[
+          { id: "t1", kind: "text", x: 10, y: 20, content: "Hello" },
+        ]}
+        onElementDoubleClick={onElementDoubleClick}
+      />
+    );
+    const fo = container.querySelector("foreignObject.whiteboard-text-edit");
+    expect(fo).toBeInTheDocument();
+    fireEvent.doubleClick(fo!);
+    expect(onElementDoubleClick).toHaveBeenCalledWith("t1");
+  });
+
+  it("updates element content and finishes editing on blur", () => {
+    const onUpdateElementContent = vi.fn();
+    const onFinishEditElement = vi.fn();
+    const { container } = render(
+      <WhiteboardCanvasSvg
+        {...defaultProps}
+        elements={[
+          { id: "t1", kind: "text", x: 10, y: 20, content: "Initial" },
+        ]}
+        editingElementId="t1"
+        onUpdateElementContent={onUpdateElementContent}
+        onFinishEditElement={onFinishEditElement}
+      />
+    );
+    const div = container.querySelector<HTMLDivElement>(
+      ".whiteboard-text-display"
+    );
+    expect(div).toBeInTheDocument();
+    if (!div) return;
+    div.textContent = "Updated";
+    fireEvent.blur(div);
+    expect(onUpdateElementContent).toHaveBeenCalledWith("t1", "Updated");
+    expect(onFinishEditElement).toHaveBeenCalled();
+  });
+
+  it("updates element content and finishes editing on Enter", () => {
+    const onUpdateElementContent = vi.fn();
+    const onFinishEditElement = vi.fn();
+    const { container } = render(
+      <WhiteboardCanvasSvg
+        {...defaultProps}
+        elements={[
+          { id: "t1", kind: "text", x: 10, y: 20, content: "Initial" },
+        ]}
+        editingElementId="t1"
+        onUpdateElementContent={onUpdateElementContent}
+        onFinishEditElement={onFinishEditElement}
+      />
+    );
+    const div = container.querySelector<HTMLDivElement>(
+      ".whiteboard-text-display"
+    );
+    expect(div).toBeInTheDocument();
+    if (!div) return;
+    div.textContent = "Updated via Enter";
+    fireEvent.keyDown(div, { key: "Enter" });
+    expect(onUpdateElementContent).toHaveBeenCalledWith(
+      "t1",
+      "Updated via Enter"
+    );
+    expect(onFinishEditElement).toHaveBeenCalled();
   });
 });
