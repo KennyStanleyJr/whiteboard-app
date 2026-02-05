@@ -1,7 +1,9 @@
-import { usePanZoom } from "../hooks/usePanZoom";
-import { useCanvasEventListeners } from "../hooks/useCanvasEventListeners";
-import { useCanvasSize } from "../hooks/useCanvasSize";
-import { useSelectionBox } from "../hooks/useSelectionBox";
+import {
+  useCanvasEventListeners,
+  useCanvasSize,
+  usePanZoom,
+  useSelectionBox,
+} from "../hooks";
 import { WhiteboardCanvasSvg } from "./WhiteboardCanvasSvg";
 
 export function WhiteboardCanvas(): JSX.Element {

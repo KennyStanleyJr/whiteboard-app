@@ -1,4 +1,4 @@
-import type { SelectionRect } from "../hooks/useSelectionBox";
+import type { SelectionRect } from "../hooks";
 import { DotGridPattern, PATTERN_ID } from "./DotGridPattern";
 
 const CANVAS_EXTENT = 500000;

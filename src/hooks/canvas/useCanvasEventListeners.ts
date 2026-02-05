@@ -1,5 +1,5 @@
 import { useEffect, RefObject } from "react";
-import type { WheelData } from "./panZoomUtils";
+import type { WheelData } from "../panZoom/panZoomUtils";
 
 export function useCanvasEventListeners(
   containerRef: RefObject<HTMLElement | null>,
