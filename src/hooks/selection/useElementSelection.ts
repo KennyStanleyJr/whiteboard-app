@@ -83,14 +83,56 @@ export function useElementSelection(
   });
   const dragMovePendingRef = useRef<{ dx: number; dy: number } | null>(null);
   const dragRafRef = useRef<number | null>(null);
+  const activeTouchPointersRef = useRef<Set<number>>(new Set());
 
   useEffect(() => {
     const ids = new Set(elements.map((el) => el.id));
     setSelectedElementIds((prev) => prev.filter((id) => ids.has(id)));
   }, [elements]);
 
+  const flushDragMove = useCallback(() => {
+    const pending = dragMovePendingRef.current;
+    if (pending == null) return;
+    const drag = dragStateRef.current;
+    if (drag == null) return;
+    dragMovePendingRef.current = null;
+    setElements(
+      (prev) =>
+        prev.map((el) => {
+          const start = drag.startPositions.get(el.id);
+          if (start === undefined) return el;
+          return {
+            ...el,
+            x: start.x + pending.dx,
+            y: start.y + pending.dy,
+          };
+        }),
+      { skipHistory: true }
+    );
+  }, [setElements]);
+
   const handlePointerDown = useCallback(
     (e: React.PointerEvent) => {
+      if (e.pointerType === "touch") {
+        activeTouchPointersRef.current.add(e.pointerId);
+      }
+      const isMultiTouch = activeTouchPointersRef.current.size >= 2;
+      if (isMultiTouch) {
+        // Cancel any ongoing drag when multi-touch is detected
+        if (dragStateRef.current !== null) {
+          if (dragRafRef.current != null) {
+            cancelAnimationFrame(dragRafRef.current);
+            dragRafRef.current = null;
+          }
+          flushDragMove();
+          dragMovePendingRef.current = null;
+          dragStateRef.current = null;
+          setIsDragging(false);
+        }
+        // Don't handle selection/dragging during multi-touch
+        selectionHandlers.handlePointerDown(e);
+        return;
+      }
       if (e.button !== 0) {
         selectionHandlers.handlePointerDown(e);
         return;
@@ -184,32 +226,28 @@ export function useElementSelection(
       selectionHandlers,
       panZoomHandlers,
       toolbarContainerRef,
+      flushDragMove,
     ]
   );
 
-  const flushDragMove = useCallback(() => {
-    const pending = dragMovePendingRef.current;
-    if (pending == null) return;
-    const drag = dragStateRef.current;
-    if (drag == null) return;
-    dragMovePendingRef.current = null;
-    setElements(
-      (prev) =>
-        prev.map((el) => {
-          const start = drag.startPositions.get(el.id);
-          if (start === undefined) return el;
-          return {
-            ...el,
-            x: start.x + pending.dx,
-            y: start.y + pending.dy,
-          };
-        }),
-      { skipHistory: true }
-    );
-  }, [setElements]);
-
   const handlePointerMove = useCallback(
     (e: React.PointerEvent) => {
+      const isMultiTouch = activeTouchPointersRef.current.size >= 2;
+      if (isMultiTouch) {
+        // Cancel any ongoing drag when multi-touch is detected
+        if (dragStateRef.current !== null) {
+          if (dragRafRef.current != null) {
+            cancelAnimationFrame(dragRafRef.current);
+            dragRafRef.current = null;
+          }
+          flushDragMove();
+          dragMovePendingRef.current = null;
+          dragStateRef.current = null;
+          setIsDragging(false);
+        }
+        selectionHandlers.handlePointerMove(e);
+        return;
+      }
       const drag = dragStateRef.current;
       if (drag !== null && (e.buttons & 1) !== 0) {
         const world = clientToWorld(
@@ -269,6 +307,9 @@ export function useElementSelection(
 
   const handlePointerUp = useCallback(
     (e: React.PointerEvent) => {
+      if (e.pointerType === "touch") {
+        activeTouchPointersRef.current.delete(e.pointerId);
+      }
       if (e.button === 0) {
         if (dragStateRef.current !== null) {
           const drag = dragStateRef.current;
@@ -329,6 +370,9 @@ export function useElementSelection(
 
   const handlePointerLeave = useCallback(
     (e: React.PointerEvent) => {
+      if (e.pointerType === "touch") {
+        activeTouchPointersRef.current.delete(e.pointerId);
+      }
       if ((e.buttons & 1) === 0) {
         if (dragRafRef.current != null) {
           cancelAnimationFrame(dragRafRef.current);
