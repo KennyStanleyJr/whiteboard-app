@@ -19,19 +19,15 @@ describe("WhiteboardCanvas", () => {
   });
 
   it("renders the toolbar with an add-text button", () => {
-    const { container } = render(<WhiteboardCanvas />);
-    const toolbar = container.querySelector(".whiteboard-toolbar");
-    expect(toolbar).toBeInTheDocument();
-    const button = container.querySelector(
-      "button.whiteboard-toolbar-btn[aria-label='Add text']"
-    );
+    render(<WhiteboardCanvas />);
+    const button = document.querySelector("button[aria-label='Add text']");
     expect(button).toBeInTheDocument();
   });
 
   it("creates a text element when clicking the add-text button", () => {
     const { container } = render(<WhiteboardCanvas />);
     const button = container.querySelector<HTMLButtonElement>(
-      "button.whiteboard-toolbar-btn[aria-label='Add text']"
+      "button[aria-label='Add text']"
     );
     expect(button).toBeInTheDocument();
     if (!button) return;

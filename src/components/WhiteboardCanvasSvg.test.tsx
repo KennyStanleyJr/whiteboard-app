@@ -10,6 +10,9 @@ const defaultProps = {
   width: 800,
   height: 600,
   selectionRect: null,
+  selectedElementIds: [] as string[],
+  measuredBounds: {} as Record<string, { x: number; y: number; width: number; height: number }>,
+  onMeasuredBoundsChange: noop as (bounds: Record<string, { x: number; y: number; width: number; height: number }>) => void,
   onPointerDown: noop,
   onPointerMove: noop,
   onPointerUp: noop,
@@ -153,7 +156,7 @@ describe("WhiteboardCanvasSvg", () => {
     expect(onFinishEditElement).toHaveBeenCalled();
   });
 
-  it("updates element content and finishes editing on Enter", () => {
+  it("saves content and finishes editing on Escape", () => {
     const onUpdateElementContent = vi.fn();
     const onFinishEditElement = vi.fn();
     const { container } = render(
@@ -172,11 +175,11 @@ describe("WhiteboardCanvasSvg", () => {
     );
     expect(div).toBeInTheDocument();
     if (!div) return;
-    div.textContent = "Updated via Enter";
-    fireEvent.keyDown(div, { key: "Enter" });
+    div.innerHTML = "Edited text";
+    fireEvent.keyDown(div, { key: "Escape" });
     expect(onUpdateElementContent).toHaveBeenCalledWith(
       "t1",
-      "Updated via Enter"
+      expect.stringContaining("Edited text")
     );
     expect(onFinishEditElement).toHaveBeenCalled();
   });

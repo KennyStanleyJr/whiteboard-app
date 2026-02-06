@@ -1,158 +1,24 @@
-/* App-specific styles; global in index.css */
+/* Stacking: .app-overlay z-100, .app-header z-110; whiteboard UI stays below. */
+.app-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  transition:
+    opacity 200ms ease-out,
+    visibility 0s linear 200ms;
+}
 
-.app {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  position: relative;
-  overflow: hidden;
+.app-overlay.visible {
+  transition:
+    opacity 200ms ease-out,
+    visibility 0s linear 0s;
 }
 
 .app-header {
-  position: fixed;
-  top: 0.75rem;
-  left: 0.75rem;
-  z-index: 30;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
+  z-index: 110;
 }
 
-.app-header-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.3rem 0.5rem;
-  border-radius: 10px;
-  background: transparent;
-  border: none;
-  color: #3f3f3f;
-  font-weight: 600;
-  letter-spacing: 0;
-  box-shadow: none;
-  cursor: pointer;
-  transition: background-color 120ms ease;
-}
-
-.app-header-icon {
-  display: grid;
-  grid-template-columns: repeat(2, 7px);
-  grid-template-rows: repeat(2, 7px);
-  gap: 4px;
-  padding: 4px;
-  border-radius: 8px;
-  background: transparent;
-  transition: transform 120ms ease;
-}
-
-.app-header-badge:active .app-header-icon {
-  transform: translateY(1px) scale(0.97);
-}
-
-.app-header-icon span {
-  width: 7px;
-  height: 7px;
-  border-radius: 2px;
-  background: #3f3f3f;
-}
-
-.app-header-title {
-  font-size: 1rem;
-  font-weight: 600;
-  color: #2f2f2f;
-  line-height: 1.1;
-}
-
-.management-page {
-  position: absolute;
-  inset: 0;
-  z-index: 20;
-  display: flex;
-  align-items: flex-start;
-  justify-content: flex-start;
-  padding: 4rem 1.5rem 1.5rem;
-  box-sizing: border-box;
-  background: #f5f5f5;
-  opacity: 0;
-  transform: scale(0.97);
-  pointer-events: none;
-  visibility: hidden;
-  transition:
-    opacity 160ms ease,
-    transform 160ms ease,
-    visibility 160ms ease;
-}
-
-.management-page.is-open {
-  opacity: 1;
-  transform: scale(1);
-  pointer-events: auto;
-  visibility: visible;
-}
-
-.board-grid {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.75rem;
-  margin-top: 1rem;
-  justify-content: flex-start;
-}
-
-.board-card {
-  position: relative;
-  width: 168px;
-  height: 168px;
-  border: 1px solid #e6e6e6;
-  border-radius: 14px;
-  background: linear-gradient(180deg, #fdfdfd 0%, #f5f5f7 100%);
-  box-shadow:
-    0 10px 30px rgba(0, 0, 0, 0.05),
-    0 1px 2px rgba(0, 0, 0, 0.05);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 1.1rem;
-  text-align: center;
-  color: #222;
-  cursor: pointer;
-  transition:
-    transform 140ms ease,
-    box-shadow 140ms ease,
-    border-color 140ms ease;
-}
-
-.board-card:hover {
-  border-color: #d6d6d6;
-  transform: translateY(-2px);
-  box-shadow:
-    0 16px 36px rgba(0, 0, 0, 0.08),
-    0 4px 8px rgba(0, 0, 0, 0.04);
-}
-
-.board-card:focus-visible {
-  outline: 2px solid #3f3f3f;
-  outline-offset: 2px;
-}
-
-.board-card-title {
-  font-weight: 600;
-  font-size: 1rem;
-  color: #1f1f1f;
-}
-
-.board-card-new {
-  background: linear-gradient(180deg, #f9fbff 0%, #f3f6ff 100%);
-  border: 1px dashed #b8c7ff;
-  color: inherit;
-}
-
-.board-card-plus {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  line-height: 1;
-  margin-right: 0.35rem;
-}
+/* Whiteboard canvas and text elements (SVG/foreignObject-specific) */
 
 .whiteboard-canvas-wrap {
   position: relative;
@@ -162,93 +28,30 @@
   touch-action: none;
 }
 
+.whiteboard-canvas-wrap.is-dragging,
+.whiteboard-canvas-wrap.is-resizing {
+  user-select: none;
+}
+
 .whiteboard-canvas-wrap:focus {
   outline: none;
-}
-
-.whiteboard-toolbar {
-  position: fixed;
-  top: 3.75rem;
-  left: 1.25rem;
-  z-index: 10;
-  display: inline-flex;
-  align-items: center;
-  gap: 0;
-  padding: 0.25rem;
-  border-radius: 9999px;
-  border: 1px solid #e0e0e0;
-  background: #fff;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
-}
-
-.whiteboard-toolbar-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0.4rem;
-  border-radius: 9999px;
-  border: none;
-  background: transparent;
-  color: #333;
-  cursor: pointer;
-  transition: background-color 120ms ease, color 120ms ease;
-}
-
-.whiteboard-toolbar-btn-icon {
-  display: inline-flex;
-  line-height: 0;
-}
-
-.whiteboard-toolbar-btn:hover {
-  background: #f0f0f0;
-}
-
-.whiteboard-toolbar-btn.is-active {
-  background: #2f2f2f;
-  border-color: #2f2f2f;
-  color: #fff;
-}
-
-.whiteboard-toolbar-btn:focus-visible {
-  outline: 2px solid #3f3f3f;
-  outline-offset: 2px;
 }
 
 .whiteboard-canvas {
   display: block;
   width: 100%;
   height: 100%;
-  color: #666;
+  color: var(--muted-foreground);
 }
 
 .whiteboard-text-edit {
   overflow: visible;
 }
 
-.whiteboard-text-input {
-  width: 100%;
-  height: 100%;
-  padding: 0;
-  border: none;
-  border-radius: 0;
-  background: transparent;
-  color: #666;
-  font-size: 16px;
-  line-height: 16px;
-  font-family: inherit;
-  box-sizing: border-box;
-  vertical-align: top;
-}
-
-.whiteboard-text-input:focus {
-  outline: none;
-  box-shadow: none;
-}
-
 .whiteboard-text-display {
   width: 100%;
   height: 100%;
-  color: #666;
+  color: var(--muted-foreground);
   font-size: 16px;
   line-height: 16px;
   font-family: inherit;
@@ -256,6 +59,18 @@
   white-space: pre;
   background: transparent;
   border: none;
+}
+
+.whiteboard-text-display.whiteboard-text-display--fit {
+  width: fit-content;
+  max-width: 100%;
+  height: fit-content;
+  min-height: 1em;
+}
+
+.whiteboard-text-display.whiteboard-text-display--sized {
+  box-sizing: border-box;
+  padding: 2px;
 }
 
 .whiteboard-text-display:focus {

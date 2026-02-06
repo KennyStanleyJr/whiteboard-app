@@ -1,12 +1,28 @@
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
+import { clientToWorld } from "../hooks/canvas/canvasCoords";
 import {
   useCanvasEventListeners,
   useCanvasSize,
+  useElementSelection,
   usePanZoom,
   useSelectionBox,
 } from "../hooks";
+import type { ElementBounds } from "../utils/elementBounds";
+import {
+  getElementBounds,
+  sanitizeElementBounds,
+} from "../utils/elementBounds";
+import {
+  resizeBoundsFromHandle,
+  type ResizeHandleId,
+} from "../utils/resizeHandles";
 import type { WhiteboardElement } from "../types/whiteboard";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
+import { SelectionToolbar } from "./SelectionToolbar";
 import { WhiteboardCanvasSvg } from "./WhiteboardCanvasSvg";
+import { WhiteboardErrorBoundary } from "./WhiteboardErrorBoundary";
+import { TypeIcon } from "lucide-react";
 
 function generateElementId(): string {
   return `el-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
@@ -17,6 +33,16 @@ export function WhiteboardCanvas(): JSX.Element {
   const size = useCanvasSize(panZoom.containerRef);
   const [elements, setElements] = useState<WhiteboardElement[]>([]);
   const [editingElementId, setEditingElementId] = useState<string | null>(null);
+  const [measuredBounds, setMeasuredBounds] = useState<
+    Record<string, ElementBounds>
+  >({});
+
+  const handleMeasuredBoundsChange = useCallback(
+    (next: Record<string, ElementBounds>) => {
+      setMeasuredBounds((prev) => ({ ...prev, ...next }));
+    },
+    []
+  );
 
   const selection = useSelectionBox(
     panZoom.containerRef,
@@ -26,6 +52,32 @@ export function WhiteboardCanvas(): JSX.Element {
     panZoom.onPointerMove,
     panZoom.onPointerUp,
     panZoom.onPointerLeave
+  );
+
+  const elementSelection = useElementSelection(
+    panZoom.containerRef,
+    size.width,
+    size.height,
+    panZoom.panX,
+    panZoom.panY,
+    panZoom.zoom,
+    elements,
+    setElements,
+    selection.selectionRect,
+    measuredBounds,
+    {
+      handlePointerDown: selection.handlePointerDown,
+      handlePointerMove: selection.handlePointerMove,
+      handlePointerUp: selection.handlePointerUp,
+      handlePointerLeave: selection.handlePointerLeave,
+    },
+    {
+      onPointerDown: panZoom.onPointerDown,
+      onPointerMove: panZoom.onPointerMove,
+      onPointerUp: panZoom.onPointerUp,
+      onPointerLeave: panZoom.onPointerLeave,
+    },
+    editingElementId
   );
 
   const addTextAt = useCallback((x: number, y: number) => {
@@ -61,6 +113,118 @@ export function WhiteboardCanvas(): JSX.Element {
     setEditingElementId(null);
   }, []);
 
+  const [isResizing, setIsResizing] = useState(false);
+  const resizeStateRef = useRef<{
+    handleId: ResizeHandleId;
+    elementId: string;
+    startWorld: { x: number; y: number };
+    startBounds: ElementBounds;
+  } | null>(null);
+
+  const handleResizeHandleDown = useCallback(
+    (handleId: ResizeHandleId, e: React.PointerEvent) => {
+      if (elementSelection.selectedElementIds.length !== 1) return;
+      const elementId = elementSelection.selectedElementIds[0];
+      if (elementId === undefined) return;
+      const el = elements.find((x) => x.id === elementId);
+      if (el == null) return;
+      const rawBounds =
+        measuredBounds[elementId] ?? getElementBounds(el, measuredBounds);
+      const startBounds = sanitizeElementBounds(rawBounds);
+      const world = clientToWorld(
+        panZoom.containerRef.current,
+        e.clientX,
+        e.clientY,
+        size.width,
+        size.height,
+        panZoom.panX,
+        panZoom.panY,
+        panZoom.zoom
+      );
+      if (world == null) return;
+      setIsResizing(true);
+      resizeStateRef.current = {
+        handleId,
+        elementId,
+        startWorld: world,
+        startBounds,
+      };
+    },
+    [
+      elementSelection.selectedElementIds,
+      elements,
+      measuredBounds,
+      panZoom.containerRef,
+      panZoom.panX,
+      panZoom.panY,
+      panZoom.zoom,
+      size.width,
+      size.height,
+    ]
+  );
+
+  const handleResizeHandleMove = useCallback(
+    (e: React.PointerEvent) => {
+      try {
+        const state = resizeStateRef.current;
+        if (state == null) return;
+        const world = clientToWorld(
+          panZoom.containerRef.current,
+          e.clientX,
+          e.clientY,
+          size.width,
+          size.height,
+          panZoom.panX,
+          panZoom.panY,
+          panZoom.zoom
+        );
+        if (world == null) return;
+        const dx = world.x - state.startWorld.x;
+        const dy = world.y - state.startWorld.y;
+        const next = resizeBoundsFromHandle(
+          state.startBounds,
+          state.handleId,
+          dx,
+          dy
+        );
+        setElements((prev) =>
+          prev.map((el) =>
+            el.id === state.elementId && el.kind === "text"
+              ? {
+                  ...el,
+                  x: next.x,
+                  y: next.y,
+                  width: next.width,
+                  height: next.height,
+                }
+              : el
+          )
+        );
+      } catch (err) {
+        console.error("[WhiteboardCanvas] resize move error", err);
+        resizeStateRef.current = null;
+        setIsResizing(false);
+      }
+    },
+    [
+      panZoom.containerRef,
+      panZoom.panX,
+      panZoom.panY,
+      panZoom.zoom,
+      setElements,
+      size.width,
+      size.height,
+    ]
+  );
+
+  const clearResizeState = useCallback(() => {
+    resizeStateRef.current = null;
+    setIsResizing(false);
+  }, []);
+
+  const handleResizeHandleUp = clearResizeState;
+  const handleErrorRecover = clearResizeState;
+
   useCanvasEventListeners(
     panZoom.containerRef,
     panZoom.handleWheelRaw,
@@ -70,36 +234,39 @@ export function WhiteboardCanvas(): JSX.Element {
   );
 
   return (
-    <div
-      ref={panZoom.containerRef as React.RefObject<HTMLDivElement>}
-      className="whiteboard-canvas-wrap"
-    >
-      <div className="whiteboard-toolbar">
-        <button
+    <WhiteboardErrorBoundary onRecover={handleErrorRecover}>
+      <div
+        ref={panZoom.containerRef as React.RefObject<HTMLDivElement>}
+        className={cn(
+          "whiteboard-canvas-wrap flex flex-col",
+          elementSelection.isDragging && "is-dragging",
+          isResizing && "is-resizing"
+        )}
+      >
+        <div className="fixed left-5 top-[3.75rem] z-10 flex items-center rounded-full border border-border bg-background p-1.5 shadow-sm">
+        <Button
           type="button"
-          className="whiteboard-toolbar-btn"
+          variant="outline"
+          size="icon"
+          className="rounded-full"
           onClick={handleAddTextCenter}
           aria-label="Add text"
         >
-          <span className="whiteboard-toolbar-btn-icon" aria-hidden="true">
-            <svg
-              width="20"
-              height="20"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              xmlns="http://www.w3.org/2000/svg"
-            >
-              <path d="M4 7V4h16v3" />
-              <path d="M9 20h6" />
-              <path d="M12 4v16" />
-            </svg>
-          </span>
-        </button>
+          <TypeIcon className="size-5" aria-hidden />
+        </Button>
       </div>
+      <SelectionToolbar
+        containerRef={panZoom.containerRef as React.RefObject<HTMLDivElement>}
+        selectedElementIds={elementSelection.selectedElementIds}
+        elements={elements}
+        setElements={setElements}
+        measuredBounds={measuredBounds}
+        panX={panZoom.panX}
+        panY={panZoom.panY}
+        zoom={panZoom.zoom}
+        viewWidth={size.width}
+        viewHeight={size.height}
+      />
       <WhiteboardCanvasSvg
         panX={panZoom.panX}
         panY={panZoom.panY}
@@ -107,10 +274,13 @@ export function WhiteboardCanvas(): JSX.Element {
         width={size.width}
         height={size.height}
         selectionRect={selection.selectionRect}
-        onPointerDown={selection.handlePointerDown}
-        onPointerMove={selection.handlePointerMove}
-        onPointerUp={selection.handlePointerUp}
-        onPointerLeave={selection.handlePointerLeave}
+        selectedElementIds={elementSelection.selectedElementIds}
+        measuredBounds={measuredBounds}
+        onMeasuredBoundsChange={handleMeasuredBoundsChange}
+        onPointerDown={elementSelection.handlers.handlePointerDown}
+        onPointerMove={elementSelection.handlers.handlePointerMove}
+        onPointerUp={elementSelection.handlers.handlePointerUp}
+        onPointerLeave={elementSelection.handlers.handlePointerLeave}
         onContextMenu={panZoom.onContextMenu}
         isPanning={panZoom.isPanning}
         elements={elements}
@@ -118,7 +288,12 @@ export function WhiteboardCanvas(): JSX.Element {
         onElementDoubleClick={setEditingElementId}
         onUpdateElementContent={handleUpdateElementContent}
         onFinishEditElement={handleFinishEditElement}
+        onResizeHandleDown={handleResizeHandleDown}
+        onResizeHandleMove={handleResizeHandleMove}
+        onResizeHandleUp={handleResizeHandleUp}
+        isResizing={isResizing}
       />
-    </div>
+      </div>
+    </WhiteboardErrorBoundary>
   );
 }

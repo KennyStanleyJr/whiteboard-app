@@ -14,8 +14,8 @@ describe("App", () => {
 
   it("renders whiteboard canvas", () => {
     const { container } = render(<App />);
-    const canvas = container.querySelector(".app");
-    expect(canvas).toBeInTheDocument();
+    const root = container.querySelector(".whiteboard-canvas-wrap");
+    expect(root).toBeInTheDocument();
   });
 
   it("toggles management page via header button", async () => {
@@ -38,7 +38,7 @@ describe("App", () => {
     expect(closeButton).toBeInTheDocument();
 
     const managementMain = screen.getByRole("main");
-    expect(managementMain).toHaveClass("is-open");
+    expect(managementMain).toHaveClass("visible");
     expect(managementMain).toHaveAttribute("aria-hidden", "false");
   });
 
