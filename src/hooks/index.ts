@@ -11,3 +11,4 @@ export {
   useWhiteboardQuery,
   WHITEBOARD_QUERY_KEY,
 } from "./useWhiteboard";
+export { useUndoRedo } from "./useUndoRedo";

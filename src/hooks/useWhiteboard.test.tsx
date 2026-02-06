@@ -133,4 +133,177 @@ describe("useWhiteboardQuery", () => {
   it("exports WHITEBOARD_QUERY_KEY for cache access", () => {
     expect(WHITEBOARD_QUERY_KEY).toEqual(["whiteboard"]);
   });
+
+  it("provides undo and redo functionality", () => {
+    const { wrapper } = createWrapper();
+    const { result } = renderHook(() => useWhiteboardQuery(), { wrapper });
+
+    expect(typeof result.current.undo).toBe("function");
+    expect(typeof result.current.redo).toBe("function");
+    expect(result.current.canUndo).toBe(false);
+    expect(result.current.canRedo).toBe(false);
+  });
+
+  it("allows undoing changes", async () => {
+    vi.spyOn(whiteboardApi, "setWhiteboard").mockResolvedValue();
+
+    const initial: TextElement[] = [
+      { id: "a", kind: "text", x: 0, y: 0, content: "A" },
+    ];
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ elements: initial }));
+
+    const { wrapper } = createWrapper();
+    const { result } = renderHook(() => useWhiteboardQuery(), { wrapper });
+
+    const withB: TextElement[] = [
+      ...initial,
+      { id: "b", kind: "text", x: 10, y: 10, content: "B" },
+    ];
+
+    act(() => {
+      result.current.setElements(withB);
+    });
+
+    expect(result.current.canUndo).toBe(true);
+
+    act(() => {
+      result.current.undo();
+    });
+
+    expect(result.current.elements).toEqual(initial);
+    expect(result.current.canUndo).toBe(false);
+    expect(result.current.canRedo).toBe(true);
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+  });
+
+  it("allows redoing changes", async () => {
+    vi.spyOn(whiteboardApi, "setWhiteboard").mockResolvedValue();
+
+    const initial: TextElement[] = [
+      { id: "a", kind: "text", x: 0, y: 0, content: "A" },
+    ];
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ elements: initial }));
+
+    const { wrapper } = createWrapper();
+    const { result } = renderHook(() => useWhiteboardQuery(), { wrapper });
+
+    const withB: TextElement[] = [
+      ...initial,
+      { id: "b", kind: "text", x: 10, y: 10, content: "B" },
+    ];
+
+    act(() => {
+      result.current.setElements(withB);
+    });
+
+    act(() => {
+      result.current.undo();
+    });
+
+    expect(result.current.canRedo).toBe(true);
+
+    act(() => {
+      result.current.redo();
+    });
+
+    expect(result.current.elements).toEqual(withB);
+    expect(result.current.canUndo).toBe(true);
+    expect(result.current.canRedo).toBe(false);
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+  });
+
+  it("clears redo history when making new change after undo", async () => {
+    vi.spyOn(whiteboardApi, "setWhiteboard").mockResolvedValue();
+
+    const initial: TextElement[] = [
+      { id: "a", kind: "text", x: 0, y: 0, content: "A" },
+    ];
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ elements: initial }));
+
+    const { wrapper } = createWrapper();
+    const { result } = renderHook(() => useWhiteboardQuery(), { wrapper });
+
+    const withB: TextElement[] = [
+      ...initial,
+      { id: "b", kind: "text", x: 10, y: 10, content: "B" },
+    ];
+
+    act(() => {
+      result.current.setElements(withB);
+    });
+
+    act(() => {
+      result.current.undo();
+    });
+
+    expect(result.current.canRedo).toBe(true);
+
+    const withC: TextElement[] = [
+      ...initial,
+      { id: "c", kind: "text", x: 20, y: 20, content: "C" },
+    ];
+
+    act(() => {
+      result.current.setElements(withC);
+    });
+
+    expect(result.current.elements).toEqual(withC);
+    expect(result.current.canUndo).toBe(true);
+    expect(result.current.canRedo).toBe(false);
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+  });
+
+  it("passes through options parameter to setElements", async () => {
+    vi.spyOn(whiteboardApi, "setWhiteboard").mockResolvedValue();
+
+    const initial: TextElement[] = [
+      { id: "a", kind: "text", x: 0, y: 0, content: "A" },
+    ];
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ elements: initial }));
+
+    const { wrapper } = createWrapper();
+    const { result } = renderHook(() => useWhiteboardQuery(), { wrapper });
+
+    const withB: TextElement[] = [
+      ...initial,
+      { id: "b", kind: "text", x: 10, y: 10, content: "B" },
+    ];
+
+    act(() => {
+      result.current.setElements(withB);
+    });
+
+    expect(result.current.canUndo).toBe(true);
+
+    const withC: TextElement[] = [
+      ...withB,
+      { id: "c", kind: "text", x: 20, y: 20, content: "C" },
+    ];
+
+    act(() => {
+      result.current.setElements(withC, { skipHistory: true });
+    });
+
+    expect(result.current.elements).toEqual(withC);
+    expect(result.current.canUndo).toBe(true);
+
+    act(() => {
+      result.current.undo();
+    });
+
+    expect(result.current.elements).toEqual(initial);
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+  });
 });

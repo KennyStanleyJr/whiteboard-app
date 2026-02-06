@@ -7,6 +7,7 @@ import {
 } from "../../utils/elementBounds";
 import type { WhiteboardElement } from "../../types/whiteboard";
 import type { SelectionRect } from "./useSelectionBox";
+import type { SetElementsOptions } from "../useUndoRedo";
 
 export interface ElementSelectionHandlers {
   handlePointerDown: (e: React.PointerEvent) => void;
@@ -25,6 +26,8 @@ interface DragState {
   clickElementId: string | null;
   /** Whether movement occurred (drag vs click) */
   hasMoved: boolean;
+  /** Whether we have pushed pre-drag state to undo history (once per drag) */
+  historyPushed: boolean;
 }
 
 function viewBoxRectToWorld(
@@ -49,7 +52,10 @@ export function useElementSelection(
   panY: number,
   zoom: number,
   elements: WhiteboardElement[],
-  setElements: React.Dispatch<React.SetStateAction<WhiteboardElement[]>>,
+  setElements: (
+    action: React.SetStateAction<WhiteboardElement[]>,
+    options?: SetElementsOptions
+  ) => void,
   selectionRect: SelectionRect | null,
   measuredBounds: Record<string, ElementBounds>,
   selectionHandlers: ElementSelectionHandlers,
@@ -136,6 +142,7 @@ export function useElementSelection(
           originalSelection: selectedElementIds,
           clickElementId,
           hasMoved: false,
+          historyPushed: false,
         };
         setIsDragging(true);
         (e.target as Element).setPointerCapture?.(e.pointerId);
@@ -184,14 +191,20 @@ export function useElementSelection(
           const dy = world.y - drag.startWorld.y;
           const moved = Math.abs(dx) > 0.1 || Math.abs(dy) > 0.1;
           if (moved) {
+            if (!drag.historyPushed) {
+              setElements((prev) => prev, { pushToPast: true });
+              drag.historyPushed = true;
+            }
             drag.hasMoved = true;
           }
-          setElements((prev) =>
-            prev.map((el) => {
-              const start = drag.startPositions.get(el.id);
-              if (start === undefined) return el;
-              return { ...el, x: start.x + dx, y: start.y + dy };
-            })
+          setElements(
+            (prev) =>
+              prev.map((el) => {
+                const start = drag.startPositions.get(el.id);
+                if (start === undefined) return el;
+                return { ...el, x: start.x + dx, y: start.y + dy };
+              }),
+            { skipHistory: true }
           );
         }
         panZoomHandlers.onPointerMove(e);

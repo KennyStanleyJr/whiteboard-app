@@ -28,7 +28,7 @@ import {
 } from "./SelectionToolbar";
 import { WhiteboardCanvasSvg } from "./WhiteboardCanvasSvg";
 import { WhiteboardErrorBoundary } from "./WhiteboardErrorBoundary";
-import { Circle, Square, TypeIcon } from "lucide-react";
+import { Circle, Square, TypeIcon, Undo2, Redo2 } from "lucide-react";
 
 function generateElementId(): string {
   return `el-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
@@ -43,7 +43,14 @@ const FORMAT_CMD_TO_TAG: Record<string, FormatTag> = {
 export function WhiteboardCanvas(): JSX.Element {
   const panZoom = usePanZoom();
   const size = useCanvasSize(panZoom.containerRef);
-  const { elements, setElements } = useWhiteboardQuery();
+  const {
+    elements,
+    setElements,
+    undo,
+    redo,
+    canUndo,
+    canRedo,
+  } = useWhiteboardQuery();
   const [editingElementId, setEditingElementId] = useState<string | null>(null);
   const [measuredBounds, setMeasuredBounds] = useState<
     Record<string, ElementBounds>
@@ -462,10 +469,16 @@ export function WhiteboardCanvas(): JSX.Element {
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent): void => {
+      const isUndo = (e.key === "z" || e.key === "Z") && (e.ctrlKey || e.metaKey) && !e.shiftKey;
+      const isRedo =
+        ((e.key === "y" || e.key === "Y") && (e.ctrlKey || e.metaKey)) ||
+        ((e.key === "z" || e.key === "Z") && (e.ctrlKey || e.metaKey) && e.shiftKey);
       const isCopy = (e.key === "c" || e.key === "C") && (e.ctrlKey || e.metaKey);
       const isPaste = (e.key === "v" || e.key === "V") && (e.ctrlKey || e.metaKey);
       const isDuplicate = (e.key === "d" || e.key === "D") && (e.ctrlKey || e.metaKey);
-      if (!isCopy && !isPaste && !isDuplicate) return;
+      
+      if (!isUndo && !isRedo && !isCopy && !isPaste && !isDuplicate) return;
+      
       const target = e.target as HTMLElement;
       const tag = target.tagName?.toLowerCase();
       const role = target.getAttribute?.("role");
@@ -474,6 +487,18 @@ export function WhiteboardCanvas(): JSX.Element {
         tag === "textarea" ||
         target.isContentEditable ||
         role === "textbox";
+      
+      if (isUndo || isRedo) {
+        if (editable) return;
+        e.preventDefault();
+        if (isUndo && canUndo) {
+          undo();
+        } else if (isRedo && canRedo) {
+          redo();
+        }
+        return;
+      }
+      
       if (editable) return;
       if (isCopy) {
         if (selectedIdsRef.current.length === 0) return;
@@ -494,7 +519,16 @@ export function WhiteboardCanvas(): JSX.Element {
     document.addEventListener("keydown", onKeyDown, { capture: true });
     return () =>
       document.removeEventListener("keydown", onKeyDown, { capture: true });
-  }, [editingElementId, handleCopySelected, handlePaste, handleDuplicateSelected]);
+  }, [
+    editingElementId,
+    handleCopySelected,
+    handlePaste,
+    handleDuplicateSelected,
+    undo,
+    redo,
+    canUndo,
+    canRedo,
+  ]);
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent): void => {
@@ -567,6 +601,31 @@ export function WhiteboardCanvas(): JSX.Element {
         )}
       >
         <div className="fixed left-5 top-[3.75rem] z-10 flex flex-col items-center gap-1 rounded-full border border-border bg-background p-1.5 shadow-sm">
+          <Button
+            type="button"
+            variant="outline"
+            size="icon"
+            className="rounded-full"
+            onClick={undo}
+            disabled={!canUndo}
+            aria-label="Undo"
+            title="Undo (Ctrl+Z)"
+          >
+            <Undo2 className="size-5" aria-hidden />
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="icon"
+            className="rounded-full"
+            onClick={redo}
+            disabled={!canRedo}
+            aria-label="Redo"
+            title="Redo (Ctrl+Y)"
+          >
+            <Redo2 className="size-5" aria-hidden />
+          </Button>
+          <div className="h-px w-8 bg-border my-0.5" />
           <Button
             type="button"
             variant="outline"

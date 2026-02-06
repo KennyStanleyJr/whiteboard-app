@@ -1,7 +1,9 @@
 import { renderHook, act } from "@testing-library/react";
+import type { SetStateAction } from "react";
 import { useElementSelection } from "./useElementSelection";
 import type { SelectionRect } from "./useSelectionBox";
-import type { TextElement } from "../../types/whiteboard";
+import type { TextElement, WhiteboardElement } from "../../types/whiteboard";
+import type { SetElementsOptions } from "../useUndoRedo";
 
 const textEl: TextElement = {
   id: "t1",
@@ -255,5 +257,76 @@ describe("useElementSelection", () => {
       } as unknown as React.PointerEvent);
     });
     expect(onPointerUp).toHaveBeenCalled();
+  });
+
+  it("uses pushToPast on first drag move and skipHistory for subsequent moves", () => {
+    const containerRef = createContainer();
+    const setElements = vi.fn<
+      (
+        action: SetStateAction<WhiteboardElement[]>,
+        options?: SetElementsOptions
+      ) => void
+    >();
+
+    const { result } = renderHook(() =>
+      useElementSelection(
+        containerRef,
+        800,
+        600,
+        0,
+        0,
+        1,
+        elements,
+        setElements,
+        null,
+        measuredBounds,
+        defaultSelectionHandlers,
+        defaultPanZoomHandlers,
+        null
+      )
+    );
+
+    act(() => {
+      result.current.handlers.handlePointerDown({
+        button: 0,
+        clientX: 150,
+        clientY: 61,
+        pointerId: 1,
+        target: containerRef.current,
+        buttons: 1,
+      } as unknown as React.PointerEvent);
+    });
+
+    expect(result.current.selectedElementIds).toContain("t1");
+    expect(setElements).not.toHaveBeenCalled();
+
+    act(() => {
+      result.current.handlers.handlePointerMove({
+        clientX: 160,
+        clientY: 71,
+        pointerId: 1,
+        buttons: 1,
+      } as unknown as React.PointerEvent);
+    });
+
+    expect(setElements).toHaveBeenCalledTimes(2);
+    const firstCall = setElements.mock.calls[0];
+    const secondCall = setElements.mock.calls[1];
+
+    expect(firstCall?.[1]).toEqual({ pushToPast: true });
+    expect(secondCall?.[1]).toEqual({ skipHistory: true });
+
+    act(() => {
+      result.current.handlers.handlePointerMove({
+        clientX: 170,
+        clientY: 81,
+        pointerId: 1,
+        buttons: 1,
+      } as unknown as React.PointerEvent);
+    });
+
+    expect(setElements).toHaveBeenCalledTimes(3);
+    const thirdCall = setElements.mock.calls[2];
+    expect(thirdCall?.[1]).toEqual({ skipHistory: true });
   });
 });
