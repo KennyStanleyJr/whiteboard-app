@@ -1,0 +1,136 @@
+import { renderHook, act } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { ReactNode } from "react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  useWhiteboardQuery,
+  WHITEBOARD_QUERY_KEY,
+} from "./useWhiteboard";
+import * as whiteboardApi from "@/api/whiteboard";
+import type { TextElement } from "@/types/whiteboard";
+
+const STORAGE_KEY = "whiteboard-app-state";
+
+function createWrapper(): {
+  wrapper: ({ children }: { children: ReactNode }) => JSX.Element;
+  queryClient: QueryClient;
+} {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  const wrapper = ({ children }: { children: ReactNode }) => (
+    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+  );
+  return { wrapper, queryClient };
+}
+
+describe("useWhiteboardQuery", () => {
+  beforeEach(() => {
+    localStorage.removeItem(STORAGE_KEY);
+    vi.restoreAllMocks();
+  });
+
+  it("returns empty elements and isPending false when storage is empty", () => {
+    const { wrapper } = createWrapper();
+    const { result } = renderHook(() => useWhiteboardQuery(), { wrapper });
+
+    expect(result.current.elements).toEqual([]);
+    expect(result.current.isPending).toBe(false);
+    expect(typeof result.current.setElements).toBe("function");
+  });
+
+  it("returns stored elements from getWhiteboardSync when storage has data", () => {
+    const stored: TextElement[] = [
+      {
+        id: "el-1",
+        kind: "text",
+        x: 10,
+        y: 20,
+        content: "Hello",
+      },
+    ];
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({ elements: stored })
+    );
+
+    const { wrapper } = createWrapper();
+    const { result } = renderHook(() => useWhiteboardQuery(), { wrapper });
+
+    expect(result.current.elements).toHaveLength(1);
+    expect(result.current.elements[0]).toMatchObject({
+      id: "el-1",
+      kind: "text",
+      content: "Hello",
+    });
+  });
+
+  it("setElements with new array updates cache and calls setWhiteboard", async () => {
+    const setWhiteboardSpy = vi.spyOn(whiteboardApi, "setWhiteboard").mockResolvedValue();
+
+    const { wrapper, queryClient } = createWrapper();
+    const { result } = renderHook(() => useWhiteboardQuery(), { wrapper });
+
+    expect(result.current.elements).toEqual([]);
+
+    const newElement: TextElement = {
+      id: "new-1",
+      kind: "text",
+      x: 0,
+      y: 0,
+      content: "New",
+    };
+
+    act(() => {
+      result.current.setElements([newElement]);
+    });
+
+    const cached = queryClient.getQueryData<{ elements: TextElement[] }>(WHITEBOARD_QUERY_KEY);
+    expect(cached?.elements).toHaveLength(1);
+    expect(cached?.elements[0]).toMatchObject(newElement);
+    expect(setWhiteboardSpy).toHaveBeenCalledWith({ elements: [newElement] });
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+  });
+
+  it("setElements with updater function applies to previous state and calls setWhiteboard", async () => {
+    const setWhiteboardSpy = vi.spyOn(whiteboardApi, "setWhiteboard").mockResolvedValue();
+
+    const initial: TextElement[] = [
+      { id: "a", kind: "text", x: 0, y: 0, content: "A" },
+    ];
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ elements: initial }));
+
+    const { wrapper, queryClient } = createWrapper();
+    const { result } = renderHook(() => useWhiteboardQuery(), { wrapper });
+
+    act(() => {
+      result.current.setElements((prev) => [
+        ...prev,
+        { id: "b", kind: "text", x: 10, y: 10, content: "B" },
+      ]);
+    });
+
+    const cached = queryClient.getQueryData<{ elements: TextElement[] }>(WHITEBOARD_QUERY_KEY);
+    expect(cached?.elements).toHaveLength(2);
+    expect(cached?.elements[0]?.content).toBe("A");
+    expect(cached?.elements[1]?.content).toBe("B");
+
+    expect(setWhiteboardSpy).toHaveBeenCalledTimes(1);
+    const state = setWhiteboardSpy.mock.calls[0]?.[0];
+    expect(state).toBeDefined();
+    expect(state?.elements).toHaveLength(2);
+    expect(state?.elements[0]).toMatchObject({ content: "A" });
+    expect(state?.elements[1]).toMatchObject({ content: "B" });
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+  });
+
+  it("exports WHITEBOARD_QUERY_KEY for cache access", () => {
+    expect(WHITEBOARD_QUERY_KEY).toEqual(["whiteboard"]);
+  });
+});

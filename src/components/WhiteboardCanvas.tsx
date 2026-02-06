@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { WhiteboardCanvasSvgHandle } from "./WhiteboardCanvasSvg";
 import { clientToWorld } from "../hooks/canvas/canvasCoords";
 import {
   useCanvasEventListeners,
@@ -6,6 +7,7 @@ import {
   useElementSelection,
   usePanZoom,
   useSelectionBox,
+  useWhiteboardQuery,
 } from "../hooks";
 import type { ElementBounds } from "../utils/elementBounds";
 import {
@@ -17,9 +19,13 @@ import {
   type ResizeHandleId,
 } from "../utils/resizeHandles";
 import type { WhiteboardElement } from "../types/whiteboard";
+import type { FormatTag } from "../utils/textFormat";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { SelectionToolbar } from "./SelectionToolbar";
+import {
+  SelectionToolbar,
+  type SelectionToolbarHandle,
+} from "./SelectionToolbar";
 import { WhiteboardCanvasSvg } from "./WhiteboardCanvasSvg";
 import { WhiteboardErrorBoundary } from "./WhiteboardErrorBoundary";
 import { TypeIcon } from "lucide-react";
@@ -28,14 +34,23 @@ function generateElementId(): string {
   return `el-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
+const FORMAT_CMD_TO_TAG: Record<string, FormatTag> = {
+  bold: "b",
+  italic: "i",
+  underline: "u",
+};
+
 export function WhiteboardCanvas(): JSX.Element {
   const panZoom = usePanZoom();
   const size = useCanvasSize(panZoom.containerRef);
-  const [elements, setElements] = useState<WhiteboardElement[]>([]);
+  const { elements, setElements } = useWhiteboardQuery();
   const [editingElementId, setEditingElementId] = useState<string | null>(null);
   const [measuredBounds, setMeasuredBounds] = useState<
     Record<string, ElementBounds>
   >({});
+  const canvasSvgRef = useRef<WhiteboardCanvasSvgHandle | null>(null);
+  const toolbarContainerRef = useRef<HTMLDivElement | null>(null);
+  const toolbarRef = useRef<SelectionToolbarHandle | null>(null);
 
   const handleMeasuredBoundsChange = useCallback(
     (next: Record<string, ElementBounds>) => {
@@ -88,10 +103,11 @@ export function WhiteboardCanvas(): JSX.Element {
       y,
       kind: "text",
       content: "",
+      fontSize: 24,
     };
     setElements((prev) => [...prev, textElement]);
     setEditingElementId(id);
-  }, []);
+  }, [setElements]);
 
   const handleAddTextCenter = useCallback(() => {
     const centerViewportX = size.width / 2;
@@ -107,11 +123,25 @@ export function WhiteboardCanvas(): JSX.Element {
         el.id === id && el.kind === "text" ? { ...el, content } : el
       )
     );
-  }, []);
+  }, [setElements]);
 
   const handleFinishEditElement = useCallback(() => {
     setEditingElementId(null);
   }, []);
+
+  const handleFormatCommand = useCallback(
+    (command: string, value?: string) => {
+      const canvas = canvasSvgRef.current;
+      if (canvas == null) return;
+      if (command === "foreColor" && value != null) {
+        canvas.applyColorToEditorWithoutFocus(value);
+        return;
+      }
+      const tag = FORMAT_CMD_TO_TAG[command];
+      if (tag) canvas.applyFormatToEditingElement(tag);
+    },
+    []
+  );
 
   const [isResizing, setIsResizing] = useState(false);
   const resizeStateRef = useRef<{
@@ -231,7 +261,7 @@ export function WhiteboardCanvas(): JSX.Element {
   const handleDeleteSelected = useCallback(() => {
     const ids = new Set(selectedIdsRef.current);
     setElements((prev) => prev.filter((el) => !ids.has(el.id)));
-  }, []);
+  }, [setElements]);
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent): void => {
@@ -257,6 +287,33 @@ export function WhiteboardCanvas(): JSX.Element {
     return () =>
       document.removeEventListener("keydown", onKeyDown, { capture: true });
   }, [editingElementId, handleDeleteSelected]);
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent): void => {
+      const key = e.key.toLowerCase();
+      if (key !== "b" && key !== "i" && key !== "u") return;
+      const target = e.target as HTMLElement;
+      if (
+        target.tagName === "INPUT" ||
+        target.tagName === "TEXTAREA" ||
+        target.isContentEditable
+      )
+        return;
+      const hasTextSelected = elements.some(
+        (el) =>
+          el.kind === "text" &&
+          elementSelection.selectedElementIds.includes(el.id)
+      );
+      if (!hasTextSelected) return;
+      e.preventDefault();
+      if (key === "b") toolbarRef.current?.applyBold();
+      else if (key === "i") toolbarRef.current?.applyItalic();
+      else toolbarRef.current?.applyUnderline();
+    };
+    document.addEventListener("keydown", onKeyDown, { capture: true });
+    return () =>
+      document.removeEventListener("keydown", onKeyDown, { capture: true });
+  }, [elements, elementSelection.selectedElementIds]);
 
   useCanvasEventListeners(
     panZoom.containerRef,
@@ -288,19 +345,25 @@ export function WhiteboardCanvas(): JSX.Element {
           <TypeIcon className="size-5" aria-hidden />
         </Button>
       </div>
-      <SelectionToolbar
-        containerRef={panZoom.containerRef as React.RefObject<HTMLDivElement>}
-        selectedElementIds={elementSelection.selectedElementIds}
-        elements={elements}
-        setElements={setElements}
-        measuredBounds={measuredBounds}
-        panX={panZoom.panX}
-        panY={panZoom.panY}
-        zoom={panZoom.zoom}
-        viewWidth={size.width}
-        viewHeight={size.height}
-      />
+      <div ref={toolbarContainerRef}>
+        <SelectionToolbar
+          ref={toolbarRef}
+          containerRef={panZoom.containerRef as React.RefObject<HTMLDivElement>}
+          selectedElementIds={elementSelection.selectedElementIds}
+          elements={elements}
+          setElements={setElements}
+          measuredBounds={measuredBounds}
+          panX={panZoom.panX}
+          panY={panZoom.panY}
+          zoom={panZoom.zoom}
+          viewWidth={size.width}
+          viewHeight={size.height}
+          editingElementId={editingElementId}
+          onFormatCommand={handleFormatCommand}
+        />
+      </div>
       <WhiteboardCanvasSvg
+        ref={canvasSvgRef}
         panX={panZoom.panX}
         panY={panZoom.panY}
         zoom={panZoom.zoom}
@@ -325,6 +388,7 @@ export function WhiteboardCanvas(): JSX.Element {
         onResizeHandleMove={handleResizeHandleMove}
         onResizeHandleUp={handleResizeHandleUp}
         isResizing={isResizing}
+        toolbarContainerRef={toolbarContainerRef}
       />
       </div>
     </WhiteboardErrorBoundary>

@@ -61,6 +61,12 @@
   border: none;
 }
 
+/* Underline always matches text color (color span wraps format tags so currentColor works). */
+.whiteboard-text-display u {
+  text-decoration-color: currentColor;
+  text-decoration-line: underline;
+}
+
 .whiteboard-text-display.whiteboard-text-display--fit {
   width: fit-content;
   max-width: 100%;

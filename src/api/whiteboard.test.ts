@@ -1,0 +1,92 @@
+import { beforeEach, describe, expect, it } from "vitest";
+import {
+  getWhiteboard,
+  getWhiteboardSync,
+  setWhiteboard,
+  type WhiteboardState,
+} from "./whiteboard";
+
+const STORAGE_KEY = "whiteboard-app-state";
+
+describe("whiteboard API", () => {
+  beforeEach(() => {
+    localStorage.removeItem(STORAGE_KEY);
+  });
+
+  describe("getWhiteboardSync", () => {
+    it("returns empty elements when storage is empty", () => {
+      expect(getWhiteboardSync()).toEqual({ elements: [] });
+    });
+
+    it("returns empty elements when key is missing", () => {
+      localStorage.setItem("other-key", "{}");
+      expect(getWhiteboardSync()).toEqual({ elements: [] });
+    });
+
+    it("returns stored state when valid JSON with elements array", () => {
+      const state: WhiteboardState = {
+        elements: [
+          { id: "a", kind: "text", x: 0, y: 0, content: "Hi" },
+        ],
+      };
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      expect(getWhiteboardSync()).toEqual(state);
+    });
+
+    it("returns empty elements when stored value is null string", () => {
+      localStorage.setItem(STORAGE_KEY, "null");
+      expect(getWhiteboardSync()).toEqual({ elements: [] });
+    });
+
+    it("returns empty elements when stored value is invalid JSON", () => {
+      localStorage.setItem(STORAGE_KEY, "not json {");
+      expect(getWhiteboardSync()).toEqual({ elements: [] });
+    });
+
+    it("returns empty elements when parsed object has no elements array", () => {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ foo: 1 }));
+      expect(getWhiteboardSync()).toEqual({ elements: [] });
+    });
+
+    it("returns empty elements when parsed value is empty array", () => {
+      localStorage.setItem(STORAGE_KEY, "[]");
+      expect(getWhiteboardSync()).toEqual({ elements: [] });
+    });
+  });
+
+  describe("getWhiteboard", () => {
+    it("resolves to same result as getWhiteboardSync when storage empty", async () => {
+      const result = await getWhiteboard();
+      expect(result).toEqual({ elements: [] });
+    });
+
+    it("resolves to stored state when valid", async () => {
+      const state: WhiteboardState = {
+        elements: [
+          { id: "b", kind: "text", x: 10, y: 20, content: "Hello" },
+        ],
+      };
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      const result = await getWhiteboard();
+      expect(result).toEqual(state);
+    });
+  });
+
+  describe("setWhiteboard", () => {
+    it("persists state so getWhiteboardSync reads it back", () => {
+      const state: WhiteboardState = {
+        elements: [
+          { id: "c", kind: "text", x: 5, y: 5, content: "Saved" },
+        ],
+      };
+      return setWhiteboard(state).then(() => {
+        expect(getWhiteboardSync()).toEqual(state);
+      });
+    });
+
+    it("returns a promise that resolves", async () => {
+      const state: WhiteboardState = { elements: [] };
+      await expect(setWhiteboard(state)).resolves.toBeUndefined();
+    });
+  });
+});

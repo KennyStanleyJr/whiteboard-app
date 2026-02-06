@@ -7,8 +7,6 @@ export interface BaseElement {
   kind: ElementKind;
 }
 
-export type FontSizeUnit = "px" | "pt";
-
 export type TextAlign = "left" | "center" | "right";
 
 export type TextVerticalAlign = "top" | "middle" | "bottom";
@@ -20,10 +18,8 @@ export interface TextElement extends BaseElement {
   /** Explicit size after resize; when set, overrides measured/default bounds. */
   width?: number;
   height?: number;
-  /** Font size for display; default 16. */
+  /** Font size in px for display; default 24. */
   fontSize?: number;
-  /** Unit for fontSize; default "px". */
-  fontSizeUnit?: FontSizeUnit;
   /** Block text alignment. */
   textAlign?: TextAlign;
   /** Vertical alignment of text within the box. */

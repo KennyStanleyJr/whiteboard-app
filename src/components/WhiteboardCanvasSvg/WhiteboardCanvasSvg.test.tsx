@@ -1,5 +1,10 @@
+import React from "react";
 import { render, fireEvent } from "@testing-library/react";
-import { WhiteboardCanvasSvg } from "./WhiteboardCanvasSvg";
+import { vi } from "vitest";
+import {
+  WhiteboardCanvasSvg,
+  type WhiteboardCanvasSvgHandle,
+} from ".";
 
 const noop = (): void => {};
 
@@ -182,5 +187,81 @@ describe("WhiteboardCanvasSvg", () => {
       expect.stringContaining("Edited text")
     );
     expect(onFinishEditElement).toHaveBeenCalled();
+  });
+
+  it("ref.applyFormatToEditingElement applies format and calls onUpdateElementContent", () => {
+    const onUpdateElementContent = vi.fn();
+    const ref = React.createRef<WhiteboardCanvasSvgHandle>();
+    const { container } = render(
+      <WhiteboardCanvasSvg
+        ref={ref}
+        {...defaultProps}
+        elements={[
+          { id: "t1", kind: "text", x: 10, y: 20, content: "Hi" },
+        ]}
+        editingElementId="t1"
+        onUpdateElementContent={onUpdateElementContent}
+      />
+    );
+    const div = container.querySelector<HTMLDivElement>(
+      ".whiteboard-text-display"
+    );
+    expect(div).toBeInTheDocument();
+    ref.current?.applyFormatToEditingElement("b");
+    expect(div?.innerHTML).toContain("<b>");
+    expect(onUpdateElementContent).toHaveBeenCalledWith(
+      "t1",
+      expect.stringMatching(/<b>.*<\/b>/)
+    );
+  });
+
+  it("ref.applyColorToEditorWithoutFocus applies color and calls onUpdateElementContent", () => {
+    const onUpdateElementContent = vi.fn();
+    const ref = React.createRef<WhiteboardCanvasSvgHandle>();
+    const { container } = render(
+      <WhiteboardCanvasSvg
+        ref={ref}
+        {...defaultProps}
+        elements={[
+          { id: "t1", kind: "text", x: 10, y: 20, content: "Hi" },
+        ]}
+        editingElementId="t1"
+        onUpdateElementContent={onUpdateElementContent}
+      />
+    );
+    const div = container.querySelector<HTMLDivElement>(
+      ".whiteboard-text-display"
+    );
+    expect(div).toBeInTheDocument();
+    ref.current?.applyColorToEditorWithoutFocus("#ff0000");
+    expect(div?.innerHTML).toMatch(/color:\s*#ff0000/);
+    expect(onUpdateElementContent).toHaveBeenCalledWith(
+      "t1",
+      expect.stringMatching(/color:\s*#ff0000/)
+    );
+  });
+
+  it("does not call onFinishEditElement on blur when relatedTarget is inside toolbarContainerRef", () => {
+    const onFinishEditElement = vi.fn();
+    const toolbarDiv = document.createElement("div");
+    const toolbarRef = { current: toolbarDiv };
+    const { container } = render(
+      <WhiteboardCanvasSvg
+        {...defaultProps}
+        elements={[
+          { id: "t1", kind: "text", x: 10, y: 20, content: "Initial" },
+        ]}
+        editingElementId="t1"
+        onFinishEditElement={onFinishEditElement}
+        toolbarContainerRef={toolbarRef}
+      />
+    );
+    const div = container.querySelector<HTMLDivElement>(
+      ".whiteboard-text-display"
+    );
+    expect(div).toBeInTheDocument();
+    if (!div) return;
+    fireEvent.blur(div, { relatedTarget: toolbarDiv });
+    expect(onFinishEditElement).not.toHaveBeenCalled();
   });
 });

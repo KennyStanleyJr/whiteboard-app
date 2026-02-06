@@ -28,7 +28,7 @@ This project follows principles derived from **NASA's Power of 10** (JPL Laborat
 | 1. Control flow | Prefer straightforward control flow; avoid deep recursion in core logic; document recursion if used. |
 | 2. Bounded loops | Use bounded iterations (e.g. `for` with known limits, `.slice()` before loops); avoid unbounded `while (true)` without clear exit. |
 | 3. Dynamic memory | Rely on language/runtime; avoid unnecessary dynamic structures in hot paths; prefer explicit limits for large collections. |
-| 4. Function size | Keep functions small (~≤60 lines); extract helpers; one clear responsibility per function. |
+| 4. Function size | Keep functions small (~≤60 lines); extract helpers; one clear responsibility per function. React components may exceed this when the file is mostly JSX/structure; keep business logic in small helpers. |
 | 5. Assertions | Use runtime checks and `assert`-style guards; validate invariants; handle failures explicitly (e.g. early return, error state). |
 | 6. Minimal scope | Use `const`/`let` in the narrowest scope; avoid unnecessary module-level mutable state. |
 | 7. Return/params | Check return values and validate function parameters; use TypeScript strict types; handle errors explicitly. |
@@ -50,3 +50,4 @@ This project follows principles derived from **NASA's Power of 10** (JPL Laborat
 - **Lint and types**: Fix all TypeScript and ESLint errors and warnings before committing.
 - **Reviews**: Code should be reviewable: small, clear units and minimal surprise.
 - **Testing**: Critical paths and utilities should have tests; maintainability over time is a goal.
+- **Bounded iteration**: Loops and recursion use explicit bounds (e.g. `MAX_STRIP_ITERATIONS`, `MAX_SANITIZE_DEPTH`) so control flow is analyzable.

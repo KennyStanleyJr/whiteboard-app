@@ -1,6 +1,7 @@
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { beforeEach, vi } from "vitest";
 import App from "./App";
+import { withQueryClient } from "@/test/utils";
 
 describe("App", () => {
   beforeEach(() => {
@@ -8,19 +9,19 @@ describe("App", () => {
   });
 
   it("renders whiteboard header", () => {
-    render(<App />);
+    render(withQueryClient(<App />));
     expect(screen.getByRole("heading", { name: /whiteboard/i })).toBeInTheDocument();
   });
 
   it("renders whiteboard canvas", () => {
-    const { container } = render(<App />);
+    const { container } = render(withQueryClient(<App />));
     const root = container.querySelector(".whiteboard-canvas-wrap");
     expect(root).toBeInTheDocument();
   });
 
   it("toggles management page via header button", async () => {
     window.location.hash = "";
-    render(<App />);
+    render(withQueryClient(<App />));
 
     const toggleButton = screen.getByRole("button", {
       name: /open whiteboard management/i,
@@ -32,7 +33,7 @@ describe("App", () => {
       expect(window.location.hash).toBe("#/manage");
     });
 
-    const closeButton = screen.getByRole("button", {
+    const closeButton = await screen.findByRole("button", {
       name: /close whiteboard management/i,
     });
     expect(closeButton).toBeInTheDocument();
@@ -45,7 +46,7 @@ describe("App", () => {
   it("calls handler when creating a new whiteboard", async () => {
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
 
-    render(<App />);
+    render(withQueryClient(<App />));
 
     const toggleButton = screen.getByRole("button", {
       name: /open whiteboard management/i,
@@ -65,7 +66,7 @@ describe("App", () => {
   it("opens an existing board and closes management page", async () => {
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
 
-    render(<App />);
+    render(withQueryClient(<App />));
 
     const toggleButton = screen.getByRole("button", {
       name: /open whiteboard management/i,

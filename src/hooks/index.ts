@@ -7,3 +7,7 @@ export {
   type Point,
   type SelectionRect,
 } from "./selection";
+export {
+  useWhiteboardQuery,
+  WHITEBOARD_QUERY_KEY,
+} from "./useWhiteboard";

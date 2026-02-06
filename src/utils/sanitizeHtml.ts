@@ -46,7 +46,14 @@ function escapeText(s: string): string {
     .replace(/"/g, "&quot;");
 }
 
-function sanitizeNode(node: Node, out: string[]): void {
+/** Max recursion depth when walking DOM (bounded per NASA-style rules). */
+const MAX_SANITIZE_DEPTH = 50;
+
+function sanitizeNode(node: Node, out: string[], depth: number): void {
+  if (depth > MAX_SANITIZE_DEPTH) {
+    out.push(escapeText(node.textContent ?? ""));
+    return;
+  }
   if (node.nodeType === Node.TEXT_NODE) {
     out.push(escapeText(node.textContent ?? ""));
     return;
@@ -56,7 +63,7 @@ function sanitizeNode(node: Node, out: string[]): void {
   const tag = el.tagName.toLowerCase();
   if (!ALLOWED_TAGS.has(tag)) {
     for (let i = 0; i < el.childNodes.length; i++) {
-      sanitizeNode(el.childNodes[i]!, out);
+      sanitizeNode(el.childNodes[i]!, out, depth + 1);
     }
     return;
   }
@@ -65,7 +72,7 @@ function sanitizeNode(node: Node, out: string[]): void {
   const attrs = styleStr ? ` style="${styleStr.replace(/"/g, "&quot;")}"` : "";
   out.push(`<${tag}${attrs}>`);
   for (let i = 0; i < el.childNodes.length; i++) {
-    sanitizeNode(el.childNodes[i]!, out);
+    sanitizeNode(el.childNodes[i]!, out, depth + 1);
   }
   if (tag !== "br") {
     out.push(`</${tag}>`);
@@ -83,8 +90,9 @@ export function sanitizeHtml(html: string): string {
   const body = doc.body;
   body.innerHTML = html;
   const out: string[] = [];
+  const startDepth = 0;
   for (let i = 0; i < body.childNodes.length; i++) {
-    sanitizeNode(body.childNodes[i]!, out);
+    sanitizeNode(body.childNodes[i]!, out, startDepth);
   }
   return out.join("");
 }
@@ -103,4 +111,27 @@ export function plainTextToHtml(text: string): string {
 /** True if content appears to be HTML (contains tags). */
 export function isHtmlContent(content: string): boolean {
   return content.includes("<");
+}
+
+/**
+ * If content is exactly one <span style="color: ...">...</span>, return inner content;
+ * otherwise return the content as-is. Use when applying a new color so we replace
+ * instead of nesting color spans.
+ */
+export function innerContentIfSingleColorSpan(html: string): string {
+  const parsed = parseSingleColorSpan(html);
+  return parsed ? parsed.inner : html;
+}
+
+/**
+ * If content is exactly one <span style="...">...</span> with a color in style,
+ * return { style, inner } so callers can keep the color on the outside when
+ * wrapping inner with format tags (e.g. <u>). Ensures underline uses currentColor from the span.
+ */
+export function parseSingleColorSpan(html: string): { style: string; inner: string } | null {
+  const trimmed = html.trim();
+  if (trimmed === "") return null;
+  const m = trimmed.match(/^\s*<span\s+style="([^"]*)"\s*>([\s\S]*?)<\/span>\s*$/i);
+  if (!m || !/color\s*:/i.test(m[1]!)) return null;
+  return { style: m[1]!, inner: m[2]! };
 }
