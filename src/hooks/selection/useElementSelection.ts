@@ -19,6 +19,12 @@ interface DragState {
   startWorld: { x: number; y: number };
   /** id -> { x, y } at drag start */
   startPositions: Map<string, { x: number; y: number }>;
+  /** Original selection before click - used to restore if dragging */
+  originalSelection: string[];
+  /** Element ID to select on mouse up if no drag occurred */
+  clickElementId: string | null;
+  /** Whether movement occurred (drag vs click) */
+  hasMoved: boolean;
 }
 
 function viewBoxRectToWorld(
@@ -56,12 +62,14 @@ export function useElementSelection(
   editingElementId: string | null
 ): {
   selectedElementIds: string[];
+  setSelectedElementIds: React.Dispatch<React.SetStateAction<string[]>>;
   isDragging: boolean;
   handlers: ElementSelectionHandlers;
 } {
   const [selectedElementIds, setSelectedElementIds] = useState<string[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const dragStateRef = useRef<DragState | null>(null);
+  const marqueeShiftKeyRef = useRef<boolean>(false);
 
   useEffect(() => {
     const ids = new Set(elements.map((el) => el.id));
@@ -92,8 +100,28 @@ export function useElementSelection(
       const hit = elementAtPoint(world.x, world.y, elements, measuredBounds);
       if (hit !== null) {
         const isSelected = selectedElementIds.includes(hit.id);
-        const idsToMove = isSelected ? selectedElementIds : [hit.id];
-        setSelectedElementIds(idsToMove);
+        let idsToMove: string[];
+        let idsToSelect: string[];
+        let clickElementId: string | null = null;
+        if (e.shiftKey) {
+          if (isSelected) {
+            idsToMove = selectedElementIds.filter((id) => id !== hit.id);
+            idsToSelect = idsToMove;
+          } else {
+            idsToMove = [...selectedElementIds, hit.id];
+            idsToSelect = idsToMove;
+          }
+        } else {
+          if (isSelected && selectedElementIds.length > 1) {
+            idsToSelect = selectedElementIds;
+            idsToMove = selectedElementIds;
+            clickElementId = hit.id;
+          } else {
+            idsToSelect = [hit.id];
+            idsToMove = [hit.id];
+          }
+        }
+        setSelectedElementIds(idsToSelect);
         if (hit.id === editingElementId) {
           return;
         }
@@ -105,12 +133,18 @@ export function useElementSelection(
         dragStateRef.current = {
           startWorld: { x: world.x, y: world.y },
           startPositions,
+          originalSelection: selectedElementIds,
+          clickElementId,
+          hasMoved: false,
         };
         setIsDragging(true);
         (e.target as Element).setPointerCapture?.(e.pointerId);
         panZoomHandlers.onPointerDown(e);
       } else {
-        setSelectedElementIds([]);
+        if (!e.shiftKey) {
+          setSelectedElementIds([]);
+        }
+        marqueeShiftKeyRef.current = e.shiftKey;
         dragStateRef.current = null;
         selectionHandlers.handlePointerDown(e);
       }
@@ -148,6 +182,10 @@ export function useElementSelection(
         if (world !== null) {
           const dx = world.x - drag.startWorld.x;
           const dy = world.y - drag.startWorld.y;
+          const moved = Math.abs(dx) > 0.1 || Math.abs(dy) > 0.1;
+          if (moved) {
+            drag.hasMoved = true;
+          }
           setElements((prev) =>
             prev.map((el) => {
               const start = drag.startPositions.get(el.id);
@@ -178,13 +216,25 @@ export function useElementSelection(
     (e: React.PointerEvent) => {
       if (e.button === 0) {
         if (dragStateRef.current !== null) {
+          const drag = dragStateRef.current;
+          if (!drag.hasMoved && drag.clickElementId !== null) {
+            setSelectedElementIds([drag.clickElementId]);
+          }
           dragStateRef.current = null;
           setIsDragging(false);
           (e.target as Element).releasePointerCapture?.(e.pointerId);
         } else if (selectionRect !== null) {
           const worldRect = viewBoxRectToWorld(selectionRect, panX, panY, zoom);
           const ids = elementsInRect(worldRect, elements, measuredBounds);
-          setSelectedElementIds(ids);
+          if (marqueeShiftKeyRef.current) {
+            setSelectedElementIds((prev) => {
+              const combined = new Set([...prev, ...ids]);
+              return Array.from(combined);
+            });
+          } else {
+            setSelectedElementIds(ids);
+          }
+          marqueeShiftKeyRef.current = false;
         }
         panZoomHandlers.onPointerUp(e);
         selectionHandlers.handlePointerUp(e);
@@ -217,6 +267,7 @@ export function useElementSelection(
 
   return {
     selectedElementIds,
+    setSelectedElementIds,
     isDragging,
     handlers: {
       handlePointerDown,

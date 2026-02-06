@@ -315,6 +315,118 @@ export function WhiteboardCanvas(): JSX.Element {
     setElements((prev) => prev.filter((el) => !ids.has(el.id)));
   }, [setElements]);
 
+  interface ClipboardEntry {
+    element: WhiteboardElement;
+    bounds: ElementBounds;
+  }
+  const clipboardRef = useRef<ClipboardEntry[]>([]);
+  const lastMousePositionRef = useRef<{ clientX: number; clientY: number } | null>(null);
+
+  const handleCopySelected = useCallback(() => {
+    const ids = new Set(selectedIdsRef.current);
+    const copied: ClipboardEntry[] = [];
+    for (const el of elements) {
+      if (ids.has(el.id)) {
+        const bounds = getElementBounds(el, measuredBounds);
+        copied.push({ element: el, bounds });
+      }
+    }
+    clipboardRef.current = copied;
+  }, [elements, measuredBounds]);
+
+  const handlePaste = useCallback(() => {
+    if (clipboardRef.current.length === 0) return;
+    const mousePos = lastMousePositionRef.current;
+    const container = panZoom.containerRef.current;
+    
+    let pasteX: number;
+    let pasteY: number;
+    
+    if (mousePos != null && container != null) {
+      const world = clientToWorld(
+        container,
+        mousePos.clientX,
+        mousePos.clientY,
+        size.width,
+        size.height,
+        panZoom.panX,
+        panZoom.panY,
+        panZoom.zoom
+      );
+      if (world != null) {
+        pasteX = world.x;
+        pasteY = world.y;
+      } else {
+        const centerViewportX = size.width / 2;
+        const centerViewportY = size.height / 2;
+        pasteX = (centerViewportX - panZoom.panX) / panZoom.zoom;
+        pasteY = (centerViewportY - panZoom.panY) / panZoom.zoom;
+      }
+    } else {
+      const centerViewportX = size.width / 2;
+      const centerViewportY = size.height / 2;
+      pasteX = (centerViewportX - panZoom.panX) / panZoom.zoom;
+      pasteY = (centerViewportY - panZoom.panY) / panZoom.zoom;
+    }
+
+    const clipboardEntries = clipboardRef.current;
+    if (clipboardEntries.length === 0) return;
+
+    let centerX = 0;
+    let centerY = 0;
+    let count = 0;
+    for (const entry of clipboardEntries) {
+      const bounds = entry.bounds;
+      centerX += bounds.x + bounds.width / 2;
+      centerY += bounds.y + bounds.height / 2;
+      count += 1;
+    }
+    if (count > 0) {
+      centerX /= count;
+      centerY /= count;
+    }
+
+    const offsetX = pasteX - centerX;
+    const offsetY = pasteY - centerY;
+
+    const newElements: WhiteboardElement[] = clipboardEntries.map((entry) => {
+      const el = entry.element;
+      const newId = generateElementId();
+      return {
+        ...el,
+        id: newId,
+        x: el.x + offsetX,
+        y: el.y + offsetY,
+      };
+    });
+    setElements((prev) => [...prev, ...newElements]);
+    const newIds = newElements.map((el) => el.id);
+    elementSelection.setSelectedElementIds(newIds);
+  }, [setElements, elementSelection, panZoom, size]);
+
+  const handleDuplicateSelected = useCallback(() => {
+    const ids = new Set(selectedIdsRef.current);
+    if (ids.size === 0) return;
+    const selectedElements = elements.filter((el) => ids.has(el.id));
+    if (selectedElements.length === 0) return;
+
+    const offsetX = 20;
+    const offsetY = 20;
+
+    const newElements: WhiteboardElement[] = selectedElements.map((el) => {
+      const newId = generateElementId();
+      return {
+        ...el,
+        id: newId,
+        x: el.x + offsetX,
+        y: el.y + offsetY,
+      };
+    });
+    setElements((prev) => [...prev, ...newElements]);
+    const newIds = newElements.map((el) => el.id);
+    elementSelection.setSelectedElementIds(newIds);
+  }, [elements, setElements, elementSelection]);
+
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent): void => {
       if (
@@ -339,6 +451,50 @@ export function WhiteboardCanvas(): JSX.Element {
     return () =>
       document.removeEventListener("keydown", onKeyDown, { capture: true });
   }, [editingElementId, handleDeleteSelected]);
+
+  useEffect(() => {
+    const onMouseMove = (e: MouseEvent): void => {
+      lastMousePositionRef.current = { clientX: e.clientX, clientY: e.clientY };
+    };
+    document.addEventListener("mousemove", onMouseMove);
+    return () => document.removeEventListener("mousemove", onMouseMove);
+  }, []);
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent): void => {
+      const isCopy = (e.key === "c" || e.key === "C") && (e.ctrlKey || e.metaKey);
+      const isPaste = (e.key === "v" || e.key === "V") && (e.ctrlKey || e.metaKey);
+      const isDuplicate = (e.key === "d" || e.key === "D") && (e.ctrlKey || e.metaKey);
+      if (!isCopy && !isPaste && !isDuplicate) return;
+      const target = e.target as HTMLElement;
+      const tag = target.tagName?.toLowerCase();
+      const role = target.getAttribute?.("role");
+      const editable =
+        tag === "input" ||
+        tag === "textarea" ||
+        target.isContentEditable ||
+        role === "textbox";
+      if (editable) return;
+      if (isCopy) {
+        if (selectedIdsRef.current.length === 0) return;
+        if (editingElementId !== null) return;
+        e.preventDefault();
+        handleCopySelected();
+      } else if (isPaste) {
+        if (editingElementId !== null) return;
+        e.preventDefault();
+        handlePaste();
+      } else if (isDuplicate) {
+        if (selectedIdsRef.current.length === 0) return;
+        if (editingElementId !== null) return;
+        e.preventDefault();
+        handleDuplicateSelected();
+      }
+    };
+    document.addEventListener("keydown", onKeyDown, { capture: true });
+    return () =>
+      document.removeEventListener("keydown", onKeyDown, { capture: true });
+  }, [editingElementId, handleCopySelected, handlePaste, handleDuplicateSelected]);
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent): void => {
