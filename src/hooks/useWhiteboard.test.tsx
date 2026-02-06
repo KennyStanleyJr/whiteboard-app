@@ -88,11 +88,11 @@ describe("useWhiteboardQuery", () => {
     const cached = queryClient.getQueryData<{ elements: TextElement[] }>(WHITEBOARD_QUERY_KEY);
     expect(cached?.elements).toHaveLength(1);
     expect(cached?.elements[0]).toMatchObject(newElement);
-    expect(setWhiteboardSpy).toHaveBeenCalledWith({ elements: [newElement] });
 
     await act(async () => {
-      await Promise.resolve();
+      await new Promise((r) => setTimeout(r, 300));
     });
+    expect(setWhiteboardSpy).toHaveBeenCalledWith({ elements: [newElement] });
   });
 
   it("setElements with updater function applies to previous state and calls setWhiteboard", async () => {
@@ -118,16 +118,15 @@ describe("useWhiteboardQuery", () => {
     expect(cached?.elements[0]?.content).toBe("A");
     expect(cached?.elements[1]?.content).toBe("B");
 
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 300));
+    });
     expect(setWhiteboardSpy).toHaveBeenCalledTimes(1);
     const state = setWhiteboardSpy.mock.calls[0]?.[0];
     expect(state).toBeDefined();
     expect(state?.elements).toHaveLength(2);
     expect(state?.elements[0]).toMatchObject({ content: "A" });
     expect(state?.elements[1]).toMatchObject({ content: "B" });
-
-    await act(async () => {
-      await Promise.resolve();
-    });
   });
 
   it("exports WHITEBOARD_QUERY_KEY for cache access", () => {

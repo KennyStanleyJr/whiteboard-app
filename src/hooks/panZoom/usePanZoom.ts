@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { MAX_ZOOM, MIN_ZOOM, type WheelData, ZOOM_SENSITIVITY } from "./panZoomUtils";
 import { useRightButtonPanHandlers } from "./useRightButtonPanHandlers";
@@ -58,43 +58,65 @@ export function usePanZoom(options: UsePanZoomOptions = {}): UsePanZoomReturn {
   const containerRef = useRef<HTMLElement | null>(null);
   const stateRef = useRef({ panX: 0, panY: 0, zoom: 1 });
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const interactingRef = useRef(false);
   stateRef.current = { panX, panY, zoom };
 
+  const persistPanZoom = useCallback(() => {
+    if (saveTimeoutRef.current != null) {
+      clearTimeout(saveTimeoutRef.current);
+      saveTimeoutRef.current = null;
+    }
+    const { panX: px, panY: py, zoom: z } = stateRef.current;
+    const current = getWhiteboardSync();
+    const newState: WhiteboardState = {
+      ...current,
+      panZoom: { panX: px, panY: py, zoom: z },
+    };
+    queryClient.setQueryData(WHITEBOARD_QUERY_KEY, newState);
+    setWhiteboard(newState).catch((err) => {
+      console.error("[usePanZoom] persist failed", err);
+    });
+  }, [queryClient]);
+
   useEffect(() => {
+    if (interactingRef.current) return;
     if (saveTimeoutRef.current != null) {
       clearTimeout(saveTimeoutRef.current);
     }
     saveTimeoutRef.current = setTimeout(() => {
+      saveTimeoutRef.current = null;
       const current = getWhiteboardSync();
       const newState: WhiteboardState = {
         ...current,
         panZoom: { panX, panY, zoom },
       };
-      // Update React Query cache to prevent race conditions
       queryClient.setQueryData(WHITEBOARD_QUERY_KEY, newState);
       setWhiteboard(newState).catch((err) => {
         console.error("[usePanZoom] persist failed", err);
       });
-      saveTimeoutRef.current = null;
-    }, 300);
+    }, 100);
     return () => {
       if (saveTimeoutRef.current != null) {
         clearTimeout(saveTimeoutRef.current);
         saveTimeoutRef.current = null;
       }
-      // Save immediately on unmount
+    };
+  }, [panX, panY, zoom, queryClient]);
+
+  useEffect(() => {
+    return () => {
+      const { panX: px, panY: py, zoom: z } = stateRef.current;
       const current = getWhiteboardSync();
       const newState: WhiteboardState = {
         ...current,
-        panZoom: { panX, panY, zoom },
+        panZoom: { panX: px, panY: py, zoom: z },
       };
-      // Update React Query cache to prevent race conditions
       queryClient.setQueryData(WHITEBOARD_QUERY_KEY, newState);
       setWhiteboard(newState).catch((err) => {
         console.error("[usePanZoom] persist failed on unmount", err);
       });
     };
-  }, [panX, panY, zoom, queryClient]);
+  }, [queryClient]);
 
   const wheelOpts = { minZoom, maxZoom, zoomSensitivity };
   const wheel = useWheelZoomHandlers(
@@ -111,9 +133,12 @@ export function usePanZoom(options: UsePanZoomOptions = {}): UsePanZoomReturn {
     setZoom,
     setPanX,
     setPanY,
-    { minZoom, maxZoom }
+    { minZoom, maxZoom, onGestureEnd: persistPanZoom, interactingRef }
   );
-  const pointer = useRightButtonPanHandlers(setPanX, setPanY);
+  const pointer = useRightButtonPanHandlers(setPanX, setPanY, {
+    onPanEnd: persistPanZoom,
+    interactingRef,
+  });
 
   return {
     panX,

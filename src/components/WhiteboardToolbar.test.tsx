@@ -11,6 +11,7 @@ describe("WhiteboardToolbar", () => {
     onAddText: vi.fn(),
     onAddRectangle: vi.fn(),
     onAddEllipse: vi.fn(),
+    onAddImage: vi.fn(),
   };
 
   it("renders all toolbar buttons", () => {
@@ -20,6 +21,7 @@ describe("WhiteboardToolbar", () => {
     expect(screen.getByRole("button", { name: /^Add text$/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^Add rectangle$/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^Add ellipse$/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Add image$/i })).toBeInTheDocument();
   });
 
   it("calls undo when Undo button is clicked", () => {
@@ -55,6 +57,13 @@ describe("WhiteboardToolbar", () => {
     render(<WhiteboardToolbar {...defaultProps} onAddEllipse={onAddEllipse} />);
     fireEvent.click(screen.getByRole("button", { name: /^Add ellipse$/i }));
     expect(onAddEllipse).toHaveBeenCalledTimes(1);
+  });
+
+  it("calls onAddImage when Add image button is clicked", () => {
+    const onAddImage = vi.fn();
+    render(<WhiteboardToolbar {...defaultProps} onAddImage={onAddImage} />);
+    fireEvent.click(screen.getByRole("button", { name: /^Add image$/i }));
+    expect(onAddImage).toHaveBeenCalledTimes(1);
   });
 
   it("disables Undo button when canUndo is false", () => {

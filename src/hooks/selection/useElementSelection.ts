@@ -65,7 +65,8 @@ export function useElementSelection(
     onPointerUp: (e: React.PointerEvent) => void;
     onPointerLeave: (e: React.PointerEvent) => void;
   },
-  editingElementId: string | null
+  editingElementId: string | null,
+  onDragEnd?: () => void
 ): {
   selectedElementIds: string[];
   setSelectedElementIds: React.Dispatch<React.SetStateAction<string[]>>;
@@ -76,6 +77,8 @@ export function useElementSelection(
   const [isDragging, setIsDragging] = useState(false);
   const dragStateRef = useRef<DragState | null>(null);
   const marqueeShiftKeyRef = useRef<boolean>(false);
+  const dragMovePendingRef = useRef<{ dx: number; dy: number } | null>(null);
+  const dragRafRef = useRef<number | null>(null);
 
   useEffect(() => {
     const ids = new Set(elements.map((el) => el.id));
@@ -172,6 +175,27 @@ export function useElementSelection(
     ]
   );
 
+  const flushDragMove = useCallback(() => {
+    const pending = dragMovePendingRef.current;
+    if (pending == null) return;
+    const drag = dragStateRef.current;
+    if (drag == null) return;
+    dragMovePendingRef.current = null;
+    setElements(
+      (prev) =>
+        prev.map((el) => {
+          const start = drag.startPositions.get(el.id);
+          if (start === undefined) return el;
+          return {
+            ...el,
+            x: start.x + pending.dx,
+            y: start.y + pending.dy,
+          };
+        }),
+      { skipHistory: true }
+    );
+  }, [setElements]);
+
   const handlePointerMove = useCallback(
     (e: React.PointerEvent) => {
       const drag = dragStateRef.current;
@@ -197,15 +221,13 @@ export function useElementSelection(
             }
             drag.hasMoved = true;
           }
-          setElements(
-            (prev) =>
-              prev.map((el) => {
-                const start = drag.startPositions.get(el.id);
-                if (start === undefined) return el;
-                return { ...el, x: start.x + dx, y: start.y + dy };
-              }),
-            { skipHistory: true }
-          );
+          dragMovePendingRef.current = { dx, dy };
+          if (dragRafRef.current == null) {
+            dragRafRef.current = requestAnimationFrame(() => {
+              dragRafRef.current = null;
+              flushDragMove();
+            });
+          }
         }
         panZoomHandlers.onPointerMove(e);
         return;
@@ -220,6 +242,7 @@ export function useElementSelection(
       panY,
       zoom,
       setElements,
+      flushDragMove,
       selectionHandlers,
       panZoomHandlers,
     ]
@@ -233,9 +256,16 @@ export function useElementSelection(
           if (!drag.hasMoved && drag.clickElementId !== null) {
             setSelectedElementIds([drag.clickElementId]);
           }
+          const hadMoved = drag.hasMoved;
+          if (dragRafRef.current != null) {
+            cancelAnimationFrame(dragRafRef.current);
+            dragRafRef.current = null;
+          }
+          flushDragMove();
           dragStateRef.current = null;
           setIsDragging(false);
           (e.target as Element).releasePointerCapture?.(e.pointerId);
+          if (hadMoved) onDragEnd?.();
         } else if (selectionRect !== null) {
           const worldRect = viewBoxRectToWorld(selectionRect, panX, panY, zoom);
           const ids = elementsInRect(worldRect, elements, measuredBounds);
@@ -262,6 +292,8 @@ export function useElementSelection(
       elements,
       measuredBounds,
       selectionRect,
+      flushDragMove,
+      onDragEnd,
       panZoomHandlers,
       selectionHandlers,
     ]
@@ -270,6 +302,10 @@ export function useElementSelection(
   const handlePointerLeave = useCallback(
     (e: React.PointerEvent) => {
       if ((e.buttons & 1) === 0) {
+        if (dragRafRef.current != null) {
+          cancelAnimationFrame(dragRafRef.current);
+          dragRafRef.current = null;
+        }
         if (dragStateRef.current !== null) setIsDragging(false);
         dragStateRef.current = null;
       }

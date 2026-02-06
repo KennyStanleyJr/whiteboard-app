@@ -76,6 +76,14 @@ export function getElementBounds(
       height: el.height,
     });
   }
+  if (el.kind === "image") {
+    return sanitizeElementBounds({
+      x: el.x,
+      y: el.y,
+      width: el.width,
+      height: el.height,
+    });
+  }
   return sanitizeElementBounds({ x: 0, y: 0, width: 0, height: 0 });
 }
 

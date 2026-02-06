@@ -22,6 +22,8 @@ import {
   type FormatTag,
 } from "@/utils/textFormat";
 import type {
+  ImageCornerRadius,
+  ImageElement,
   ShapeElement,
   TextAlign,
   TextElement,
@@ -30,10 +32,11 @@ import type {
 } from "@/types/whiteboard";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { PaintBucket, Trash2 } from "lucide-react";
+import { Maximize2, PaintBucket, Trash2 } from "lucide-react";
 import { AlignMenus } from "./AlignMenus";
 import { FontSizeControl } from "./FontSizeControl";
 import { FormatButtonsRow } from "./FormatButtonsRow";
+import { ImageCornerRadiusMenu } from "./ImageCornerRadiusMenu";
 import { ToolbarColorPicker } from "./ToolbarColorPicker";
 import {
   COLOR_APPLY_THROTTLE_MS,
@@ -92,6 +95,7 @@ export const SelectionToolbar = forwardRef<
   const alignMenuRef = useRef<HTMLDivElement>(null);
   const verticalAlignMenuRef = useRef<HTMLDivElement>(null);
   const colorPickerMenuRef = useRef<HTMLDivElement>(null);
+  const cornerRadiusMenuRef = useRef<HTMLDivElement>(null);
   const applyColorRef = useRef<(color: string) => void>(() => {});
   const colorThrottleTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const colorLastApplyTimeRef = useRef<number>(0);
@@ -102,6 +106,7 @@ export const SelectionToolbar = forwardRef<
   const [alignMenuOpen, setAlignMenuOpen] = useState(false);
   const [verticalAlignMenuOpen, setVerticalAlignMenuOpen] = useState(false);
   const [colorPickerOpen, setColorPickerOpen] = useState(false);
+  const [cornerRadiusMenuOpen, setCornerRadiusMenuOpen] = useState(false);
   const [pickerColor, setPickerColor] = useState("#000000");
   const worldAnchorRef = useRef<{ centerX: number; topY: number } | null>(null);
 
@@ -113,10 +118,19 @@ export const SelectionToolbar = forwardRef<
     (el): el is ShapeElement =>
       selectedElementIds.includes(el.id) && el.kind === "shape"
   );
+  const selectedImageElements = elements.filter(
+    (el): el is ImageElement =>
+      selectedElementIds.includes(el.id) && el.kind === "image"
+  );
   const hasText = selectedTextElements.length > 0;
   const hasShape = selectedShapeElements.length > 0;
+  const hasImage = selectedImageElements.length > 0;
   const firstText = selectedTextElements[0];
   const firstShape = selectedShapeElements[0];
+  const firstImage = selectedImageElements[0];
+  const displayImageFill = firstImage?.imageFill ?? false;
+  const displayImageCornerRadius: ImageCornerRadius =
+    firstImage?.imageCornerRadius ?? "none";
   const displayShapeFilled =
     hasShape &&
     selectedShapeElements.every((el) => el.filled !== false);
@@ -226,6 +240,30 @@ export const SelectionToolbar = forwardRef<
       applyShapeFilled(!displayShapeFilled);
     }
   }, [shapeFillMixed, displayShapeFilled, applyShapeFilled]);
+
+  const handleImageFillToggle = useCallback((): void => {
+    const next = !displayImageFill;
+    setElements((prev) =>
+      prev.map((el) => {
+        if (el.kind !== "image" || !selectedElementIds.includes(el.id))
+          return el;
+        return { ...el, imageFill: next };
+      })
+    );
+  }, [displayImageFill, selectedElementIds, setElements]);
+
+  const applyImageCornerRadius = useCallback(
+    (value: ImageCornerRadius): void => {
+      setElements((prev) =>
+        prev.map((el) => {
+          if (el.kind !== "image" || !selectedElementIds.includes(el.id))
+            return el;
+          return { ...el, imageCornerRadius: value };
+        })
+      );
+    },
+    [selectedElementIds, setElements]
+  );
 
   useImperativeHandle(
     ref,
@@ -493,6 +531,17 @@ export const SelectionToolbar = forwardRef<
     return () => document.removeEventListener("mousedown", close, { capture: true });
   }, [colorPickerOpen, closeColorPicker]);
 
+  useEffect(() => {
+    if (!cornerRadiusMenuOpen) return;
+    const close = (e: MouseEvent): void => {
+      const el = cornerRadiusMenuRef.current;
+      if (el != null && !el.contains(e.target as Node))
+        setCornerRadiusMenuOpen(false);
+    };
+    document.addEventListener("mousedown", close, { capture: true });
+    return () => document.removeEventListener("mousedown", close, { capture: true });
+  }, [cornerRadiusMenuOpen]);
+
   const presetValue =
     singleFontSize && FONT_SIZE_PRESETS.includes(displayFontSize)
       ? String(displayFontSize)
@@ -513,25 +562,37 @@ export const SelectionToolbar = forwardRef<
       role="toolbar"
       aria-label="Element options"
     >
-      {(hasText || hasShape) && (
-        <ToolbarColorPicker
-          colorPickerOpen={colorPickerOpen}
-          pickerColor={pickerColor}
-          onPickerColorChange={onPickerColorChange}
-          onColorPickerToggle={() => {
-            if (colorPickerOpen) closeColorPicker();
-            else {
-              colorPickerElementIdsRef.current = new Set(selectedElementIds);
-              if (firstShape != null)
-                setPickerColor(firstShape.color ?? "#000000");
-              else if (firstText?.content)
-                setPickerColor(parseHexFromContent(firstText.content));
-              else setPickerColor("#000000");
-              setColorPickerOpen(true);
-            }
-          }}
-          colorPickerMenuRef={colorPickerMenuRef}
-        />
+      {hasText && (
+        <>
+          <FormatButtonsRow
+            displayBold={displayBold}
+            displayItalic={displayItalic}
+            displayUnderline={displayUnderline}
+            onBold={applyBold}
+            onItalic={applyItalic}
+            onUnderline={applyUnderline}
+          />
+          <FontSizeControl
+            displayFontSize={displayFontSize}
+            singleFontSize={singleFontSize}
+            presetValue={presetValue}
+            onFontSizeChange={applyFontSize}
+            onInputChange={handleInputChange}
+            onInputBlur={handleInputBlur}
+          />
+          <AlignMenus
+            displayTextAlign={displayTextAlign}
+            displayVerticalAlign={displayVerticalAlign}
+            onTextAlign={applyTextAlign}
+            onVerticalAlign={applyVerticalAlign}
+            alignMenuOpen={alignMenuOpen}
+            verticalAlignMenuOpen={verticalAlignMenuOpen}
+            setAlignMenuOpen={setAlignMenuOpen}
+            setVerticalAlignMenuOpen={setVerticalAlignMenuOpen}
+            alignMenuRef={alignMenuRef}
+            verticalAlignMenuRef={verticalAlignMenuRef}
+          />
+        </>
       )}
       {hasShape && (
         <Button
@@ -555,39 +616,56 @@ export const SelectionToolbar = forwardRef<
           <PaintBucket aria-hidden />
         </Button>
       )}
-      {hasText && (
+      {hasImage && (
         <>
-          <FontSizeControl
-            displayFontSize={displayFontSize}
-            singleFontSize={singleFontSize}
-            presetValue={presetValue}
-            onFontSizeChange={applyFontSize}
-            onInputChange={handleInputChange}
-            onInputBlur={handleInputBlur}
-          />
-          <FormatButtonsRow
-            displayBold={displayBold}
-            displayItalic={displayItalic}
-            displayUnderline={displayUnderline}
-            onBold={applyBold}
-            onItalic={applyItalic}
-            onUnderline={applyUnderline}
-          />
-          <AlignMenus
-            displayTextAlign={displayTextAlign}
-            displayVerticalAlign={displayVerticalAlign}
-            onTextAlign={applyTextAlign}
-            onVerticalAlign={applyVerticalAlign}
-            alignMenuOpen={alignMenuOpen}
-            verticalAlignMenuOpen={verticalAlignMenuOpen}
-            setAlignMenuOpen={setAlignMenuOpen}
-            setVerticalAlignMenuOpen={setVerticalAlignMenuOpen}
-            alignMenuRef={alignMenuRef}
-            verticalAlignMenuRef={verticalAlignMenuRef}
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className={cn(
+              "h-7 w-7 rounded [&_svg]:size-3.5",
+              displayImageFill && "bg-accent"
+            )}
+            onClick={handleImageFillToggle}
+            aria-label={
+              displayImageFill
+                ? "Disable fill container (preserve image aspect ratio)"
+                : "Enable fill container (match container aspect ratio)"
+            }
+            aria-pressed={displayImageFill}
+          >
+            <Maximize2 aria-hidden />
+          </Button>
+          <ImageCornerRadiusMenu
+            displayCornerRadius={displayImageCornerRadius}
+            onCornerRadiusChange={applyImageCornerRadius}
+            menuOpen={cornerRadiusMenuOpen}
+            setMenuOpen={setCornerRadiusMenuOpen}
+            menuRef={cornerRadiusMenuRef}
           />
         </>
       )}
-      <div className={hasText || hasShape ? "flex items-center" : ""}>
+      {(hasText || hasShape) && (
+        <ToolbarColorPicker
+          colorPickerOpen={colorPickerOpen}
+          pickerColor={pickerColor}
+          onPickerColorChange={onPickerColorChange}
+          onColorPickerToggle={() => {
+            if (colorPickerOpen) closeColorPicker();
+            else {
+              colorPickerElementIdsRef.current = new Set(selectedElementIds);
+              if (firstShape != null)
+                setPickerColor(firstShape.color ?? "#000000");
+              else if (firstText?.content)
+                setPickerColor(parseHexFromContent(firstText.content));
+              else setPickerColor("#000000");
+              setColorPickerOpen(true);
+            }
+          }}
+          colorPickerMenuRef={colorPickerMenuRef}
+        />
+      )}
+      <div className={hasText || hasShape || hasImage ? "flex items-center" : ""}>
         <Button
           type="button"
           variant="ghost"

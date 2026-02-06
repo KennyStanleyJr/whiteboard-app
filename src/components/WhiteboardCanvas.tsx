@@ -18,7 +18,11 @@ import {
   resizeBoundsFromHandle,
   type ResizeHandleId,
 } from "../utils/resizeHandles";
-import type { ShapeType, WhiteboardElement } from "../types/whiteboard";
+import type {
+  ImageElement,
+  ShapeType,
+  WhiteboardElement,
+} from "../types/whiteboard";
 import type { FormatTag } from "../utils/textFormat";
 import { cn } from "@/lib/utils";
 import {
@@ -45,6 +49,7 @@ export function WhiteboardCanvas(): JSX.Element {
   const {
     elements,
     setElements,
+    persistNow,
     undo,
     redo,
     canUndo,
@@ -98,11 +103,15 @@ export function WhiteboardCanvas(): JSX.Element {
       onPointerUp: panZoom.onPointerUp,
       onPointerLeave: panZoom.onPointerLeave,
     },
-    editingElementId
+    editingElementId,
+    persistNow
   );
 
-  const DEFAULT_SHAPE_WIDTH = 120;
-  const DEFAULT_SHAPE_HEIGHT = 80;
+  const DEFAULT_SHAPE_WIDTH = 180;
+  const DEFAULT_SHAPE_HEIGHT = 120;
+  const DEFAULT_IMAGE_MAX_SIZE = 400;
+
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const addTextAt = useCallback((x: number, y: number) => {
     const id = generateElementId();
@@ -121,16 +130,19 @@ export function WhiteboardCanvas(): JSX.Element {
   const addShapeAt = useCallback(
     (x: number, y: number, shapeType: ShapeType) => {
       const id = generateElementId();
+      const w = DEFAULT_SHAPE_WIDTH;
+      const h =
+        shapeType === "ellipse" ? DEFAULT_SHAPE_WIDTH : DEFAULT_SHAPE_HEIGHT;
       const shapeElement: WhiteboardElement = {
         id,
-        x: x - DEFAULT_SHAPE_WIDTH / 2,
-        y: y - DEFAULT_SHAPE_HEIGHT / 2,
+        x: x - w / 2,
+        y: y - h / 2,
         kind: "shape",
         shapeType,
-        width: DEFAULT_SHAPE_WIDTH,
-        height: DEFAULT_SHAPE_HEIGHT,
+        width: w,
+        height: h,
         color: "#000000",
-        filled: true,
+        filled: false,
       };
       setElements((prev) => [...prev, shapeElement]);
     },
@@ -164,6 +176,69 @@ export function WhiteboardCanvas(): JSX.Element {
     addShapeAt(x, y, "ellipse");
   }, [addShapeAt, centerWorld]);
 
+  const addImageAt = useCallback(
+    (x: number, y: number, src: string, imgWidth: number, imgHeight: number) => {
+      const id = generateElementId();
+      const maxDim = Math.max(imgWidth, imgHeight, 1);
+      const scale = Math.min(1, DEFAULT_IMAGE_MAX_SIZE / maxDim);
+      const w = Math.round(imgWidth * scale);
+      const h = Math.round(imgHeight * scale);
+      const imageElement: ImageElement = {
+        id,
+        x: x - w / 2,
+        y: y - h / 2,
+        kind: "image",
+        src,
+        width: w,
+        height: h,
+        naturalWidth: imgWidth,
+        naturalHeight: imgHeight,
+      };
+      setElements((prev) => [...prev, imageElement]);
+    },
+    [setElements]
+  );
+
+  const addImageFromFile = useCallback(
+    (file: File, worldX: number, worldY: number) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const src = reader.result;
+        if (typeof src !== "string") return;
+        const img = new window.Image();
+        img.onload = () => {
+          addImageAt(worldX, worldY, src, img.naturalWidth, img.naturalHeight);
+        };
+        img.onerror = () => {
+          console.error("[WhiteboardCanvas] Failed to load image dimensions");
+        };
+        img.src = src;
+      };
+      reader.onerror = () => {
+        console.error("[WhiteboardCanvas] Failed to read file");
+      };
+      reader.readAsDataURL(file);
+    },
+    [addImageAt]
+  );
+
+  const handleAddImageClick = useCallback(() => {
+    fileInputRef.current?.click();
+  }, []);
+
+  const handleFileChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const files = e.target.files;
+      if (files == null || files.length === 0) return;
+      const file = files[0];
+      if (file == null || !file.type.startsWith("image/")) return;
+      const { x, y } = centerWorld();
+      addImageFromFile(file, x, y);
+      e.target.value = "";
+    },
+    [addImageFromFile, centerWorld]
+  );
+
   const handleUpdateElementContent = useCallback((id: string, content: string) => {
     setElements((prev) =>
       prev.map((el) =>
@@ -196,6 +271,8 @@ export function WhiteboardCanvas(): JSX.Element {
     elementId: string;
     startWorld: { x: number; y: number };
     startBounds: ElementBounds;
+    /** Whether we have pushed pre-resize state to undo history (once per resize). */
+    historyPushed: boolean;
   } | null>(null);
 
   const handleResizeHandleDown = useCallback(
@@ -225,6 +302,7 @@ export function WhiteboardCanvas(): JSX.Element {
         elementId,
         startWorld: world,
         startBounds,
+        historyPushed: false,
       };
     },
     [
@@ -258,12 +336,28 @@ export function WhiteboardCanvas(): JSX.Element {
         if (world == null) return;
         const dx = world.x - state.startWorld.x;
         const dy = world.y - state.startWorld.y;
+        const modifiers = {
+          shiftKey: e.shiftKey,
+          ctrlKey: e.ctrlKey || e.metaKey,
+        };
         const next = resizeBoundsFromHandle(
           state.startBounds,
           state.handleId,
           dx,
-          dy
+          dy,
+          modifiers
         );
+        const moved =
+          next.x !== state.startBounds.x ||
+          next.y !== state.startBounds.y ||
+          next.width !== state.startBounds.width ||
+          next.height !== state.startBounds.height;
+        if (moved && !state.historyPushed) {
+          // Push pre-resize state to undo history. pushToPast ignores the updater
+          // return value and always pushes current to past.
+          setElements((prev) => prev, { pushToPast: true });
+          state.historyPushed = true;
+        }
         setElements((prev) =>
           prev.map((el) => {
             if (el.id !== state.elementId) return el;
@@ -285,8 +379,18 @@ export function WhiteboardCanvas(): JSX.Element {
                 height: next.height,
               };
             }
+            if (el.kind === "image") {
+              return {
+                ...el,
+                x: next.x,
+                y: next.y,
+                width: next.width,
+                height: next.height,
+              };
+            }
             return el;
-          })
+          }),
+        { skipHistory: true }
         );
       } catch (err) {
         console.error("[WhiteboardCanvas] resize move error", err);
@@ -308,7 +412,29 @@ export function WhiteboardCanvas(): JSX.Element {
   const clearResizeState = useCallback(() => {
     resizeStateRef.current = null;
     setIsResizing(false);
-  }, []);
+    persistNow();
+  }, [persistNow]);
+
+  const handleImageNaturalDimensions = useCallback(
+    (elementId: string, naturalWidth: number, naturalHeight: number) => {
+      if (
+        !Number.isFinite(naturalWidth) ||
+        !Number.isFinite(naturalHeight) ||
+        naturalWidth <= 0 ||
+        naturalHeight <= 0
+      ) {
+        return;
+      }
+      setElements((prev) =>
+        prev.map((el) => {
+          if (el.kind !== "image" || el.id !== elementId) return el;
+          if (el.naturalWidth != null && el.naturalHeight != null) return el;
+          return { ...el, naturalWidth, naturalHeight };
+        })
+      );
+    },
+    [setElements]
+  );
 
   const handleResizeHandleUp = clearResizeState;
   const handleErrorRecover = clearResizeState;
@@ -529,6 +655,110 @@ export function WhiteboardCanvas(): JSX.Element {
     canRedo,
   ]);
 
+  const handlePasteImage = useCallback(
+    (e: ClipboardEvent) => {
+      const data = e.clipboardData;
+      if (data == null) return;
+      const item = Array.from(data.items).find((i) =>
+        i.type.startsWith("image/")
+      );
+      if (item == null) return;
+      const file = item.getAsFile();
+      if (file == null) return;
+      const mousePos = lastMousePositionRef.current;
+      const container = panZoom.containerRef.current;
+      let pasteX: number;
+      let pasteY: number;
+      if (mousePos != null && container != null) {
+        const world = clientToWorld(
+          container,
+          mousePos.clientX,
+          mousePos.clientY,
+          size.width,
+          size.height,
+          panZoom.panX,
+          panZoom.panY,
+          panZoom.zoom
+        );
+        if (world != null) {
+          pasteX = world.x;
+          pasteY = world.y;
+        } else {
+          const { x, y } = centerWorld();
+          pasteX = x;
+          pasteY = y;
+        }
+      } else {
+        const { x, y } = centerWorld();
+        pasteX = x;
+        pasteY = y;
+      }
+      e.preventDefault();
+      addImageFromFile(file, pasteX, pasteY);
+    },
+    [addImageFromFile, centerWorld, panZoom, size]
+  );
+
+  const handleDropImage = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      const files = e.dataTransfer?.files;
+      if (files == null || files.length === 0) return;
+      const file = files[0];
+      if (file == null || !file.type.startsWith("image/")) return;
+      const container = panZoom.containerRef.current;
+      if (container == null) return;
+      const world = clientToWorld(
+        container,
+        e.clientX,
+        e.clientY,
+        size.width,
+        size.height,
+        panZoom.panX,
+        panZoom.panY,
+        panZoom.zoom
+      );
+      const { x, y } = world ?? centerWorld();
+      addImageFromFile(file, x, y);
+    },
+    [addImageFromFile, centerWorld, panZoom, size]
+  );
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    if (e.dataTransfer.types.includes("Files")) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "copy";
+    }
+  }, []);
+
+  useEffect(() => {
+    const onPaste = (e: ClipboardEvent): void => {
+      const target = e.target as HTMLElement;
+      const tag = target.tagName?.toLowerCase();
+      const editable =
+        tag === "input" ||
+        tag === "textarea" ||
+        target.isContentEditable ||
+        target.getAttribute?.("role") === "textbox";
+      if (editable) return;
+      if (editingElementId !== null) return;
+      /* Prefer internal whiteboard clipboard; don't paste image if we have copied elements. */
+      if (clipboardRef.current.length > 0) return;
+      const data = e.clipboardData;
+      if (data == null) return;
+      const hasImage = Array.from(data.items).some((i) =>
+        i.type.startsWith("image/")
+      );
+      if (hasImage) {
+        e.preventDefault();
+        handlePasteImage(e);
+      }
+    };
+    document.addEventListener("paste", onPaste, { capture: true });
+    return () =>
+      document.removeEventListener("paste", onPaste, { capture: true });
+  }, [editingElementId, handlePasteImage]);
+
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent): void => {
       const key = e.key.toLowerCase();
@@ -598,7 +828,17 @@ export function WhiteboardCanvas(): JSX.Element {
           elementSelection.isDragging && "is-dragging",
           isResizing && "is-resizing"
         )}
+        onDragOver={handleDragOver}
+        onDrop={handleDropImage}
       >
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          aria-hidden
+          onChange={handleFileChange}
+        />
         <WhiteboardToolbar
           undo={undo}
           redo={redo}
@@ -607,6 +847,7 @@ export function WhiteboardCanvas(): JSX.Element {
           onAddText={handleAddTextCenter}
           onAddRectangle={handleAddRectangleCenter}
           onAddEllipse={handleAddEllipseCenter}
+          onAddImage={handleAddImageClick}
         />
       <div ref={toolbarContainerRef}>
         <SelectionToolbar
@@ -650,6 +891,7 @@ export function WhiteboardCanvas(): JSX.Element {
         onResizeHandleDown={handleResizeHandleDown}
         onResizeHandleMove={handleResizeHandleMove}
         onResizeHandleUp={handleResizeHandleUp}
+        onImageNaturalDimensions={handleImageNaturalDimensions}
         isResizing={isResizing}
         toolbarContainerRef={toolbarContainerRef}
       />

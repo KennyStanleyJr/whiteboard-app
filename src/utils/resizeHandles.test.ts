@@ -53,6 +53,41 @@ describe("resizeBoundsFromHandle", () => {
     expect(result.width).toBeGreaterThanOrEqual(10);
     expect(result.height).toBeGreaterThanOrEqual(10);
   });
+
+  it("shiftKey keeps aspect ratio on se handle", () => {
+    const result = resizeBoundsFromHandle(
+      base,
+      "se",
+      20,
+      20,
+      { shiftKey: true }
+    );
+    expect(result.width / result.height).toBeCloseTo(base.width / base.height);
+  });
+
+  it("ctrlKey keeps center position on e handle", () => {
+    const centerX = base.x + base.width / 2;
+    const result = resizeBoundsFromHandle(base, "e", 40, 0, { ctrlKey: true });
+    expect(result.x + result.width / 2).toBeCloseTo(centerX);
+  });
+
+  it("shiftKey+ctrlKey: shiftKey takes precedence, ctrlKey center preservation is not applied", () => {
+    const resultShiftOnly = resizeBoundsFromHandle(
+      base,
+      "e",
+      40,
+      0,
+      { shiftKey: true }
+    );
+    const resultBoth = resizeBoundsFromHandle(
+      base,
+      "e",
+      40,
+      0,
+      { shiftKey: true, ctrlKey: true }
+    );
+    expect(resultBoth).toEqual(resultShiftOnly);
+  });
 });
 
 describe("RESIZE_HANDLE_IDS", () => {

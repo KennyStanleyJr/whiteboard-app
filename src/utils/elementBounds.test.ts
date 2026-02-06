@@ -7,7 +7,7 @@ import {
   TEXT_EDIT_WIDTH,
   TEXT_EDIT_HEIGHT,
 } from "./elementBounds";
-import type { TextElement } from "../types/whiteboard";
+import type { ImageElement, TextElement } from "../types/whiteboard";
 
 describe("sanitizeElementBounds", () => {
   it("returns finite values and enforces minimum size", () => {
@@ -91,6 +91,24 @@ describe("getElementBounds", () => {
     expect(Number.isFinite(result.y)).toBe(true);
     expect(result.width).toBeGreaterThanOrEqual(1);
     expect(result.height).toBeGreaterThanOrEqual(1);
+  });
+
+  it("uses width and height for image element", () => {
+    const imageEl: ImageElement = {
+      id: "i1",
+      kind: "image",
+      x: 0,
+      y: 0,
+      src: "data:image/png;base64,abc",
+      width: 200,
+      height: 150,
+    };
+    expect(getElementBounds(imageEl)).toEqual({
+      x: 0,
+      y: 0,
+      width: 200,
+      height: 150,
+    });
   });
 });
 

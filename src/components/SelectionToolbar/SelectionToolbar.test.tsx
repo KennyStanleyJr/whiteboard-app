@@ -1,7 +1,11 @@
 import { render, screen, fireEvent } from "@testing-library/react";
 import { vi } from "vitest";
 import { SelectionToolbar } from ".";
-import type { TextElement, WhiteboardElement } from "@/types/whiteboard";
+import type {
+  ImageElement,
+  TextElement,
+  WhiteboardElement,
+} from "@/types/whiteboard";
 
 /** Run the setElements updater from the first mock call with the given prev state. */
 function getNextElements(
@@ -406,6 +410,162 @@ describe("SelectionToolbar", () => {
     if (isTextElement(next[1]!)) {
       expect(next[1].content).toBe("<u>Y</u>");
     }
+  });
+
+  it("renders fill container button when image is selected", () => {
+    const imageEl: ImageElement = {
+      id: "img1",
+      kind: "image",
+      x: 0,
+      y: 0,
+      src: "data:image/png;base64,x",
+      width: 100,
+      height: 80,
+    };
+    const containerRef = createContainerRef();
+    render(
+      <SelectionToolbar
+        {...defaultProps}
+        containerRef={containerRef}
+        selectedElementIds={["img1"]}
+        elements={[imageEl]}
+        measuredBounds={{ img1: { x: 0, y: 0, width: 100, height: 80 } }}
+      />
+    );
+    expect(
+      screen.getByRole("button", {
+        name: /enable fill container|disable fill container/i,
+      })
+    ).toBeInTheDocument();
+  });
+
+  it("renders corner radius menu when image is selected and applies selection", () => {
+    const imageEl: ImageElement = {
+      id: "img1",
+      kind: "image",
+      x: 0,
+      y: 0,
+      src: "data:image/png;base64,x",
+      width: 100,
+      height: 80,
+    };
+    const setElements = vi.fn();
+    const containerRef = createContainerRef();
+    render(
+      <SelectionToolbar
+        {...defaultProps}
+        containerRef={containerRef}
+        setElements={setElements}
+        selectedElementIds={["img1"]}
+        elements={[imageEl]}
+        measuredBounds={{ img1: { x: 0, y: 0, width: 100, height: 80 } }}
+      />
+    );
+    const cornerBtn = screen.getByRole("button", { name: /corner radius/i });
+    expect(cornerBtn).toBeInTheDocument();
+    fireEvent.click(cornerBtn);
+    const smallOption = screen.getByRole("menuitem", {
+      name: /small rounded corners/i,
+    });
+    fireEvent.click(smallOption);
+    const next = getNextElements(setElements, [imageEl]);
+    expect(next[0]).toMatchObject({
+      kind: "image",
+      imageCornerRadius: "small",
+    });
+  });
+
+  it("applies full corner radius via menu", () => {
+    const imageEl: ImageElement = {
+      id: "img1",
+      kind: "image",
+      x: 0,
+      y: 0,
+      src: "data:image/png;base64,x",
+      width: 100,
+      height: 80,
+    };
+    const setElements = vi.fn();
+    const containerRef = createContainerRef();
+    render(
+      <SelectionToolbar
+        {...defaultProps}
+        containerRef={containerRef}
+        setElements={setElements}
+        selectedElementIds={["img1"]}
+        elements={[imageEl]}
+        measuredBounds={{ img1: { x: 0, y: 0, width: 100, height: 80 } }}
+      />
+    );
+    fireEvent.click(screen.getByRole("button", { name: /corner radius/i }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /rounded full/i }));
+    expect(getNextElements(setElements, [imageEl])[0]).toMatchObject({
+      imageCornerRadius: "full",
+    });
+  });
+
+  it("applies none corner radius via menu", () => {
+    const imageEl: ImageElement = {
+      id: "img1",
+      kind: "image",
+      x: 0,
+      y: 0,
+      src: "data:image/png;base64,x",
+      width: 100,
+      height: 80,
+      imageCornerRadius: "large",
+    };
+    const setElements = vi.fn();
+    const containerRef = createContainerRef();
+    render(
+      <SelectionToolbar
+        {...defaultProps}
+        containerRef={containerRef}
+        setElements={setElements}
+        selectedElementIds={["img1"]}
+        elements={[imageEl]}
+        measuredBounds={{ img1: { x: 0, y: 0, width: 100, height: 80 } }}
+      />
+    );
+    fireEvent.click(screen.getByRole("button", { name: /corner radius/i }));
+    fireEvent.click(
+      screen.getByRole("menuitem", { name: /no rounded corners/i })
+    );
+    expect(getNextElements(setElements, [imageEl])[0]).toMatchObject({
+      imageCornerRadius: "none",
+    });
+  });
+
+  it("toggles image imageFill when fill container button is clicked", () => {
+    const imageEl: ImageElement = {
+      id: "img1",
+      kind: "image",
+      x: 0,
+      y: 0,
+      src: "data:image/png;base64,x",
+      width: 100,
+      height: 80,
+    };
+    const setElements = vi.fn();
+    const containerRef = createContainerRef();
+    render(
+      <SelectionToolbar
+        {...defaultProps}
+        containerRef={containerRef}
+        setElements={setElements}
+        selectedElementIds={["img1"]}
+        elements={[imageEl]}
+        measuredBounds={{ img1: { x: 0, y: 0, width: 100, height: 80 } }}
+      />
+    );
+    const btn = screen.getByRole("button", {
+      name: /enable fill container|disable fill container/i,
+    });
+    fireEvent.click(btn);
+    expect(setElements).toHaveBeenCalled();
+    const next = getNextElements(setElements, [imageEl]);
+    expect(next).toHaveLength(1);
+    expect(next[0]).toMatchObject({ kind: "image", imageFill: true });
   });
 
   it("removes underline from all selected when all have it (multi-select)", () => {

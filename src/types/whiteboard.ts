@@ -1,4 +1,4 @@
-export type ElementKind = "text" | "shape";
+export type ElementKind = "text" | "shape" | "image";
 
 export type ShapeType = "rectangle" | "ellipse";
 
@@ -39,4 +39,21 @@ export interface ShapeElement extends BaseElement {
   filled?: boolean;
 }
 
-export type WhiteboardElement = TextElement | ShapeElement;
+export type ImageCornerRadius = "none" | "small" | "large" | "full";
+
+export interface ImageElement extends BaseElement {
+  kind: "image";
+  /** Data URL (base64) or blob URL for the image. */
+  src: string;
+  width: number;
+  height: number;
+  /** Natural dimensions for aspect-ratio-aware clipping when imageFill is false. */
+  naturalWidth?: number;
+  naturalHeight?: number;
+  /** When true, match container aspect ratio (fill); when false, preserve image aspect ratio (contain). */
+  imageFill?: boolean;
+  /** Corner radius style. */
+  imageCornerRadius?: ImageCornerRadius;
+}
+
+export type WhiteboardElement = TextElement | ShapeElement | ImageElement;

@@ -232,7 +232,8 @@ export function ElementSelectionOverlay({
         el.height > 0) ||
       (el.kind === "shape" &&
         el.width > 0 &&
-        el.height > 0);
+        el.height > 0) ||
+      (el.kind === "image" && el.width > 0 && el.height > 0);
     const rawBounds = hasExplicitSize
       ? getElementBounds(el, measuredBounds)
       : measuredBounds[id] ?? getElementBounds(el, measuredBounds);

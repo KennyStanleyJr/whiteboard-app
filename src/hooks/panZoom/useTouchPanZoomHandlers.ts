@@ -12,6 +12,8 @@ import {
 export interface TouchPanZoomOptions {
   minZoom: number;
   maxZoom: number;
+  onGestureEnd?: () => void;
+  interactingRef?: React.MutableRefObject<boolean>;
 }
 
 export function useTouchPanZoomHandlers(
@@ -26,26 +28,30 @@ export function useTouchPanZoomHandlers(
   handleTouchMove: (e: TouchEvent) => void;
   handleTouchEnd: (e: TouchEvent) => void;
 } {
-  const { minZoom, maxZoom } = options;
+  const { minZoom, maxZoom, onGestureEnd, interactingRef } = options;
   const touchGestureRef = useRef<TouchGestureState | null>(null);
 
-  const handleTouchStart = useCallback((e: TouchEvent) => {
-    if (e.touches.length !== 2) {
-      touchGestureRef.current = null;
-      return;
-    }
-    const { cx, cy, dist } = touchCenterAndDistance(e.touches);
-    const state = stateRef.current;
-    if (!state) return;
-    touchGestureRef.current = createTouchGestureState(
-      cx,
-      cy,
-      dist,
-      state.panX,
-      state.panY,
-      state.zoom
-    );
-  }, [stateRef]);
+  const handleTouchStart = useCallback(
+    (e: TouchEvent) => {
+      if (e.touches.length !== 2) {
+        touchGestureRef.current = null;
+        return;
+      }
+      if (interactingRef) interactingRef.current = true;
+      const { cx, cy, dist } = touchCenterAndDistance(e.touches);
+      const state = stateRef.current;
+      if (!state) return;
+      touchGestureRef.current = createTouchGestureState(
+        cx,
+        cy,
+        dist,
+        state.panX,
+        state.panY,
+        state.zoom
+      );
+    },
+    [stateRef, interactingRef]
+  );
 
   const handleTouchMove = useCallback(
     (e: TouchEvent) => {
@@ -64,24 +70,29 @@ export function useTouchPanZoomHandlers(
     [minZoom, maxZoom, setZoom, setPanX, setPanY]
   );
 
-  const handleTouchEnd = useCallback((e: TouchEvent) => {
-    const g = touchGestureRef.current;
-    if (g === null) return;
-    if (e.touches.length >= 2) return;
-    if (e.touches.length === 0) {
-      if (isTwoFingerTap(g, Date.now() - g.startTime)) {
-        containerRef.current?.dispatchEvent(
-          new MouseEvent("contextmenu", {
-            bubbles: true,
-            clientX: g.centerX,
-            clientY: g.centerY,
-            button: 2,
-          })
-        );
+  const handleTouchEnd = useCallback(
+    (e: TouchEvent) => {
+      const g = touchGestureRef.current;
+      if (g === null) return;
+      if (e.touches.length >= 2) return;
+      if (e.touches.length === 0) {
+        if (interactingRef) interactingRef.current = false;
+        if (isTwoFingerTap(g, Date.now() - g.startTime)) {
+          containerRef.current?.dispatchEvent(
+            new MouseEvent("contextmenu", {
+              bubbles: true,
+              clientX: g.centerX,
+              clientY: g.centerY,
+              button: 2,
+            })
+          );
+        }
+        touchGestureRef.current = null;
+        onGestureEnd?.();
       }
-      touchGestureRef.current = null;
-    }
-  }, [containerRef]);
+    },
+    [containerRef, interactingRef, onGestureEnd]
+  );
 
   return { handleTouchStart, handleTouchMove, handleTouchEnd };
 }

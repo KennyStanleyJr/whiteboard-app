@@ -15,6 +15,7 @@ import {
 import { applyFormatToContent, type FormatTag } from "../../utils/textFormat";
 import { DotGridPattern, PATTERN_ID } from "../DotGridPattern";
 import { ElementSelectionOverlay } from "./ElementSelectionOverlay";
+import { WhiteboardImageElement } from "./WhiteboardImageElement";
 import { WhiteboardShapeElement } from "./WhiteboardShapeElement";
 import { WhiteboardTextElement } from "./WhiteboardTextElement";
 
@@ -44,6 +45,11 @@ export interface WhiteboardCanvasSvgProps {
   onResizeHandleDown?: (handleId: ResizeHandleId, e: React.PointerEvent) => void;
   onResizeHandleMove?: (e: React.PointerEvent) => void;
   onResizeHandleUp?: (e: React.PointerEvent) => void;
+  onImageNaturalDimensions?: (
+    elementId: string,
+    naturalWidth: number,
+    naturalHeight: number
+  ) => void;
   /** When true, skip measurement-driven updates that could conflict with user resize. */
   isResizing?: boolean;
   /** If focus moves into this container (e.g. toolbar), do not end editing on blur. */
@@ -85,6 +91,7 @@ export const WhiteboardCanvasSvg = forwardRef<
     onResizeHandleDown,
     onResizeHandleMove,
     onResizeHandleUp,
+    onImageNaturalDimensions,
     isResizing = false,
     toolbarContainerRef,
   } = props;
@@ -290,6 +297,15 @@ export const WhiteboardCanvasSvg = forwardRef<
           }
           if (el.kind === "shape") {
             return <WhiteboardShapeElement key={el.id} element={el} />;
+          }
+          if (el.kind === "image") {
+            return (
+              <WhiteboardImageElement
+                key={el.id}
+                element={el}
+                onNaturalDimensions={onImageNaturalDimensions}
+              />
+            );
           }
           return null;
         })}

@@ -1,5 +1,5 @@
 import { Button } from "@/components/ui/button";
-import { Circle, Square, TypeIcon, Undo2, Redo2 } from "lucide-react";
+import { Circle, ImageIcon, Square, TypeIcon, Undo2, Redo2 } from "lucide-react";
 
 export interface WhiteboardToolbarProps {
   undo: () => void;
@@ -9,6 +9,7 @@ export interface WhiteboardToolbarProps {
   onAddText: () => void;
   onAddRectangle: () => void;
   onAddEllipse: () => void;
+  onAddImage: () => void;
 }
 
 const BUTTON_CLASS = "rounded-md";
@@ -23,6 +24,7 @@ export function WhiteboardToolbar({
   onAddText,
   onAddRectangle,
   onAddEllipse,
+  onAddImage,
 }: WhiteboardToolbarProps): JSX.Element {
   return (
     <div className={TOOLBAR_CONTAINER_CLASS}>
@@ -80,6 +82,16 @@ export function WhiteboardToolbar({
         aria-label="Add ellipse"
       >
         <Circle className="size-5" aria-hidden />
+      </Button>
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        className={BUTTON_CLASS}
+        onClick={onAddImage}
+        aria-label="Add image"
+      >
+        <ImageIcon className="size-5" aria-hidden />
       </Button>
     </div>
   );

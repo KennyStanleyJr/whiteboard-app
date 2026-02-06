@@ -70,6 +70,25 @@ describe("whiteboard API", () => {
       const result = await getWhiteboard();
       expect(result).toEqual(state);
     });
+
+    it("round-trips ImageElement with imageCornerRadius", async () => {
+      const state: WhiteboardState = {
+        elements: [
+          {
+            id: "img1",
+            kind: "image",
+            x: 0,
+            y: 0,
+            src: "data:image/png;base64,x",
+            width: 100,
+            height: 80,
+            imageCornerRadius: "large",
+          },
+        ],
+      };
+      await setWhiteboard(state);
+      expect(getWhiteboardSync()).toEqual(state);
+    });
   });
 
   describe("setWhiteboard", () => {

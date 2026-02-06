@@ -73,7 +73,7 @@ export function FontSizeControl({
           }}
         >
           <SelectTrigger
-            className="h-7 w-8 min-h-0 shrink-0 justify-center rounded-r-md rounded-l-none border-0 bg-transparent px-0 shadow-none focus:ring-0 [&_[data-slot=select-value]]:hidden [&_svg]:size-4 [&_svg]:shrink-0 [&_svg]:opacity-70"
+            className="h-7 w-6 min-h-0 shrink-0 justify-center rounded-r-md rounded-l-none border-0 bg-transparent px-0 shadow-none focus:ring-0 [&_[data-slot=select-value]]:hidden [&_svg]:size-3.5 [&_svg]:shrink-0 [&_svg]:opacity-70"
             aria-label="Font size presets"
           >
             <SelectValue placeholder="…" />
