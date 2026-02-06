@@ -1,16 +1,20 @@
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
-import { beforeEach, vi } from "vitest";
+import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
+import { beforeEach } from "vitest";
 import App from "./App";
 import { withQueryClient } from "@/test/utils";
+import { addBoard } from "./api/boards";
 
 describe("App", () => {
   beforeEach(() => {
     window.location.hash = "";
+    localStorage.clear();
   });
 
-  it("renders whiteboard header", () => {
+  it("renders whiteboard header with editable name input", () => {
     render(withQueryClient(<App />));
-    expect(screen.getByRole("heading", { name: /whiteboard/i })).toBeInTheDocument();
+    const nameInput = screen.getByPlaceholderText("Whiteboard name");
+    expect(nameInput).toBeInTheDocument();
+    expect(nameInput).toHaveValue("Whiteboard");
   });
 
   it("renders whiteboard canvas", () => {
@@ -43,9 +47,7 @@ describe("App", () => {
     expect(managementMain).toHaveAttribute("aria-hidden", "false");
   });
 
-  it("calls handler when creating a new whiteboard", async () => {
-    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
-
+  it("creates a new whiteboard when clicking New Whiteboard button", async () => {
     render(withQueryClient(<App />));
 
     const toggleButton = screen.getByRole("button", {
@@ -53,19 +55,21 @@ describe("App", () => {
     });
     fireEvent.click(toggleButton);
 
-    const createButton = await screen.findByRole("listitem", {
+    const createButton = await screen.findByRole("button", {
       name: /create new whiteboard/i,
     });
     fireEvent.click(createButton);
 
-    expect(logSpy).toHaveBeenCalledWith("Create new board");
+    await waitFor(() => {
+      expect(window.location.hash).toBe("");
+    });
 
-    logSpy.mockRestore();
+    // Should have navigated to canvas view (main is aria-hidden so use hidden: true)
+    const managementMain = screen.getByRole("main", { hidden: true });
+    expect(managementMain).not.toHaveClass("visible");
   });
 
   it("opens an existing board and closes management page", async () => {
-    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
-
     render(withQueryClient(<App />));
 
     const toggleButton = screen.getByRole("button", {
@@ -73,20 +77,128 @@ describe("App", () => {
     });
     fireEvent.click(toggleButton);
 
-    const boardItems = await screen.findAllByRole("listitem");
-    expect(boardItems).toHaveLength(1);
-
-    // Find the board card - it's now a div container, find the button inside
-    const boardText = screen.getByText("Whiteboard", { selector: "span" });
+    const boardText = await screen.findByText("Whiteboard", { selector: "span" });
     const boardButton = boardText.closest("button");
     expect(boardButton).toBeDefined();
     if (boardButton != null) {
       fireEvent.click(boardButton);
     }
 
-    expect(logSpy).toHaveBeenCalledWith("Open board board-1");
-    expect(window.location.hash).toBe("");
+    await waitFor(() => {
+      expect(window.location.hash).toBe("");
+    });
 
-    logSpy.mockRestore();
+    const managementMain = screen.getByRole("main", { hidden: true });
+    expect(managementMain).not.toHaveClass("visible");
+  });
+
+  it("shows delete confirmation dialog when clicking delete", async () => {
+    await addBoard("Other Board"); // two boards so delete opens dialog (last board cannot be deleted)
+    render(withQueryClient(<App />));
+
+    const toggleButton = screen.getByRole("button", {
+      name: /open whiteboard management/i,
+    });
+    fireEvent.click(toggleButton);
+
+    // Find board card and open menu (same pattern as "deletes board when confirming deletion")
+    const boardText = await screen.findByText("Whiteboard", { selector: "span" });
+    const card = boardText.closest(".board-card-wrapper");
+    expect(card).toBeDefined();
+    const menuButton = card?.querySelector('button[aria-label*="Menu"]') as HTMLElement;
+    expect(menuButton).toBeDefined();
+    fireEvent.click(menuButton);
+
+    const deleteMenuItem = await screen.findByRole("menuitem", {
+      name: /delete/i,
+    });
+    fireEvent.click(deleteMenuItem);
+
+    await waitFor(() => {
+      const dialog = screen.getByRole("dialog");
+      expect(dialog).toBeInTheDocument();
+      expect(screen.getByText(/delete whiteboard/i)).toBeInTheDocument();
+      expect(screen.getByText(/are you sure/i)).toBeInTheDocument();
+    });
+  });
+
+  it("cancels deletion when clicking Cancel in dialog", async () => {
+    await addBoard("Other Board"); // two boards so delete opens dialog
+    render(withQueryClient(<App />));
+
+    const toggleButton = screen.getByRole("button", {
+      name: /open whiteboard management/i,
+    });
+    fireEvent.click(toggleButton);
+
+    const boardText = await screen.findByText("Whiteboard", { selector: "span" });
+    const card = boardText.closest(".board-card-wrapper");
+    expect(card).toBeDefined();
+    const menuButton = card?.querySelector('button[aria-label*="Menu"]') as HTMLElement;
+    expect(menuButton).toBeDefined();
+    fireEvent.click(menuButton);
+
+    const deleteMenuItem = await screen.findByRole("menuitem", {
+      name: /delete/i,
+    });
+    fireEvent.click(deleteMenuItem);
+
+    await waitFor(() => {
+      expect(screen.getByRole("dialog")).toBeInTheDocument();
+    });
+    const dialog = screen.getByRole("dialog");
+    const cancelButton = within(dialog).getByRole("button", { name: /cancel/i });
+    fireEvent.click(cancelButton);
+
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
+
+    // Board should still exist
+    expect(screen.getByText("Whiteboard", { selector: "span" })).toBeInTheDocument();
+  });
+
+  it("deletes board when confirming deletion", async () => {
+    // Create a second board so we can delete one
+    await addBoard("Board to Delete");
+
+    render(withQueryClient(<App />));
+
+    const toggleButton = screen.getByRole("button", {
+      name: /open whiteboard management/i,
+    });
+    fireEvent.click(toggleButton);
+
+    // Find the board to delete
+    const boardToDelete = await screen.findByText("Board to Delete", { selector: "span" });
+    const card = boardToDelete.closest(".board-card-wrapper");
+    expect(card).toBeDefined();
+
+    // Open menu for that board
+    const menuButton = card?.querySelector('button[aria-label*="Menu"]') as HTMLElement;
+    expect(menuButton).toBeDefined();
+    fireEvent.click(menuButton);
+
+    // Click delete
+    const deleteMenuItem = await screen.findByRole("menuitem", {
+      name: /delete board to delete/i,
+    });
+    fireEvent.click(deleteMenuItem);
+
+    // Confirm deletion
+    await waitFor(() => {
+      expect(screen.getByRole("dialog")).toBeInTheDocument();
+    });
+
+    const confirmButton = screen.getByRole("button", { name: /^delete$/i });
+    fireEvent.click(confirmButton);
+
+    // Board should be removed
+    await waitFor(() => {
+      expect(screen.queryByText("Board to Delete", { selector: "span" })).not.toBeInTheDocument();
+    });
+
+    // Dialog should be closed
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 });

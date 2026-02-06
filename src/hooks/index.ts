@@ -9,6 +9,6 @@ export {
 } from "./selection";
 export {
   useWhiteboardQuery,
-  WHITEBOARD_QUERY_KEY,
+  getWhiteboardQueryKey,
 } from "./useWhiteboard";
 export { useUndoRedo } from "./useUndoRedo";

@@ -124,6 +124,7 @@ export const SelectionToolbar = forwardRef<
   const [elementActionsMenuOpen, setElementActionsMenuOpen] = useState(false);
   const [pickerColor, setPickerColor] = useState("#000000");
   const worldAnchorRef = useRef<{ centerX: number; topY: number } | null>(null);
+  const lastPositionRef = useRef<{ left: number; top: number } | null>(null);
 
   const selectedTextElements = elements.filter(
     (el): el is TextElement =>
@@ -375,6 +376,7 @@ export const SelectionToolbar = forwardRef<
       viewWidth <= 0 ||
       viewHeight <= 0
     ) {
+      lastPositionRef.current = null;
       setPosition(null);
       return;
     }
@@ -386,6 +388,7 @@ export const SelectionToolbar = forwardRef<
     }
     const union = unionBounds(boundsList);
     if (union == null) {
+      lastPositionRef.current = null;
       setPosition(null);
       return;
     }
@@ -403,15 +406,26 @@ export const SelectionToolbar = forwardRef<
       zoom
     );
     if (client == null) {
+      lastPositionRef.current = null;
       setPosition(null);
       return;
     }
     const toolbarEl = toolbarRef.current;
     const toolbarHeight = toolbarEl?.getBoundingClientRect().height ?? 48;
-    setPosition({
+    const newPosition = {
       left: client.x,
       top: client.y - toolbarHeight - TOOLBAR_OFFSET_PX,
-    });
+    };
+    // Only update position if it actually changed to prevent infinite loops
+    const lastPos = lastPositionRef.current;
+    if (
+      lastPos == null ||
+      Math.abs(lastPos.left - newPosition.left) > 0.5 ||
+      Math.abs(lastPos.top - newPosition.top) > 0.5
+    ) {
+      lastPositionRef.current = newPosition;
+      setPosition(newPosition);
+    }
   }, [
     selectedElementIds,
     elements,
@@ -517,6 +531,41 @@ export const SelectionToolbar = forwardRef<
       setElements((prev) => prev.filter((el) => !ids.has(el.id)));
     }
   };
+
+  const handleSendToBack = (): void => {
+    const ids = new Set(selectedElementIds);
+    setElements((prev) => {
+      const selected: WhiteboardElement[] = [];
+      const unselected: WhiteboardElement[] = [];
+      for (const el of prev) {
+        if (ids.has(el.id)) {
+          selected.push(el);
+        } else {
+          unselected.push(el);
+        }
+      }
+      // Selected elements go to the beginning (back)
+      return [...selected, ...unselected];
+    });
+  };
+
+  const handleSendToFront = (): void => {
+    const ids = new Set(selectedElementIds);
+    setElements((prev) => {
+      const selected: WhiteboardElement[] = [];
+      const unselected: WhiteboardElement[] = [];
+      for (const el of prev) {
+        if (ids.has(el.id)) {
+          selected.push(el);
+        } else {
+          unselected.push(el);
+        }
+      }
+      // Selected elements go to the end (front)
+      return [...unselected, ...selected];
+    });
+  };
+
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>): void => {
     const raw = e.target.value;
@@ -717,6 +766,8 @@ export const SelectionToolbar = forwardRef<
         onCopy={onCopy ?? (() => {})}
         onDuplicate={onDuplicate ?? (() => {})}
         onDelete={handleDeleteSelected}
+        onSendToBack={handleSendToBack}
+        onSendToFront={handleSendToFront}
         menuOpen={elementActionsMenuOpen}
         setMenuOpen={setElementActionsMenuOpen}
         menuRef={elementActionsMenuRef}

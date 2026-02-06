@@ -4,12 +4,15 @@ import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   useWhiteboardQuery,
-  WHITEBOARD_QUERY_KEY,
+  getWhiteboardQueryKey,
 } from "./useWhiteboard";
 import * as whiteboardApi from "@/api/whiteboard";
+import { getCurrentBoardIdSync } from "@/api/boards";
 import type { TextElement } from "@/types/whiteboard";
 
-const STORAGE_KEY = "whiteboard-app-state";
+function currentBoardStorageKey(): string {
+  return whiteboardApi.getStorageKey(getCurrentBoardIdSync());
+}
 
 function createWrapper(): {
   wrapper: ({ children }: { children: ReactNode }) => JSX.Element;
@@ -26,7 +29,7 @@ function createWrapper(): {
 
 describe("useWhiteboardQuery", () => {
   beforeEach(() => {
-    localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(currentBoardStorageKey());
     vi.restoreAllMocks();
   });
 
@@ -50,7 +53,7 @@ describe("useWhiteboardQuery", () => {
       },
     ];
     localStorage.setItem(
-      STORAGE_KEY,
+      currentBoardStorageKey(),
       JSON.stringify({ elements: stored })
     );
 
@@ -85,14 +88,20 @@ describe("useWhiteboardQuery", () => {
       result.current.setElements([newElement]);
     });
 
-    const cached = queryClient.getQueryData<{ elements: TextElement[] }>(WHITEBOARD_QUERY_KEY);
+    const boardId = getCurrentBoardIdSync();
+    const queryKey = getWhiteboardQueryKey(boardId);
+    const cached = queryClient.getQueryData<{ elements: TextElement[] }>(queryKey);
     expect(cached?.elements).toHaveLength(1);
     expect(cached?.elements[0]).toMatchObject(newElement);
 
     await act(async () => {
       await new Promise((r) => setTimeout(r, 300));
     });
-    expect(setWhiteboardSpy).toHaveBeenCalledWith({ elements: [newElement] });
+    // Hook calls setWhiteboard(state, boardId); accept either one or two args
+    expect(setWhiteboardSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ elements: [newElement] }),
+      expect.any(String)
+    );
   });
 
   it("setElements with updater function applies to previous state and calls setWhiteboard", async () => {
@@ -101,7 +110,7 @@ describe("useWhiteboardQuery", () => {
     const initial: TextElement[] = [
       { id: "a", kind: "text", x: 0, y: 0, content: "A" },
     ];
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ elements: initial }));
+    localStorage.setItem(currentBoardStorageKey(), JSON.stringify({ elements: initial }));
 
     const { wrapper, queryClient } = createWrapper();
     const { result } = renderHook(() => useWhiteboardQuery(), { wrapper });
@@ -113,7 +122,9 @@ describe("useWhiteboardQuery", () => {
       ]);
     });
 
-    const cached = queryClient.getQueryData<{ elements: TextElement[] }>(WHITEBOARD_QUERY_KEY);
+    const boardId = getCurrentBoardIdSync();
+    const queryKey = getWhiteboardQueryKey(boardId);
+    const cached = queryClient.getQueryData<{ elements: TextElement[] }>(queryKey);
     expect(cached?.elements).toHaveLength(2);
     expect(cached?.elements[0]?.content).toBe("A");
     expect(cached?.elements[1]?.content).toBe("B");
@@ -129,8 +140,10 @@ describe("useWhiteboardQuery", () => {
     expect(state?.elements[1]).toMatchObject({ content: "B" });
   });
 
-  it("exports WHITEBOARD_QUERY_KEY for cache access", () => {
-    expect(WHITEBOARD_QUERY_KEY).toEqual(["whiteboard"]);
+  it("exports getWhiteboardQueryKey for cache access", () => {
+    const boardId = "test-board";
+    const queryKey = getWhiteboardQueryKey(boardId);
+    expect(queryKey).toEqual(["whiteboard", "test-board"]);
   });
 
   it("provides undo and redo functionality", () => {
@@ -149,7 +162,7 @@ describe("useWhiteboardQuery", () => {
     const initial: TextElement[] = [
       { id: "a", kind: "text", x: 0, y: 0, content: "A" },
     ];
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ elements: initial }));
+    localStorage.setItem(currentBoardStorageKey(), JSON.stringify({ elements: initial }));
 
     const { wrapper } = createWrapper();
     const { result } = renderHook(() => useWhiteboardQuery(), { wrapper });
@@ -184,7 +197,7 @@ describe("useWhiteboardQuery", () => {
     const initial: TextElement[] = [
       { id: "a", kind: "text", x: 0, y: 0, content: "A" },
     ];
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ elements: initial }));
+    localStorage.setItem(currentBoardStorageKey(), JSON.stringify({ elements: initial }));
 
     const { wrapper } = createWrapper();
     const { result } = renderHook(() => useWhiteboardQuery(), { wrapper });
@@ -223,7 +236,7 @@ describe("useWhiteboardQuery", () => {
     const initial: TextElement[] = [
       { id: "a", kind: "text", x: 0, y: 0, content: "A" },
     ];
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ elements: initial }));
+    localStorage.setItem(currentBoardStorageKey(), JSON.stringify({ elements: initial }));
 
     const { wrapper } = createWrapper();
     const { result } = renderHook(() => useWhiteboardQuery(), { wrapper });
@@ -267,7 +280,7 @@ describe("useWhiteboardQuery", () => {
     const initial: TextElement[] = [
       { id: "a", kind: "text", x: 0, y: 0, content: "A" },
     ];
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ elements: initial }));
+    localStorage.setItem(currentBoardStorageKey(), JSON.stringify({ elements: initial }));
 
     const { wrapper } = createWrapper();
     const { result } = renderHook(() => useWhiteboardQuery(), { wrapper });

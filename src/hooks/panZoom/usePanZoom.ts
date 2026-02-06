@@ -1,11 +1,12 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { MAX_ZOOM, MIN_ZOOM, type WheelData, ZOOM_SENSITIVITY } from "./panZoomUtils";
 import { useRightButtonPanHandlers } from "./useRightButtonPanHandlers";
 import { useTouchPanZoomHandlers } from "./useTouchPanZoomHandlers";
 import { useWheelZoomHandlers } from "./useWheelZoomHandlers";
 import { getWhiteboardSync, setWhiteboard, type WhiteboardState } from "@/api/whiteboard";
-import { WHITEBOARD_QUERY_KEY } from "@/hooks/useWhiteboard";
+import { getWhiteboardQueryKey } from "@/hooks/useWhiteboard";
+import { getCurrentBoardIdSync } from "@/api/boards";
 
 export interface PanZoomState {
   panX: number;
@@ -17,6 +18,7 @@ export interface UsePanZoomOptions {
   minZoom?: number;
   maxZoom?: number;
   zoomSensitivity?: number;
+  boardId?: string;
 }
 
 export type { WheelData } from "./panZoomUtils";
@@ -36,18 +38,20 @@ export interface UsePanZoomReturn extends PanZoomState {
   containerRef: React.RefObject<HTMLElement | null>;
 }
 
-function getInitialPanZoom(): PanZoomState {
-  const stored = getWhiteboardSync();
+function getInitialPanZoom(boardId?: string): PanZoomState {
+  const stored = getWhiteboardSync(boardId);
   return stored.panZoom ?? { panX: 0, panY: 0, zoom: 1 };
 }
 
 export function usePanZoom(options: UsePanZoomOptions = {}): UsePanZoomReturn {
-  const { minZoom = MIN_ZOOM, maxZoom = MAX_ZOOM, zoomSensitivity = ZOOM_SENSITIVITY } = options;
+  const { minZoom = MIN_ZOOM, maxZoom = MAX_ZOOM, zoomSensitivity = ZOOM_SENSITIVITY, boardId } = options;
   const queryClient = useQueryClient();
+  const currentBoardId = boardId ?? getCurrentBoardIdSync();
+  const queryKey = useMemo(() => getWhiteboardQueryKey(currentBoardId), [currentBoardId]);
   let initialPanZoom: PanZoomState | null = null;
   const getInitial = (): PanZoomState => {
     if (initialPanZoom == null) {
-      initialPanZoom = getInitialPanZoom();
+      initialPanZoom = getInitialPanZoom(currentBoardId);
     }
     return initialPanZoom;
   };
@@ -59,6 +63,8 @@ export function usePanZoom(options: UsePanZoomOptions = {}): UsePanZoomReturn {
   const stateRef = useRef({ panX: 0, panY: 0, zoom: 1 });
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const interactingRef = useRef(false);
+  const lastBoardIdRef = useRef<string>(currentBoardId);
+  const persistBoardIdRef = useRef<string>(currentBoardId);
   stateRef.current = { panX, panY, zoom };
 
   const persistPanZoom = useCallback(() => {
@@ -67,33 +73,73 @@ export function usePanZoom(options: UsePanZoomOptions = {}): UsePanZoomReturn {
       saveTimeoutRef.current = null;
     }
     const { panX: px, panY: py, zoom: z } = stateRef.current;
-    const current = getWhiteboardSync();
+    const boardIdToPersist = persistBoardIdRef.current;
+    const current = getWhiteboardSync(boardIdToPersist);
     const newState: WhiteboardState = {
       ...current,
       panZoom: { panX: px, panY: py, zoom: z },
     };
-    queryClient.setQueryData(WHITEBOARD_QUERY_KEY, newState);
-    setWhiteboard(newState).catch((err) => {
+    const persistQueryKey = getWhiteboardQueryKey(boardIdToPersist);
+    queryClient.setQueryData(persistQueryKey, newState);
+    setWhiteboard(newState, boardIdToPersist).catch((err) => {
       console.error("[usePanZoom] persist failed", err);
     });
   }, [queryClient]);
+
+  // Reset pan/zoom when boardId changes
+  useEffect(() => {
+    if (lastBoardIdRef.current !== currentBoardId) {
+      // Cancel any pending persist operations for the old board
+      if (saveTimeoutRef.current != null) {
+        clearTimeout(saveTimeoutRef.current);
+        saveTimeoutRef.current = null;
+      }
+      // Persist the old board's panZoom before switching
+      const oldBoardId = lastBoardIdRef.current;
+      const oldPanZoom = stateRef.current;
+      const oldState = getWhiteboardSync(oldBoardId);
+      const oldStateToPersist: WhiteboardState = {
+        ...oldState,
+        panZoom: { panX: oldPanZoom.panX, panY: oldPanZoom.panY, zoom: oldPanZoom.zoom },
+      };
+      setWhiteboard(oldStateToPersist, oldBoardId).catch((err) => {
+        console.error("[usePanZoom] persist old board failed", err);
+      });
+      
+      lastBoardIdRef.current = currentBoardId;
+      persistBoardIdRef.current = currentBoardId;
+      // Load the new board's panZoom
+      const newPanZoom = getInitialPanZoom(currentBoardId);
+      setPanX(newPanZoom.panX);
+      setPanY(newPanZoom.panY);
+      setZoom(newPanZoom.zoom);
+    }
+  }, [currentBoardId]);
 
   useEffect(() => {
     if (interactingRef.current) return;
     if (saveTimeoutRef.current != null) {
       clearTimeout(saveTimeoutRef.current);
     }
+    // Store the boardId when setting up the timeout
+    persistBoardIdRef.current = currentBoardId;
     saveTimeoutRef.current = setTimeout(() => {
       saveTimeoutRef.current = null;
-      const current = getWhiteboardSync();
-      const newState: WhiteboardState = {
-        ...current,
-        panZoom: { panX, panY, zoom },
-      };
-      queryClient.setQueryData(WHITEBOARD_QUERY_KEY, newState);
-      setWhiteboard(newState).catch((err) => {
-        console.error("[usePanZoom] persist failed", err);
-      });
+      // Use the boardId from when the timeout was set up
+      const boardIdToPersist = persistBoardIdRef.current;
+      // Only persist if we're still on the same board
+      if (boardIdToPersist === currentBoardId) {
+        const current = getWhiteboardSync(boardIdToPersist);
+        const newState: WhiteboardState = {
+          ...current,
+          panZoom: { panX, panY, zoom },
+        };
+        const persistQueryKey = getWhiteboardQueryKey(boardIdToPersist);
+        queryClient.setQueryData(persistQueryKey, newState);
+        setWhiteboard(newState, boardIdToPersist).catch((err) => {
+          console.error("[usePanZoom] persist failed", err);
+        });
+      }
     }, 100);
     return () => {
       if (saveTimeoutRef.current != null) {
@@ -101,22 +147,25 @@ export function usePanZoom(options: UsePanZoomOptions = {}): UsePanZoomReturn {
         saveTimeoutRef.current = null;
       }
     };
-  }, [panX, panY, zoom, queryClient]);
+  }, [panX, panY, zoom, queryClient, queryKey, currentBoardId]);
 
   useEffect(() => {
     return () => {
+      // On unmount, persist using the boardId from when this effect was set up
+      const boardIdToPersist = persistBoardIdRef.current;
       const { panX: px, panY: py, zoom: z } = stateRef.current;
-      const current = getWhiteboardSync();
+      const current = getWhiteboardSync(boardIdToPersist);
       const newState: WhiteboardState = {
         ...current,
         panZoom: { panX: px, panY: py, zoom: z },
       };
-      queryClient.setQueryData(WHITEBOARD_QUERY_KEY, newState);
-      setWhiteboard(newState).catch((err) => {
+      const persistQueryKey = getWhiteboardQueryKey(boardIdToPersist);
+      queryClient.setQueryData(persistQueryKey, newState);
+      setWhiteboard(newState, boardIdToPersist).catch((err) => {
         console.error("[usePanZoom] persist failed on unmount", err);
       });
     };
-  }, [queryClient]);
+  }, [queryClient, queryKey, currentBoardId]);
 
   const wheelOpts = { minZoom, maxZoom, zoomSensitivity };
   const wheel = useWheelZoomHandlers(

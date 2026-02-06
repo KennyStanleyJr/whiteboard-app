@@ -3,6 +3,8 @@
   position: fixed;
   inset: 0;
   z-index: 100;
+  overflow: visible;
+  clip-path: none;
   transition:
     opacity 200ms ease-out,
     visibility 0s linear 200ms;
@@ -84,6 +86,14 @@
   background-color: var(--toolbar-hover-bg);
   color: var(--toolbar-hover-fg);
   border-radius: 0.5rem;
+}
+
+/* Board card wrapper - sized to allow scale transform without clipping */
+.board-card-wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: visible;
 }
 
 .whiteboard-canvas {

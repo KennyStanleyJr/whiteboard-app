@@ -1,16 +1,23 @@
 import { beforeEach, describe, expect, it } from "vitest";
+import { getCurrentBoardIdSync } from "./boards";
 import {
+  getStorageKey,
   getWhiteboard,
   getWhiteboardSync,
   setWhiteboard,
   type WhiteboardState,
 } from "./whiteboard";
 
-const STORAGE_KEY = "whiteboard-app-state";
+const LEGACY_STORAGE_KEY = "whiteboard-app-state";
+
+function currentBoardStorageKey(): string {
+  return getStorageKey(getCurrentBoardIdSync());
+}
 
 describe("whiteboard API", () => {
   beforeEach(() => {
-    localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(LEGACY_STORAGE_KEY);
+    localStorage.removeItem(currentBoardStorageKey());
   });
 
   describe("getWhiteboardSync", () => {
@@ -29,27 +36,27 @@ describe("whiteboard API", () => {
           { id: "a", kind: "text", x: 0, y: 0, content: "Hi" },
         ],
       };
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      localStorage.setItem(currentBoardStorageKey(), JSON.stringify(state));
       expect(getWhiteboardSync()).toEqual(state);
     });
 
     it("returns empty elements when stored value is null string", () => {
-      localStorage.setItem(STORAGE_KEY, "null");
+      localStorage.setItem(currentBoardStorageKey(), "null");
       expect(getWhiteboardSync()).toEqual({ elements: [] });
     });
 
     it("returns empty elements when stored value is invalid JSON", () => {
-      localStorage.setItem(STORAGE_KEY, "not json {");
+      localStorage.setItem(currentBoardStorageKey(), "not json {");
       expect(getWhiteboardSync()).toEqual({ elements: [] });
     });
 
     it("returns empty elements when parsed object has no elements array", () => {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ foo: 1 }));
+      localStorage.setItem(currentBoardStorageKey(), JSON.stringify({ foo: 1 }));
       expect(getWhiteboardSync()).toEqual({ elements: [] });
     });
 
     it("returns empty elements when parsed value is empty array", () => {
-      localStorage.setItem(STORAGE_KEY, "[]");
+      localStorage.setItem(currentBoardStorageKey(), "[]");
       expect(getWhiteboardSync()).toEqual({ elements: [] });
     });
   });
@@ -66,7 +73,7 @@ describe("whiteboard API", () => {
           { id: "b", kind: "text", x: 10, y: 20, content: "Hello" },
         ],
       };
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      localStorage.setItem(currentBoardStorageKey(), JSON.stringify(state));
       const result = await getWhiteboard();
       expect(result).toEqual(state);
     });

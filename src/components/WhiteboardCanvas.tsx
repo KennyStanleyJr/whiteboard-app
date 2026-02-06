@@ -46,8 +46,12 @@ const FORMAT_CMD_TO_TAG: Record<string, FormatTag> = {
   underline: "u",
 };
 
-export function WhiteboardCanvas(): JSX.Element {
-  const panZoom = usePanZoom();
+export interface WhiteboardCanvasProps {
+  boardId?: string;
+}
+
+export function WhiteboardCanvas({ boardId }: WhiteboardCanvasProps = {}): JSX.Element {
+  const panZoom = usePanZoom({ boardId });
   const size = useCanvasSize(panZoom.containerRef);
   const {
     elements,
@@ -57,7 +61,7 @@ export function WhiteboardCanvas(): JSX.Element {
     redo,
     canUndo,
     canRedo,
-  } = useWhiteboardQuery();
+  } = useWhiteboardQuery(boardId);
   const [editingElementId, setEditingElementId] = useState<string | null>(null);
   const [measuredBounds, setMeasuredBounds] = useState<
     Record<string, ElementBounds>
@@ -65,6 +69,16 @@ export function WhiteboardCanvas(): JSX.Element {
   const canvasSvgRef = useRef<WhiteboardCanvasSvgHandle | null>(null);
   const toolbarContainerRef = useRef<HTMLDivElement | null>(null);
   const toolbarRef = useRef<SelectionToolbarHandle | null>(null);
+  const lastBoardIdRef = useRef<string | undefined>(boardId);
+
+  // Reset measuredBounds when boardId changes
+  useEffect(() => {
+    if (lastBoardIdRef.current !== boardId) {
+      lastBoardIdRef.current = boardId;
+      setMeasuredBounds({});
+      setEditingElementId(null);
+    }
+  }, [boardId]);
 
   const handleMeasuredBoundsChange = useCallback(
     (next: Record<string, ElementBounds>) => {
@@ -551,6 +565,48 @@ export function WhiteboardCanvas(): JSX.Element {
     elementSelection.setSelectedElementIds(newIds);
   }, [setElements, elementSelection, panZoom, size]);
 
+  const handleMoveUp = useCallback(() => {
+    const ids = new Set(elementSelection.selectedElementIds);
+    if (ids.size === 0) return;
+    setElements((prev) => {
+      const result = [...prev];
+      // Move selected elements one position forward (toward end)
+      for (let i = result.length - 1; i >= 0; i -= 1) {
+        const current = result[i];
+        if (current != null && ids.has(current.id)) {
+          // If not already at the end, swap with next element
+          const next = result[i + 1];
+          if (i < result.length - 1 && next != null && !ids.has(next.id)) {
+            result[i] = next;
+            result[i + 1] = current;
+          }
+        }
+      }
+      return result;
+    });
+  }, [elementSelection.selectedElementIds, setElements]);
+
+  const handleMoveDown = useCallback(() => {
+    const ids = new Set(elementSelection.selectedElementIds);
+    if (ids.size === 0) return;
+    setElements((prev) => {
+      const result = [...prev];
+      // Move selected elements one position backward (toward beginning)
+      for (let i = 0; i < result.length; i += 1) {
+        const current = result[i];
+        if (current != null && ids.has(current.id)) {
+          // If not already at the beginning, swap with previous element
+          const prev = result[i - 1];
+          if (i > 0 && prev != null && !ids.has(prev.id)) {
+            result[i] = prev;
+            result[i - 1] = current;
+          }
+        }
+      }
+      return result;
+    });
+  }, [elementSelection.selectedElementIds, setElements]);
+
   const handleDuplicateSelected = useCallback(() => {
     const ids = new Set(selectedIdsRef.current);
     if (ids.size === 0) return;
@@ -669,7 +725,20 @@ export function WhiteboardCanvas(): JSX.Element {
     document.addEventListener("keydown", onKeyDown, { capture: true });
     return () =>
       document.removeEventListener("keydown", onKeyDown, { capture: true });
-  }, [editingElementId, handleDeleteSelected]);
+  }, [
+    editingElementId,
+    handleDeleteSelected,
+    handleCutSelected,
+    handleCopySelected,
+    handlePaste,
+    handleDuplicateSelected,
+    handleMoveUp,
+    handleMoveDown,
+    undo,
+    redo,
+    canUndo,
+    canRedo,
+  ]);
 
   useEffect(() => {
     const onMouseMove = (e: MouseEvent): void => {
@@ -689,8 +758,10 @@ export function WhiteboardCanvas(): JSX.Element {
       const isCopy = (e.key === "c" || e.key === "C") && (e.ctrlKey || e.metaKey);
       const isPaste = (e.key === "v" || e.key === "V") && (e.ctrlKey || e.metaKey);
       const isDuplicate = (e.key === "d" || e.key === "D") && (e.ctrlKey || e.metaKey);
+      const isMoveUp = e.key === "]" && (e.ctrlKey || e.metaKey);
+      const isMoveDown = e.key === "[" && (e.ctrlKey || e.metaKey);
       
-      if (!isUndo && !isRedo && !isCut && !isCopy && !isPaste && !isDuplicate) return;
+      if (!isUndo && !isRedo && !isCut && !isCopy && !isPaste && !isDuplicate && !isMoveUp && !isMoveDown) return;
       
       const target = e.target as HTMLElement;
       const tag = target.tagName?.toLowerCase();
@@ -732,6 +803,16 @@ export function WhiteboardCanvas(): JSX.Element {
         if (editingElementId !== null) return;
         e.preventDefault();
         handleDuplicateSelected();
+      } else if (isMoveUp) {
+        if (selectedIdsRef.current.length === 0) return;
+        if (editingElementId !== null) return;
+        e.preventDefault();
+        handleMoveUp();
+      } else if (isMoveDown) {
+        if (selectedIdsRef.current.length === 0) return;
+        if (editingElementId !== null) return;
+        e.preventDefault();
+        handleMoveDown();
       }
     };
     document.addEventListener("keydown", onKeyDown, { capture: true });
@@ -743,6 +824,8 @@ export function WhiteboardCanvas(): JSX.Element {
     handleCopySelected,
     handlePaste,
     handleDuplicateSelected,
+    handleMoveUp,
+    handleMoveDown,
     undo,
     redo,
     canUndo,

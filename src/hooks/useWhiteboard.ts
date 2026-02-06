@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, type SetStateAction } from "react";
+import { useCallback, useEffect, useMemo, useRef, type SetStateAction } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useQuery } from "@tanstack/react-query";
 import type { WhiteboardElement } from "@/types/whiteboard";
@@ -9,12 +9,15 @@ import {
   type WhiteboardState,
 } from "@/api/whiteboard";
 import { useUndoRedo } from "./useUndoRedo";
+import { getCurrentBoardIdSync } from "@/api/boards";
 
-export const WHITEBOARD_QUERY_KEY = ["whiteboard"] as const;
+export function getWhiteboardQueryKey(boardId: string): readonly [string, string] {
+  return ["whiteboard", boardId] as const;
+}
 
 import type { SetElementsOptions } from "./useUndoRedo";
 
-export function useWhiteboardQuery(): {
+export function useWhiteboardQuery(boardId?: string): {
   elements: WhiteboardElement[];
   setElements: (
     action: SetStateAction<WhiteboardElement[]>,
@@ -28,10 +31,12 @@ export function useWhiteboardQuery(): {
   canRedo: boolean;
 } {
   const queryClient = useQueryClient();
+  const currentBoardId = boardId ?? getCurrentBoardIdSync();
+  const queryKey = useMemo(() => getWhiteboardQueryKey(currentBoardId), [currentBoardId]);
   const { data, isPending } = useQuery({
-    queryKey: WHITEBOARD_QUERY_KEY,
-    queryFn: getWhiteboard,
-    initialData: getWhiteboardSync,
+    queryKey,
+    queryFn: () => getWhiteboard(currentBoardId),
+    initialData: () => getWhiteboardSync(currentBoardId),
   });
 
   const initialElements = data?.elements ?? [];
@@ -41,8 +46,49 @@ export function useWhiteboardQuery(): {
   const persistTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const skipPersistRef = useRef(false);
   const isExternalUpdateRef = useRef(false);
+  const lastBoardIdRef = useRef<string>(currentBoardId);
+  const persistBoardIdRef = useRef<string>(currentBoardId);
 
   const PERSIST_DEBOUNCE_MS = 250;
+
+  // Reset undo/redo state when boardId changes
+  useEffect(() => {
+    if (lastBoardIdRef.current !== currentBoardId) {
+      // Cancel any pending persist operations for the old board
+      if (persistTimeoutRef.current != null) {
+        clearTimeout(persistTimeoutRef.current);
+        persistTimeoutRef.current = null;
+      }
+      // Persist the old board's state before switching (if there are pending changes)
+      const oldBoardId = lastBoardIdRef.current;
+      const oldQueryKey = getWhiteboardQueryKey(oldBoardId);
+      const oldPendingElements = pendingElementsRef.current;
+      const oldState = queryClient.getQueryData<WhiteboardState>(oldQueryKey);
+      if (oldState != null) {
+        const oldStateToPersist: WhiteboardState = {
+          elements: oldPendingElements,
+          panZoom: oldState.panZoom,
+        };
+        // Only persist if elements actually changed
+        const oldStateStr = JSON.stringify(oldState.elements);
+        const oldPendingStr = JSON.stringify(oldPendingElements);
+        if (oldStateStr !== oldPendingStr) {
+          setWhiteboard(oldStateToPersist, oldBoardId).catch((err) => {
+            console.error("[useWhiteboard] persist old board failed", err);
+          });
+        }
+      }
+      
+      lastBoardIdRef.current = currentBoardId;
+      persistBoardIdRef.current = currentBoardId;
+      const queryElements = data?.elements ?? [];
+      isExternalUpdateRef.current = true;
+      undoRedo.setElements(queryElements);
+      lastSyncedRef.current = JSON.stringify(queryElements);
+      pendingElementsRef.current = queryElements;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- undoRedo identity can change; we only need setElements and board/query deps
+  }, [currentBoardId, data?.elements, undoRedo.setElements, queryClient]);
 
   // Sync undo/redo state when query data changes externally (e.g., from import)
   useEffect(() => {
@@ -77,13 +123,15 @@ export function useWhiteboardQuery(): {
       persistTimeoutRef.current = null;
     }
     const toPersist = pendingElementsRef.current;
-    const current = queryClient.getQueryData<WhiteboardState>(WHITEBOARD_QUERY_KEY);
+    const boardIdToPersist = persistBoardIdRef.current;
+    const persistQueryKey = getWhiteboardQueryKey(boardIdToPersist);
+    const current = queryClient.getQueryData<WhiteboardState>(persistQueryKey);
     const state: WhiteboardState = {
       elements: toPersist,
       panZoom: current?.panZoom,
     };
     lastSyncedRef.current = JSON.stringify(toPersist);
-    setWhiteboard(state).catch((err) => {
+    setWhiteboard(state, boardIdToPersist).catch((err) => {
       console.error("[useWhiteboard] persist failed", err);
     });
   }, [queryClient]);
@@ -92,9 +140,14 @@ export function useWhiteboardQuery(): {
     persistNow();
   }, [persistNow]);
 
+  // Cleanup: persist on unmount, but only if we're still on the same board
   useEffect(() => {
+    const boardIdAtMount = persistBoardIdRef.current;
     return () => {
-      flushPendingPersist();
+      // Only persist if we're still on the same board as when this effect was set up
+      if (boardIdAtMount === persistBoardIdRef.current) {
+        flushPendingPersist();
+      }
     };
   }, [flushPendingPersist]);
 
@@ -111,12 +164,12 @@ export function useWhiteboardQuery(): {
     const lastSyncedStr = lastSyncedRef.current;
 
     if (undoRedoStr !== lastSyncedStr) {
-      const current = queryClient.getQueryData<WhiteboardState>(WHITEBOARD_QUERY_KEY);
+      const current = queryClient.getQueryData<WhiteboardState>(queryKey);
       const newState: WhiteboardState = {
         elements: undoRedo.elements,
         panZoom: current?.panZoom,
       };
-      queryClient.setQueryData(WHITEBOARD_QUERY_KEY, newState);
+      queryClient.setQueryData(queryKey, newState);
       // Update lastSyncedRef immediately to prevent external sync from triggering
       lastSyncedRef.current = undoRedoStr;
 
@@ -131,18 +184,26 @@ export function useWhiteboardQuery(): {
       if (persistTimeoutRef.current != null) {
         clearTimeout(persistTimeoutRef.current);
       }
+      // Store the boardId when setting up the timeout to ensure we persist to the correct board
+      persistBoardIdRef.current = currentBoardId;
       persistTimeoutRef.current = setTimeout(() => {
         persistTimeoutRef.current = null;
         skipPersistRef.current = false;
-        const toPersist = pendingElementsRef.current;
-        lastSyncedRef.current = JSON.stringify(toPersist);
-        const state: WhiteboardState = {
-          elements: toPersist,
-          panZoom: queryClient.getQueryData<WhiteboardState>(WHITEBOARD_QUERY_KEY)?.panZoom,
-        };
-        setWhiteboard(state).catch((err) => {
-          console.error("[useWhiteboard] persist failed", err);
-        });
+        // Use the boardId from when the timeout was set up, not the current one
+        const boardIdToPersist = persistBoardIdRef.current;
+        // Only persist if we're still on the same board
+        if (boardIdToPersist === currentBoardId) {
+          const toPersist = pendingElementsRef.current;
+          lastSyncedRef.current = JSON.stringify(toPersist);
+          const persistQueryKey = getWhiteboardQueryKey(boardIdToPersist);
+          const state: WhiteboardState = {
+            elements: toPersist,
+            panZoom: queryClient.getQueryData<WhiteboardState>(persistQueryKey)?.panZoom,
+          };
+          setWhiteboard(state, boardIdToPersist).catch((err) => {
+            console.error("[useWhiteboard] persist failed", err);
+          });
+        }
       }, PERSIST_DEBOUNCE_MS);
     }
 
@@ -152,7 +213,7 @@ export function useWhiteboardQuery(): {
         persistTimeoutRef.current = null;
       }
     };
-  }, [undoRedo.elements, queryClient]);
+  }, [undoRedo.elements, queryClient, queryKey, currentBoardId]);
 
   const setElements = (
     action: SetStateAction<WhiteboardElement[]>,
