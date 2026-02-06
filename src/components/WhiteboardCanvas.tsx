@@ -20,7 +20,6 @@ import {
 } from "../utils/resizeHandles";
 import type { ShapeType, WhiteboardElement } from "../types/whiteboard";
 import type { FormatTag } from "../utils/textFormat";
-import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import {
   SelectionToolbar,
@@ -28,7 +27,7 @@ import {
 } from "./SelectionToolbar";
 import { WhiteboardCanvasSvg } from "./WhiteboardCanvasSvg";
 import { WhiteboardErrorBoundary } from "./WhiteboardErrorBoundary";
-import { Circle, Square, TypeIcon, Undo2, Redo2 } from "lucide-react";
+import { WhiteboardToolbar } from "./WhiteboardToolbar";
 
 function generateElementId(): string {
   return `el-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
@@ -600,63 +599,15 @@ export function WhiteboardCanvas(): JSX.Element {
           isResizing && "is-resizing"
         )}
       >
-        <div className="fixed left-5 top-[3.75rem] z-10 flex flex-col items-center gap-1 rounded-full border border-border bg-background p-1.5 shadow-sm">
-          <Button
-            type="button"
-            variant="outline"
-            size="icon"
-            className="rounded-full"
-            onClick={undo}
-            disabled={!canUndo}
-            aria-label="Undo"
-            title="Undo (Ctrl+Z)"
-          >
-            <Undo2 className="size-5" aria-hidden />
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="icon"
-            className="rounded-full"
-            onClick={redo}
-            disabled={!canRedo}
-            aria-label="Redo"
-            title="Redo (Ctrl+Y)"
-          >
-            <Redo2 className="size-5" aria-hidden />
-          </Button>
-          <div className="h-px w-8 bg-border my-0.5" />
-          <Button
-            type="button"
-            variant="outline"
-            size="icon"
-            className="rounded-full"
-            onClick={handleAddTextCenter}
-            aria-label="Add text"
-          >
-            <TypeIcon className="size-5" aria-hidden />
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="icon"
-            className="rounded-full"
-            onClick={handleAddRectangleCenter}
-            aria-label="Add rectangle"
-          >
-            <Square className="size-5" aria-hidden />
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="icon"
-            className="rounded-full"
-            onClick={handleAddEllipseCenter}
-            aria-label="Add ellipse"
-          >
-            <Circle className="size-5" aria-hidden />
-          </Button>
-        </div>
+        <WhiteboardToolbar
+          undo={undo}
+          redo={redo}
+          canUndo={canUndo}
+          canRedo={canRedo}
+          onAddText={handleAddTextCenter}
+          onAddRectangle={handleAddRectangleCenter}
+          onAddEllipse={handleAddEllipseCenter}
+        />
       <div ref={toolbarContainerRef}>
         <SelectionToolbar
           ref={toolbarRef}

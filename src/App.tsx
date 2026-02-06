@@ -6,6 +6,9 @@ import "./App.css";
 
 const BOARDS = [{ id: "board-1", name: "Whiteboard" }] as const;
 
+const MANAGEMENT_GRID_DOT_CLASS =
+  "h-3 w-3 rounded-[3px] border-2 border-muted-foreground";
+
 function App(): JSX.Element {
   const [view, setView] = useState<"canvas" | "manage">("canvas");
 
@@ -28,12 +31,12 @@ function App(): JSX.Element {
 
   return (
     <div className="flex h-full flex-col overflow-hidden relative">
-      <header className="app-header fixed left-3 top-3 flex items-center gap-2">
+      <header className="app-header fixed left-5 top-3 flex items-center gap-4">
         <Button
           type="button"
           variant="ghost"
-          size="sm"
-          className="inline-flex items-center gap-2 rounded-lg px-2 py-1.5 font-semibold text-foreground shadow-none"
+          size="icon"
+          className="management-toggle-button size-[50px] rounded-lg font-semibold text-foreground shadow-none"
           aria-label={
             view === "manage"
               ? "Close whiteboard management"
@@ -42,13 +45,13 @@ function App(): JSX.Element {
           onClick={toggleView}
         >
           <span className="grid grid-cols-2 grid-rows-2 gap-1 p-1" aria-hidden>
-            <span className="h-1.5 w-1.5 rounded-sm bg-foreground" />
-            <span className="h-1.5 w-1.5 rounded-sm bg-foreground" />
-            <span className="h-1.5 w-1.5 rounded-sm bg-foreground" />
-            <span className="h-1.5 w-1.5 rounded-sm bg-foreground" />
+            <span className={MANAGEMENT_GRID_DOT_CLASS} />
+            <span className={MANAGEMENT_GRID_DOT_CLASS} />
+            <span className={MANAGEMENT_GRID_DOT_CLASS} />
+            <span className={MANAGEMENT_GRID_DOT_CLASS} />
           </span>
         </Button>
-        <h1 className="text-base font-semibold leading-tight text-foreground">
+        <h1 className="text-lg font-semibold leading-tight text-foreground">
           Whiteboard
         </h1>
       </header>
