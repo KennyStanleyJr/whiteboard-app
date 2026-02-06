@@ -1,4 +1,4 @@
-import { useCallback, useState, RefObject } from "react";
+import { useCallback, useState, useRef, RefObject } from "react";
 import { clientToViewBox } from "../canvas/canvasCoords";
 
 export interface Point {
@@ -46,22 +46,34 @@ export function useSelectionBox(
 } {
   const [selectionStart, setSelectionStart] = useState<Point | null>(null);
   const [selectionEnd, setSelectionEnd] = useState<Point | null>(null);
+  const activeTouchPointersRef = useRef<Set<number>>(new Set());
 
   const handlePointerDown = useCallback(
     (e: React.PointerEvent) => {
-      if (e.button === 0) {
-        const p = clientToViewBox(
-          containerRef.current,
-          e.clientX,
-          e.clientY,
-          viewBoxWidth,
-          viewBoxHeight
-        );
-        if (p) {
-          setSelectionStart(p);
+      if (e.pointerType === "touch") {
+        activeTouchPointersRef.current.add(e.pointerId);
+        const isMultiTouch = activeTouchPointersRef.current.size >= 2;
+        if (isMultiTouch) {
+          setSelectionStart(null);
           setSelectionEnd(null);
         }
-        (e.target as Element).setPointerCapture?.(e.pointerId);
+      }
+      if (e.button === 0) {
+        const isMultiTouch = activeTouchPointersRef.current.size >= 2;
+        if (!isMultiTouch) {
+          const p = clientToViewBox(
+            containerRef.current,
+            e.clientX,
+            e.clientY,
+            viewBoxWidth,
+            viewBoxHeight
+          );
+          if (p) {
+            setSelectionStart(p);
+            setSelectionEnd(null);
+          }
+          (e.target as Element).setPointerCapture?.(e.pointerId);
+        }
       }
       onPointerDown(e);
     },
@@ -70,7 +82,11 @@ export function useSelectionBox(
 
   const handlePointerMove = useCallback(
     (e: React.PointerEvent) => {
-      if (selectionStart !== null && (e.buttons & 1) !== 0) {
+      const isMultiTouch = activeTouchPointersRef.current.size >= 2;
+      if (isMultiTouch && selectionStart !== null) {
+        setSelectionStart(null);
+        setSelectionEnd(null);
+      } else if (selectionStart !== null && (e.buttons & 1) !== 0) {
         const p = clientToViewBox(
           containerRef.current,
           e.clientX,
@@ -87,6 +103,9 @@ export function useSelectionBox(
 
   const handlePointerUp = useCallback(
     (e: React.PointerEvent) => {
+      if (e.pointerType === "touch") {
+        activeTouchPointersRef.current.delete(e.pointerId);
+      }
       if (e.button === 0) {
         setSelectionStart(null);
         setSelectionEnd(null);
@@ -99,6 +118,9 @@ export function useSelectionBox(
 
   const handlePointerLeave = useCallback(
     (e: React.PointerEvent) => {
+      if (e.pointerType === "touch") {
+        activeTouchPointersRef.current.delete(e.pointerId);
+      }
       if ((e.buttons & 1) === 0) {
         setSelectionStart(null);
         setSelectionEnd(null);
