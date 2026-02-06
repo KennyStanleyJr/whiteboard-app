@@ -532,7 +532,7 @@ function App(): JSX.Element {
       <WhiteboardCanvas boardId={currentBoardId} />
       <main
         className={cn(
-          "app-overlay flex flex-col justify-start items-center md:items-start p-16 pt-16 pb-6 box-border bg-background overflow-visible",
+          "app-overlay flex flex-col justify-start items-center md:items-start px-5 md:px-20 pt-16 pb-6 box-border bg-background overflow-visible",
           "opacity-0 pointer-events-none invisible",
           view === "manage" && "opacity-100 pointer-events-auto visible"
         )}
