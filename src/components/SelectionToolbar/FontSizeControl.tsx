@@ -52,7 +52,7 @@ export function FontSizeControl({
           placeholder={singleFontSize ? undefined : "—"}
           onChange={onInputChange}
           onBlur={onInputBlur}
-          className="h-7 w-9 border-0 bg-transparent px-1 py-0 text-center text-[8px] tabular-nums text-foreground shadow-none focus-visible:ring-0 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+          className="h-7 w-9 border-0 bg-transparent px-1 py-0 text-center text-base tabular-nums text-foreground shadow-none focus-visible:ring-0 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
           aria-label="Font size"
         />
         <Button
