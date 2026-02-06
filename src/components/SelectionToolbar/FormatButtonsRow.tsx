@@ -20,7 +20,7 @@ export function FormatButtonsRow({
   onUnderline,
 }: FormatButtonsRowProps): JSX.Element {
   return (
-    <div className="flex items-center gap-0.5 border-r border-border pr-1.5">
+    <div className="flex items-center gap-0.5">
       <Button
         type="button"
         variant="ghost"

@@ -1,17 +1,21 @@
 import { render, screen, fireEvent } from "@testing-library/react";
 import { vi } from "vitest";
 import { SelectionToolbar } from ".";
-import type { TextElement } from "@/types/whiteboard";
+import type { TextElement, WhiteboardElement } from "@/types/whiteboard";
 
 /** Run the setElements updater from the first mock call with the given prev state. */
 function getNextElements(
   setElements: ReturnType<typeof vi.fn>,
-  prev: TextElement[]
-): TextElement[] {
+  prev: WhiteboardElement[]
+): WhiteboardElement[] {
   const updater = setElements.mock.calls[0]?.[0] as
-    | ((p: TextElement[]) => TextElement[])
+    | ((p: WhiteboardElement[]) => WhiteboardElement[])
     | undefined;
   return updater ? updater(prev) : [];
+}
+
+function isTextElement(el: WhiteboardElement): el is TextElement {
+  return el.kind === "text";
 }
 
 const textEl: TextElement = {
@@ -35,8 +39,8 @@ function createContainerRef(): React.RefObject<HTMLDivElement | null> {
 const defaultProps = {
   containerRef: { current: null } as React.RefObject<HTMLDivElement | null>,
   selectedElementIds: [] as string[],
-  elements: [] as TextElement[],
-  setElements: vi.fn() as React.Dispatch<React.SetStateAction<TextElement[]>>,
+  elements: [] as WhiteboardElement[],
+  setElements: vi.fn() as React.Dispatch<React.SetStateAction<WhiteboardElement[]>>,
   measuredBounds: {} as Record<string, { x: number; y: number; width: number; height: number }>,
   panX: 0,
   panY: 0,
@@ -144,7 +148,11 @@ describe("SelectionToolbar", () => {
     fireEvent.click(screen.getByRole("menuitem", { name: /align center/i }));
     expect(setElements).toHaveBeenCalled();
     const next = getNextElements(setElements, [textEl]);
-    expect(next[0]).toMatchObject({ id: "a", textAlign: "center" });
+    const firstEl = next[0]!;
+    expect(isTextElement(firstEl)).toBe(true);
+    if (isTextElement(firstEl)) {
+      expect(firstEl.textAlign).toBe("center");
+    }
   });
 
   it("applies bold to whole element when not editing", () => {
@@ -164,7 +172,11 @@ describe("SelectionToolbar", () => {
     expect(setElements).toHaveBeenCalled();
     const next = getNextElements(setElements, [textEl]);
     expect(next).toHaveLength(1);
-    expect(next[0]?.content).toBe("<b>Hi</b>");
+    const firstEl = next[0]!;
+    expect(isTextElement(firstEl)).toBe(true);
+    if (isTextElement(firstEl)) {
+      expect(firstEl.content).toBe("<b>Hi</b>");
+    }
   });
 
   it("toggles bold off when whole element is already wrapped in <b>", () => {
@@ -189,7 +201,11 @@ describe("SelectionToolbar", () => {
     expect(setElements).toHaveBeenCalled();
     const next = getNextElements(setElements, [boldEl]);
     expect(next).toHaveLength(1);
-    expect(next[0]?.content).toBe("Bold text");
+    const firstEl = next[0]!;
+    expect(isTextElement(firstEl)).toBe(true);
+    if (isTextElement(firstEl)) {
+      expect(firstEl.content).toBe("Bold text");
+    }
   });
 
   it("renders Bold, Italic, Underline and Text color when text is selected", () => {
@@ -235,8 +251,14 @@ describe("SelectionToolbar", () => {
     expect(setElements).toHaveBeenCalled();
     const next = getNextElements(setElements, [plainEl, boldEl]);
     expect(next).toHaveLength(2);
-    expect(next[0]?.content).toBe("<b>Hi</b>");
-    expect(next[1]?.content).toBe("<b>Bold</b>");
+    expect(isTextElement(next[0]!)).toBe(true);
+    if (isTextElement(next[0]!)) {
+      expect(next[0].content).toBe("<b>Hi</b>");
+    }
+    expect(isTextElement(next[1]!)).toBe(true);
+    if (isTextElement(next[1]!)) {
+      expect(next[1].content).toBe("<b>Bold</b>");
+    }
   });
 
   it("removes format from all selected elements when all have it (multi-select)", () => {
@@ -261,8 +283,14 @@ describe("SelectionToolbar", () => {
     expect(setElements).toHaveBeenCalled();
     const next = getNextElements(setElements, [bold1, bold2]);
     expect(next).toHaveLength(2);
-    expect(next[0]?.content).toBe("One");
-    expect(next[1]?.content).toBe("Two");
+    expect(isTextElement(next[0]!)).toBe(true);
+    if (isTextElement(next[0]!)) {
+      expect(next[0].content).toBe("One");
+    }
+    expect(isTextElement(next[1]!)).toBe(true);
+    if (isTextElement(next[1]!)) {
+      expect(next[1].content).toBe("Two");
+    }
   });
 
   it("calls onFormatCommand when editing and does not call setElements for bold", () => {
@@ -306,8 +334,14 @@ describe("SelectionToolbar", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: /^Italic$/i }));
     const next = getNextElements(setElements, [plainEl, italicEl]);
-    expect(next[0]?.content).toBe("<i>A</i>");
-    expect(next[1]?.content).toBe("<i>B</i>");
+    expect(isTextElement(next[0]!)).toBe(true);
+    if (isTextElement(next[0]!)) {
+      expect(next[0].content).toBe("<i>A</i>");
+    }
+    expect(isTextElement(next[1]!)).toBe(true);
+    if (isTextElement(next[1]!)) {
+      expect(next[1].content).toBe("<i>B</i>");
+    }
   });
 
   it("removes italic from all selected when all have it (multi-select)", () => {
@@ -330,8 +364,14 @@ describe("SelectionToolbar", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: /^Italic$/i }));
     const next = getNextElements(setElements, [italic1, italic2]);
-    expect(next[0]?.content).toBe("One");
-    expect(next[1]?.content).toBe("Two");
+    expect(isTextElement(next[0]!)).toBe(true);
+    if (isTextElement(next[0]!)) {
+      expect(next[0].content).toBe("One");
+    }
+    expect(isTextElement(next[1]!)).toBe(true);
+    if (isTextElement(next[1]!)) {
+      expect(next[1].content).toBe("Two");
+    }
   });
 
   it("adds underline to all selected when not all have it (multi-select)", () => {
@@ -358,8 +398,14 @@ describe("SelectionToolbar", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: /^Underline$/i }));
     const next = getNextElements(setElements, [plainEl, underlineEl]);
-    expect(next[0]?.content).toBe("<u>X</u>");
-    expect(next[1]?.content).toBe("<u>Y</u>");
+    expect(isTextElement(next[0]!)).toBe(true);
+    if (isTextElement(next[0]!)) {
+      expect(next[0].content).toBe("<u>X</u>");
+    }
+    expect(isTextElement(next[1]!)).toBe(true);
+    if (isTextElement(next[1]!)) {
+      expect(next[1].content).toBe("<u>Y</u>");
+    }
   });
 
   it("removes underline from all selected when all have it (multi-select)", () => {
@@ -382,7 +428,13 @@ describe("SelectionToolbar", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: /^Underline$/i }));
     const next = getNextElements(setElements, [u1, u2]);
-    expect(next[0]?.content).toBe("One");
-    expect(next[1]?.content).toBe("Two");
+    expect(isTextElement(next[0]!)).toBe(true);
+    if (isTextElement(next[0]!)) {
+      expect(next[0].content).toBe("One");
+    }
+    expect(isTextElement(next[1]!)).toBe(true);
+    if (isTextElement(next[1]!)) {
+      expect(next[1].content).toBe("Two");
+    }
   });
 });

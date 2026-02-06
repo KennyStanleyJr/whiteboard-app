@@ -1,7 +1,9 @@
 import type { WhiteboardElement } from "@/types/whiteboard";
+import type { PanZoomState } from "@/hooks/panZoom/usePanZoom";
 
 export interface WhiteboardState {
   elements: WhiteboardElement[];
+  panZoom?: PanZoomState;
 }
 
 const STORAGE_KEY = "whiteboard-app-state";
@@ -19,7 +21,24 @@ function parseStored(raw: string | null): WhiteboardState {
       typeof parsed === "object" &&
       Array.isArray((parsed as WhiteboardState).elements)
     ) {
-      return parsed as WhiteboardState;
+      const state = parsed as WhiteboardState;
+      // Validate panZoom if present
+      if (state.panZoom != null) {
+        const pz = state.panZoom;
+        if (
+          typeof pz.panX !== "number" ||
+          typeof pz.panY !== "number" ||
+          typeof pz.zoom !== "number" ||
+          !Number.isFinite(pz.panX) ||
+          !Number.isFinite(pz.panY) ||
+          !Number.isFinite(pz.zoom) ||
+          pz.zoom <= 0
+        ) {
+          // Invalid panZoom, remove it
+          return { elements: state.elements };
+        }
+      }
+      return state;
     }
   } catch {
     /* invalid JSON: return safe default */

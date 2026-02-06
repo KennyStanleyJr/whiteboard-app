@@ -1,9 +1,25 @@
+import React, { type ReactNode } from "react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { renderHook, act } from "@testing-library/react";
 import { usePanZoom } from "./usePanZoom";
 
+function createWrapper(): {
+  wrapper: ({ children }: { children: ReactNode }) => JSX.Element;
+  queryClient: QueryClient;
+} {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  const wrapper = ({ children }: { children: ReactNode }) => (
+    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+  );
+  return { wrapper, queryClient };
+}
+
 describe("usePanZoom", () => {
   it("returns initial state", () => {
-    const { result } = renderHook(() => usePanZoom());
+    const { wrapper } = createWrapper();
+    const { result } = renderHook(() => usePanZoom(), { wrapper });
 
     expect(result.current.panX).toBe(0);
     expect(result.current.panY).toBe(0);
@@ -13,7 +29,8 @@ describe("usePanZoom", () => {
   });
 
   it("returns all required handlers", () => {
-    const { result } = renderHook(() => usePanZoom());
+    const { wrapper } = createWrapper();
+    const { result } = renderHook(() => usePanZoom(), { wrapper });
 
     expect(typeof result.current.handleWheelRaw).toBe("function");
     expect(typeof result.current.handleTouchStart).toBe("function");
@@ -28,8 +45,10 @@ describe("usePanZoom", () => {
   });
 
   it("accepts custom options", () => {
-    const { result } = renderHook(() =>
-      usePanZoom({ minZoom: 0.5, maxZoom: 3, zoomSensitivity: 0.002 })
+    const { wrapper } = createWrapper();
+    const { result } = renderHook(
+      () => usePanZoom({ minZoom: 0.5, maxZoom: 3, zoomSensitivity: 0.002 }),
+      { wrapper }
     );
 
     expect(result.current.zoom).toBe(1);
@@ -41,7 +60,8 @@ describe("usePanZoom", () => {
       ({ left: 0, top: 0, width: 800, height: 600 } as DOMRect);
     document.body.appendChild(container);
 
-    const { result } = renderHook(() => usePanZoom());
+    const { wrapper } = createWrapper();
+    const { result } = renderHook(() => usePanZoom(), { wrapper });
 
     (result.current.containerRef as { current: HTMLElement | null }).current =
       container;

@@ -30,6 +30,7 @@ describe("ElementSelectionOverlay", () => {
         selectedElementIds={[]}
         elements={[textEl]}
         measuredBounds={measuredBounds}
+        zoom={1}
       />
     );
     const box = container.querySelector(".element-selection-box");
@@ -42,6 +43,7 @@ describe("ElementSelectionOverlay", () => {
         selectedElementIds={["a"]}
         elements={[textEl]}
         measuredBounds={measuredBounds}
+        zoom={1}
       />
     );
     const box = container.querySelector(".element-selection-box");
@@ -56,6 +58,7 @@ describe("ElementSelectionOverlay", () => {
         selectedElementIds={["a"]}
         elements={[textEl]}
         measuredBounds={measuredBounds}
+        zoom={1}
       />
     );
     const handles = container.querySelectorAll(".resize-handle");
@@ -71,6 +74,7 @@ describe("ElementSelectionOverlay", () => {
         selectedElementIds={["a"]}
         elements={[textEl]}
         measuredBounds={measuredBounds}
+        zoom={1}
         onResizeHandleDown={onResizeHandleDown}
         onResizeHandleMove={onResizeHandleMove}
         onResizeHandleUp={onResizeHandleUp}
@@ -87,6 +91,7 @@ describe("ElementSelectionOverlay", () => {
         selectedElementIds={["a"]}
         elements={[textEl]}
         measuredBounds={measuredBounds}
+        zoom={1}
         onResizeHandleDown={onResizeHandleDown}
         onResizeHandleMove={vi.fn()}
         onResizeHandleUp={vi.fn()}

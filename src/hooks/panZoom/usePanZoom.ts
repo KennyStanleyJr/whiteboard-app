@@ -1,8 +1,11 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { MAX_ZOOM, MIN_ZOOM, type WheelData, ZOOM_SENSITIVITY } from "./panZoomUtils";
 import { useRightButtonPanHandlers } from "./useRightButtonPanHandlers";
 import { useTouchPanZoomHandlers } from "./useTouchPanZoomHandlers";
 import { useWheelZoomHandlers } from "./useWheelZoomHandlers";
+import { getWhiteboardSync, setWhiteboard, type WhiteboardState } from "@/api/whiteboard";
+import { WHITEBOARD_QUERY_KEY } from "@/hooks/useWhiteboard";
 
 export interface PanZoomState {
   panX: number;
@@ -33,15 +36,65 @@ export interface UsePanZoomReturn extends PanZoomState {
   containerRef: React.RefObject<HTMLElement | null>;
 }
 
+function getInitialPanZoom(): PanZoomState {
+  const stored = getWhiteboardSync();
+  return stored.panZoom ?? { panX: 0, panY: 0, zoom: 1 };
+}
+
 export function usePanZoom(options: UsePanZoomOptions = {}): UsePanZoomReturn {
   const { minZoom = MIN_ZOOM, maxZoom = MAX_ZOOM, zoomSensitivity = ZOOM_SENSITIVITY } = options;
-  const [panX, setPanX] = useState(0);
-  const [panY, setPanY] = useState(0);
-  const [zoom, setZoom] = useState(1);
+  const queryClient = useQueryClient();
+  let initialPanZoom: PanZoomState | null = null;
+  const getInitial = (): PanZoomState => {
+    if (initialPanZoom == null) {
+      initialPanZoom = getInitialPanZoom();
+    }
+    return initialPanZoom;
+  };
+  const [panX, setPanX] = useState(() => getInitial().panX);
+  const [panY, setPanY] = useState(() => getInitial().panY);
+  const [zoom, setZoom] = useState(() => getInitial().zoom);
 
   const containerRef = useRef<HTMLElement | null>(null);
   const stateRef = useRef({ panX: 0, panY: 0, zoom: 1 });
+  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   stateRef.current = { panX, panY, zoom };
+
+  useEffect(() => {
+    if (saveTimeoutRef.current != null) {
+      clearTimeout(saveTimeoutRef.current);
+    }
+    saveTimeoutRef.current = setTimeout(() => {
+      const current = getWhiteboardSync();
+      const newState: WhiteboardState = {
+        ...current,
+        panZoom: { panX, panY, zoom },
+      };
+      // Update React Query cache to prevent race conditions
+      queryClient.setQueryData(WHITEBOARD_QUERY_KEY, newState);
+      setWhiteboard(newState).catch((err) => {
+        console.error("[usePanZoom] persist failed", err);
+      });
+      saveTimeoutRef.current = null;
+    }, 300);
+    return () => {
+      if (saveTimeoutRef.current != null) {
+        clearTimeout(saveTimeoutRef.current);
+        saveTimeoutRef.current = null;
+      }
+      // Save immediately on unmount
+      const current = getWhiteboardSync();
+      const newState: WhiteboardState = {
+        ...current,
+        panZoom: { panX, panY, zoom },
+      };
+      // Update React Query cache to prevent race conditions
+      queryClient.setQueryData(WHITEBOARD_QUERY_KEY, newState);
+      setWhiteboard(newState).catch((err) => {
+        console.error("[usePanZoom] persist failed on unmount", err);
+      });
+    };
+  }, [panX, panY, zoom, queryClient]);
 
   const wheelOpts = { minZoom, maxZoom, zoomSensitivity };
   const wheel = useWheelZoomHandlers(

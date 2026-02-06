@@ -18,7 +18,7 @@ import {
   resizeBoundsFromHandle,
   type ResizeHandleId,
 } from "../utils/resizeHandles";
-import type { WhiteboardElement } from "../types/whiteboard";
+import type { ShapeType, WhiteboardElement } from "../types/whiteboard";
 import type { FormatTag } from "../utils/textFormat";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -28,7 +28,7 @@ import {
 } from "./SelectionToolbar";
 import { WhiteboardCanvasSvg } from "./WhiteboardCanvasSvg";
 import { WhiteboardErrorBoundary } from "./WhiteboardErrorBoundary";
-import { TypeIcon } from "lucide-react";
+import { Circle, Square, TypeIcon } from "lucide-react";
 
 function generateElementId(): string {
   return `el-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
@@ -95,6 +95,9 @@ export function WhiteboardCanvas(): JSX.Element {
     editingElementId
   );
 
+  const DEFAULT_SHAPE_WIDTH = 120;
+  const DEFAULT_SHAPE_HEIGHT = 80;
+
   const addTextAt = useCallback((x: number, y: number) => {
     const id = generateElementId();
     const textElement: WhiteboardElement = {
@@ -109,6 +112,25 @@ export function WhiteboardCanvas(): JSX.Element {
     setEditingElementId(id);
   }, [setElements]);
 
+  const addShapeAt = useCallback(
+    (x: number, y: number, shapeType: ShapeType) => {
+      const id = generateElementId();
+      const shapeElement: WhiteboardElement = {
+        id,
+        x: x - DEFAULT_SHAPE_WIDTH / 2,
+        y: y - DEFAULT_SHAPE_HEIGHT / 2,
+        kind: "shape",
+        shapeType,
+        width: DEFAULT_SHAPE_WIDTH,
+        height: DEFAULT_SHAPE_HEIGHT,
+        color: "#000000",
+        filled: true,
+      };
+      setElements((prev) => [...prev, shapeElement]);
+    },
+    [setElements]
+  );
+
   const handleAddTextCenter = useCallback(() => {
     const centerViewportX = size.width / 2;
     const centerViewportY = size.height / 2;
@@ -116,6 +138,25 @@ export function WhiteboardCanvas(): JSX.Element {
     const y = (centerViewportY - panZoom.panY) / panZoom.zoom;
     addTextAt(x, y);
   }, [addTextAt, panZoom.panX, panZoom.panY, panZoom.zoom, size.height, size.width]);
+
+  const centerWorld = useCallback(() => {
+    const centerViewportX = size.width / 2;
+    const centerViewportY = size.height / 2;
+    return {
+      x: (centerViewportX - panZoom.panX) / panZoom.zoom,
+      y: (centerViewportY - panZoom.panY) / panZoom.zoom,
+    };
+  }, [panZoom.panX, panZoom.panY, panZoom.zoom, size.height, size.width]);
+
+  const handleAddRectangleCenter = useCallback(() => {
+    const { x, y } = centerWorld();
+    addShapeAt(x, y, "rectangle");
+  }, [addShapeAt, centerWorld]);
+
+  const handleAddEllipseCenter = useCallback(() => {
+    const { x, y } = centerWorld();
+    addShapeAt(x, y, "ellipse");
+  }, [addShapeAt, centerWorld]);
 
   const handleUpdateElementContent = useCallback((id: string, content: string) => {
     setElements((prev) =>
@@ -218,17 +259,28 @@ export function WhiteboardCanvas(): JSX.Element {
           dy
         );
         setElements((prev) =>
-          prev.map((el) =>
-            el.id === state.elementId && el.kind === "text"
-              ? {
-                  ...el,
-                  x: next.x,
-                  y: next.y,
-                  width: next.width,
-                  height: next.height,
-                }
-              : el
-          )
+          prev.map((el) => {
+            if (el.id !== state.elementId) return el;
+            if (el.kind === "text") {
+              return {
+                ...el,
+                x: next.x,
+                y: next.y,
+                width: next.width,
+                height: next.height,
+              };
+            }
+            if (el.kind === "shape") {
+              return {
+                ...el,
+                x: next.x,
+                y: next.y,
+                width: next.width,
+                height: next.height,
+              };
+            }
+            return el;
+          })
         );
       } catch (err) {
         console.error("[WhiteboardCanvas] resize move error", err);
@@ -315,6 +367,31 @@ export function WhiteboardCanvas(): JSX.Element {
       document.removeEventListener("keydown", onKeyDown, { capture: true });
   }, [elements, elementSelection.selectedElementIds]);
 
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent): void => {
+      const key = e.key.toLowerCase();
+      if (key !== "f") return;
+      const target = e.target as HTMLElement;
+      if (
+        target.tagName === "INPUT" ||
+        target.tagName === "TEXTAREA" ||
+        target.isContentEditable
+      )
+        return;
+      const hasShapeSelected = elements.some(
+        (el) =>
+          el.kind === "shape" &&
+          elementSelection.selectedElementIds.includes(el.id)
+      );
+      if (!hasShapeSelected) return;
+      e.preventDefault();
+      toolbarRef.current?.toggleShapeFilled();
+    };
+    document.addEventListener("keydown", onKeyDown, { capture: true });
+    return () =>
+      document.removeEventListener("keydown", onKeyDown, { capture: true });
+  }, [elements, elementSelection.selectedElementIds]);
+
   useCanvasEventListeners(
     panZoom.containerRef,
     panZoom.handleWheelRaw,
@@ -333,18 +410,38 @@ export function WhiteboardCanvas(): JSX.Element {
           isResizing && "is-resizing"
         )}
       >
-        <div className="fixed left-5 top-[3.75rem] z-10 flex items-center rounded-full border border-border bg-background p-1.5 shadow-sm">
-        <Button
-          type="button"
-          variant="outline"
-          size="icon"
-          className="rounded-full"
-          onClick={handleAddTextCenter}
-          aria-label="Add text"
-        >
-          <TypeIcon className="size-5" aria-hidden />
-        </Button>
-      </div>
+        <div className="fixed left-5 top-[3.75rem] z-10 flex flex-col items-center gap-1 rounded-full border border-border bg-background p-1.5 shadow-sm">
+          <Button
+            type="button"
+            variant="outline"
+            size="icon"
+            className="rounded-full"
+            onClick={handleAddTextCenter}
+            aria-label="Add text"
+          >
+            <TypeIcon className="size-5" aria-hidden />
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="icon"
+            className="rounded-full"
+            onClick={handleAddRectangleCenter}
+            aria-label="Add rectangle"
+          >
+            <Square className="size-5" aria-hidden />
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="icon"
+            className="rounded-full"
+            onClick={handleAddEllipseCenter}
+            aria-label="Add ellipse"
+          >
+            <Circle className="size-5" aria-hidden />
+          </Button>
+        </div>
       <div ref={toolbarContainerRef}>
         <SelectionToolbar
           ref={toolbarRef}

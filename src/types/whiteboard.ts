@@ -1,4 +1,6 @@
-export type ElementKind = "text";
+export type ElementKind = "text" | "shape";
+
+export type ShapeType = "rectangle" | "ellipse";
 
 export interface BaseElement {
   id: string;
@@ -26,4 +28,15 @@ export interface TextElement extends BaseElement {
   textVerticalAlign?: TextVerticalAlign;
 }
 
-export type WhiteboardElement = TextElement;
+export interface ShapeElement extends BaseElement {
+  kind: "shape";
+  shapeType: ShapeType;
+  width: number;
+  height: number;
+  /** Stroke/fill color (hex). */
+  color?: string;
+  /** When true, filled with color; when false, outline stroke only. */
+  filled?: boolean;
+}
+
+export type WhiteboardElement = TextElement | ShapeElement;

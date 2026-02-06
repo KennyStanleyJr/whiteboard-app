@@ -68,12 +68,15 @@ export function getElementBounds(
       height: TEXT_EDIT_HEIGHT,
     });
   }
-  return sanitizeElementBounds({
-    x: el.x,
-    y: el.y,
-    width: 0,
-    height: 0,
-  });
+  if (el.kind === "shape") {
+    return sanitizeElementBounds({
+      x: el.x,
+      y: el.y,
+      width: el.width,
+      height: el.height,
+    });
+  }
+  return sanitizeElementBounds({ x: 0, y: 0, width: 0, height: 0 });
 }
 
 function boundsContains(b: ElementBounds, wx: number, wy: number): boolean {

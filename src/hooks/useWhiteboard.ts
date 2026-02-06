@@ -30,7 +30,10 @@ export function useWhiteboardQuery(): {
     const currentElements = current?.elements ?? [];
     const next =
       typeof action === "function" ? action(currentElements) : action;
-    const newState: WhiteboardState = { elements: next };
+    const newState: WhiteboardState = {
+      elements: next,
+      panZoom: current?.panZoom,
+    };
     queryClient.setQueryData(WHITEBOARD_QUERY_KEY, newState);
     /* Explicit failure handling: do not swallow persist errors (SWE-061). */
     setWhiteboard(newState).catch((err) => {

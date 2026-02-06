@@ -22,13 +22,15 @@ import {
   type FormatTag,
 } from "@/utils/textFormat";
 import type {
+  ShapeElement,
   TextAlign,
   TextElement,
   TextVerticalAlign,
   WhiteboardElement,
 } from "@/types/whiteboard";
 import { Button } from "@/components/ui/button";
-import { Trash2 } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { PaintBucket, Trash2 } from "lucide-react";
 import { AlignMenus } from "./AlignMenus";
 import { FontSizeControl } from "./FontSizeControl";
 import { FormatButtonsRow } from "./FormatButtonsRow";
@@ -64,6 +66,7 @@ export interface SelectionToolbarHandle {
   applyBold: () => void;
   applyItalic: () => void;
   applyUnderline: () => void;
+  toggleShapeFilled: () => void;
 }
 
 export const SelectionToolbar = forwardRef<
@@ -93,6 +96,7 @@ export const SelectionToolbar = forwardRef<
   const colorThrottleTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const colorLastApplyTimeRef = useRef<number>(0);
   const pendingHexRef = useRef<string | null>(null);
+  const colorPickerElementIdsRef = useRef<Set<string>>(new Set());
 
   const [position, setPosition] = useState<{ left: number; top: number } | null>(null);
   const [alignMenuOpen, setAlignMenuOpen] = useState(false);
@@ -105,8 +109,21 @@ export const SelectionToolbar = forwardRef<
     (el): el is TextElement =>
       selectedElementIds.includes(el.id) && el.kind === "text"
   );
+  const selectedShapeElements = elements.filter(
+    (el): el is ShapeElement =>
+      selectedElementIds.includes(el.id) && el.kind === "shape"
+  );
   const hasText = selectedTextElements.length > 0;
+  const hasShape = selectedShapeElements.length > 0;
   const firstText = selectedTextElements[0];
+  const firstShape = selectedShapeElements[0];
+  const displayShapeFilled =
+    hasShape &&
+    selectedShapeElements.every((el) => el.filled !== false);
+  const shapeFillMixed =
+    hasShape &&
+    selectedShapeElements.some((el) => el.filled === true) &&
+    selectedShapeElements.some((el) => el.filled === false);
   const fontSizeValues = selectedTextElements.map((el) => el.fontSize ?? 24);
   const singleFontSize =
     fontSizeValues.length > 0 && fontSizeValues.every((v) => v === fontSizeValues[0]);
@@ -187,13 +204,56 @@ export const SelectionToolbar = forwardRef<
     [applyFormatToSelection]
   );
 
-  useImperativeHandle(
-    ref,
-    () => ({ applyBold, applyItalic, applyUnderline }),
-    [applyBold, applyItalic, applyUnderline]
+  const applyShapeFilled = useCallback(
+    (filled: boolean): void => {
+      setElements((prev) =>
+        prev.map((el) => {
+          if (el.kind !== "shape" || !selectedElementIds.includes(el.id))
+            return el;
+          return { ...el, filled };
+        })
+      );
+    },
+    [selectedElementIds, setElements]
   );
 
-  applyColorRef.current = (color: string) => applyFormatToSelection("foreColor", color);
+  const handleShapeFilledToggle = useCallback((): void => {
+    if (shapeFillMixed) {
+      // If mixed, set all to filled
+      applyShapeFilled(true);
+    } else {
+      // Otherwise toggle to opposite
+      applyShapeFilled(!displayShapeFilled);
+    }
+  }, [shapeFillMixed, displayShapeFilled, applyShapeFilled]);
+
+  useImperativeHandle(
+    ref,
+    () => ({ applyBold, applyItalic, applyUnderline, toggleShapeFilled: handleShapeFilledToggle }),
+    [applyBold, applyItalic, applyUnderline, handleShapeFilledToggle]
+  );
+
+  applyColorRef.current = (color: string) => {
+    const targetIds = colorPickerElementIdsRef.current;
+    const hex = color.startsWith("#") ? color : `#${color}`;
+    setElements((prev) =>
+      prev.map((el) => {
+        if (!targetIds.has(el.id)) return el;
+        if (el.kind === "text") {
+          const inner = innerContentIfSingleColorSpan(el.content);
+          const raw = inner.trim() || " ";
+          return {
+            ...el,
+            content: `<span style="color: ${hex}">${raw}</span>`,
+          };
+        }
+        if (el.kind === "shape") {
+          return { ...el, color: hex };
+        }
+        return el;
+      })
+    );
+  };
 
   const applyColorThrottled = useCallback((hex: string) => {
     pendingHexRef.current = hex;
@@ -226,6 +286,7 @@ export const SelectionToolbar = forwardRef<
       applyColorRef.current(pendingHexRef.current);
       pendingHexRef.current = null;
     }
+    colorPickerElementIdsRef.current.clear();
     setColorPickerOpen(false);
   }, []);
 
@@ -452,22 +513,50 @@ export const SelectionToolbar = forwardRef<
       role="toolbar"
       aria-label="Element options"
     >
+      {(hasText || hasShape) && (
+        <ToolbarColorPicker
+          colorPickerOpen={colorPickerOpen}
+          pickerColor={pickerColor}
+          onPickerColorChange={onPickerColorChange}
+          onColorPickerToggle={() => {
+            if (colorPickerOpen) closeColorPicker();
+            else {
+              colorPickerElementIdsRef.current = new Set(selectedElementIds);
+              if (firstShape != null)
+                setPickerColor(firstShape.color ?? "#000000");
+              else if (firstText?.content)
+                setPickerColor(parseHexFromContent(firstText.content));
+              else setPickerColor("#000000");
+              setColorPickerOpen(true);
+            }
+          }}
+          colorPickerMenuRef={colorPickerMenuRef}
+        />
+      )}
+      {hasShape && (
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className={cn(
+            "h-7 w-7 rounded [&_svg]:size-3.5",
+            displayShapeFilled && "bg-accent"
+          )}
+          onClick={handleShapeFilledToggle}
+          aria-label={
+            shapeFillMixed
+              ? "Fill all shapes"
+              : displayShapeFilled
+                ? "Switch to outline"
+                : "Switch to filled"
+          }
+          aria-pressed={displayShapeFilled}
+        >
+          <PaintBucket aria-hidden />
+        </Button>
+      )}
       {hasText && (
         <>
-          <ToolbarColorPicker
-            colorPickerOpen={colorPickerOpen}
-            pickerColor={pickerColor}
-            onPickerColorChange={onPickerColorChange}
-            onColorPickerToggle={() => {
-              if (colorPickerOpen) closeColorPicker();
-              else {
-                if (firstText?.content)
-                  setPickerColor(parseHexFromContent(firstText.content));
-                setColorPickerOpen(true);
-              }
-            }}
-            colorPickerMenuRef={colorPickerMenuRef}
-          />
           <FontSizeControl
             displayFontSize={displayFontSize}
             singleFontSize={singleFontSize}
@@ -498,7 +587,7 @@ export const SelectionToolbar = forwardRef<
           />
         </>
       )}
-      <div className={hasText ? "flex items-center pl-1.5" : ""}>
+      <div className={hasText || hasShape ? "flex items-center" : ""}>
         <Button
           type="button"
           variant="ghost"

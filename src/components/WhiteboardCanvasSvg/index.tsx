@@ -15,6 +15,7 @@ import {
 import { applyFormatToContent, type FormatTag } from "../../utils/textFormat";
 import { DotGridPattern, PATTERN_ID } from "../DotGridPattern";
 import { ElementSelectionOverlay } from "./ElementSelectionOverlay";
+import { WhiteboardShapeElement } from "./WhiteboardShapeElement";
 import { WhiteboardTextElement } from "./WhiteboardTextElement";
 
 const CANVAS_EXTENT = 500000;
@@ -268,29 +269,35 @@ export const WhiteboardCanvasSvg = forwardRef<
           fill={`url(#${PATTERN_ID})`}
         />
         {elements.map((el) => {
-          if (el.kind !== "text") return null;
-          return (
-            <WhiteboardTextElement
-              key={el.id}
-              element={el}
-              isEditing={el.id === editingElementId}
-              measuredBounds={measuredBounds}
-              onDoubleClick={onElementDoubleClick}
-              setTextDivRef={setTextDivRef}
-              onUpdateContent={onUpdateElementContent}
-              onFinishEdit={onFinishEditElement}
-              onEditKeyDown={handleEditKeyDown}
-              editingRefSetter={(r) => {
-                editingRef.current = r;
-              }}
-              toolbarContainerRef={toolbarContainerRef}
-            />
-          );
+          if (el.kind === "text") {
+            return (
+              <WhiteboardTextElement
+                key={el.id}
+                element={el}
+                isEditing={el.id === editingElementId}
+                measuredBounds={measuredBounds}
+                onDoubleClick={onElementDoubleClick}
+                setTextDivRef={setTextDivRef}
+                onUpdateContent={onUpdateElementContent}
+                onFinishEdit={onFinishEditElement}
+                onEditKeyDown={handleEditKeyDown}
+                editingRefSetter={(r) => {
+                  editingRef.current = r;
+                }}
+                toolbarContainerRef={toolbarContainerRef}
+              />
+            );
+          }
+          if (el.kind === "shape") {
+            return <WhiteboardShapeElement key={el.id} element={el} />;
+          }
+          return null;
         })}
         <ElementSelectionOverlay
           selectedElementIds={selectedElementIds}
           elements={elements}
           measuredBounds={measuredBounds}
+          zoom={zoom}
           onResizeHandleDown={onResizeHandleDown}
           onResizeHandleMove={onResizeHandleMove}
           onResizeHandleUp={onResizeHandleUp}

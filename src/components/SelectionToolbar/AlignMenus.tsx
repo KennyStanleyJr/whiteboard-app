@@ -40,7 +40,7 @@ export function AlignMenus({
     <>
       <div
         ref={alignMenuRef}
-        className="relative flex items-center border-r border-border pr-1.5"
+        className="relative flex items-center"
       >
         <Button
           type="button"
@@ -115,7 +115,7 @@ export function AlignMenus({
       </div>
       <div
         ref={verticalAlignMenuRef}
-        className="relative flex items-center border-r border-border pr-1.5"
+        className="relative flex items-center"
       >
         <Button
           type="button"
