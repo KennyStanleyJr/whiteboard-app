@@ -43,11 +43,11 @@ This project follows principles derived from **NASA's Power of 10** (JPL Laborat
 - **Module size**: Keep modules and components focused; split when they grow too large.
 - **Naming**: Consistent naming for variables, functions, components, and files.
 - **Comments**: Comment non-obvious logic and invariants; keep code self-documenting where possible.
-- **Verification**: Use TypeScript, ESLint, and (where applicable) static analysis; aim for zero warnings.
+- **Verification**: Use TypeScript, ESLint, Vitest, and (where applicable) static analysis; aim for zero warnings.
 
 ## Project Conventions
 
 - **Lint and types**: Fix all TypeScript and ESLint errors and warnings before committing.
 - **Reviews**: Code should be reviewable: small, clear units and minimal surprise.
-- **Testing**: Critical paths and utilities should have tests; maintainability over time is a goal.
+- **Testing**: Critical paths and utilities should have tests (Vitest + Testing Library); maintainability over time is a goal.
 - **Bounded iteration**: Loops and recursion use explicit bounds (e.g. `MAX_STRIP_ITERATIONS`, `MAX_SANITIZE_DEPTH`) so control flow is analyzable.
