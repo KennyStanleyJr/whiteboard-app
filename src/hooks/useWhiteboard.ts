@@ -40,8 +40,35 @@ export function useWhiteboardQuery(): {
   const pendingElementsRef = useRef<WhiteboardElement[]>(undoRedo.elements);
   const persistTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const skipPersistRef = useRef(false);
+  const isExternalUpdateRef = useRef(false);
 
   const PERSIST_DEBOUNCE_MS = 250;
+
+  // Sync undo/redo state when query data changes externally (e.g., from import)
+  useEffect(() => {
+    const queryElements = data?.elements ?? [];
+    const queryElementsStr = JSON.stringify(queryElements);
+    const currentElementsStr = JSON.stringify(undoRedo.elements);
+
+    // If query data changed and doesn't match current undo/redo state, reset it
+    // Only sync if this is an external change (not from our own setElements)
+    if (
+      queryElementsStr !== lastSyncedRef.current &&
+      queryElementsStr !== currentElementsStr &&
+      !isExternalUpdateRef.current
+    ) {
+      isExternalUpdateRef.current = true;
+      undoRedo.setElements(queryElements);
+      lastSyncedRef.current = queryElementsStr;
+      pendingElementsRef.current = queryElements;
+      // Clear any pending persist since this is an external update
+      if (persistTimeoutRef.current != null) {
+        clearTimeout(persistTimeoutRef.current);
+        persistTimeoutRef.current = null;
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- We intentionally only depend on specific properties to avoid infinite loops
+  }, [data?.elements, undoRedo.elements, undoRedo.setElements]);
 
   const persistNow = useCallback(() => {
     skipPersistRef.current = false;
@@ -73,6 +100,12 @@ export function useWhiteboardQuery(): {
 
   // Sync to query cache immediately; debounce localStorage persist (skip during drag/resize)
   useEffect(() => {
+    // Skip sync if this update came from external source (we already synced above)
+    if (isExternalUpdateRef.current) {
+      isExternalUpdateRef.current = false;
+      return;
+    }
+
     pendingElementsRef.current = undoRedo.elements;
     const undoRedoStr = JSON.stringify(undoRedo.elements);
     const lastSyncedStr = lastSyncedRef.current;
@@ -84,6 +117,8 @@ export function useWhiteboardQuery(): {
         panZoom: current?.panZoom,
       };
       queryClient.setQueryData(WHITEBOARD_QUERY_KEY, newState);
+      // Update lastSyncedRef immediately to prevent external sync from triggering
+      lastSyncedRef.current = undoRedoStr;
 
       if (skipPersistRef.current) {
         skipPersistRef.current = false;

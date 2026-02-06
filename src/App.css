@@ -16,6 +16,10 @@
 
 .app-header {
   z-index: 110;
+  pointer-events: none;
+}
+.app-header > * {
+  pointer-events: auto;
 }
 
 /* Whiteboard canvas and text elements (SVG/foreignObject-specific) */
@@ -64,6 +68,19 @@
   border: none;
 }
 .management-toggle-button:not(:disabled):hover {
+  background-color: var(--toolbar-hover-bg);
+  color: var(--toolbar-hover-fg);
+  border-radius: 0.5rem;
+}
+
+/* Hamburger menu button: white background by default, hover effect */
+.app-menu-button {
+  background-color: white;
+}
+.dark .app-menu-button {
+  background-color: oklch(0.2 0 0);
+}
+.app-menu-button:not(:disabled):hover {
   background-color: var(--toolbar-hover-bg);
   color: var(--toolbar-hover-fg);
   border-radius: 0.5rem;

@@ -11,7 +11,8 @@
     "preview": "vite preview",
     "test": "vitest",
     "test:run": "vitest run",
-    "test:ui": "vitest --ui"
+    "test:ui": "vitest --ui",
+    "ci": "npm run lint && npm run test:run && npm run build"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.1.18",

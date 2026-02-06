@@ -74,11 +74,15 @@ describe("App", () => {
     fireEvent.click(toggleButton);
 
     const boardItems = await screen.findAllByRole("listitem");
-    expect(boardItems).toHaveLength(2);
+    expect(boardItems).toHaveLength(1);
 
-    const existingBoardButton = boardItems[1];
-    expect(existingBoardButton).toBeDefined();
-    fireEvent.click(existingBoardButton!);
+    // Find the board card - it's now a div container, find the button inside
+    const boardText = screen.getByText("Whiteboard", { selector: "span" });
+    const boardButton = boardText.closest("button");
+    expect(boardButton).toBeDefined();
+    if (boardButton != null) {
+      fireEvent.click(boardButton);
+    }
 
     expect(logSpy).toHaveBeenCalledWith("Open board board-1");
     expect(window.location.hash).toBe("");
