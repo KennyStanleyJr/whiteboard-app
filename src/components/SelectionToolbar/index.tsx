@@ -265,6 +265,11 @@ export const SelectionToolbar = forwardRef<
     [selectedElementIds, setElements]
   );
 
+  // Close color picker when selection changes
+  useEffect(() => {
+    setColorPickerOpen(false);
+  }, [selectedElementIds]);
+
   useImperativeHandle(
     ref,
     () => ({ applyBold, applyItalic, applyUnderline, toggleShapeFilled: handleShapeFilledToggle }),

@@ -142,3 +142,18 @@ export function parseSingleColorSpan(html: string): { style: string; inner: stri
   if (!m || !/color\s*:/i.test(m[1]!)) return null;
   return { style: m[1]!, inner: m[2]! };
 }
+
+/**
+ * Check if content has no actual text characters (after stripping HTML tags).
+ * Returns true if content is empty or contains only whitespace/HTML tags.
+ */
+export function hasNoTextCharacters(content: string): boolean {
+  if (content.trim() === "") return true;
+  if (!isHtmlContent(content)) return false;
+  // Use a temporary DOM element to extract text content
+  const doc = document.implementation.createHTMLDocument("");
+  const body = doc.body;
+  body.innerHTML = content;
+  const textContent = body.textContent ?? "";
+  return textContent.trim().length === 0;
+}

@@ -146,10 +146,10 @@ export function resizeBoundsFromHandle(
   }
 
   let result = { x, y, width, height };
-  // Apply ctrlKey (center preservation) only when shiftKey is not pressed.
-  // When both are pressed, shiftKey's axis-specific anchoring takes precedence
-  // to avoid ctrlKey overriding the intended behavior.
-  if (modifiers?.ctrlKey && !modifiers?.shiftKey) {
+  // Apply ctrlKey (center preservation) when pressed.
+  // When both shiftKey and ctrlKey are pressed, both behaviors apply:
+  // shiftKey preserves aspect ratio, ctrlKey preserves center position.
+  if (modifiers?.ctrlKey) {
     const centerX = finiteNum(start.x, 0) + clampSize(start.width) / 2;
     const centerY = finiteNum(start.y, 0) + clampSize(start.height) / 2;
     result = {

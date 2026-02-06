@@ -71,14 +71,9 @@ describe("resizeBoundsFromHandle", () => {
     expect(result.x + result.width / 2).toBeCloseTo(centerX);
   });
 
-  it("shiftKey+ctrlKey: shiftKey takes precedence, ctrlKey center preservation is not applied", () => {
-    const resultShiftOnly = resizeBoundsFromHandle(
-      base,
-      "e",
-      40,
-      0,
-      { shiftKey: true }
-    );
+  it("shiftKey+ctrlKey: both behaviors apply together", () => {
+    const centerX = base.x + base.width / 2;
+    const centerY = base.y + base.height / 2;
     const resultBoth = resizeBoundsFromHandle(
       base,
       "e",
@@ -86,7 +81,10 @@ describe("resizeBoundsFromHandle", () => {
       0,
       { shiftKey: true, ctrlKey: true }
     );
-    expect(resultBoth).toEqual(resultShiftOnly);
+    // Both aspect ratio and center position should be preserved
+    expect(resultBoth.width / resultBoth.height).toBeCloseTo(base.width / base.height);
+    expect(resultBoth.x + resultBoth.width / 2).toBeCloseTo(centerX);
+    expect(resultBoth.y + resultBoth.height / 2).toBeCloseTo(centerY);
   });
 });
 

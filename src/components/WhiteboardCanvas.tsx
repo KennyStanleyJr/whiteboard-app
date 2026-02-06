@@ -24,6 +24,7 @@ import type {
   WhiteboardElement,
 } from "../types/whiteboard";
 import type { FormatTag } from "../utils/textFormat";
+import { hasNoTextCharacters } from "../utils/sanitizeHtml";
 import { cn } from "@/lib/utils";
 import {
   SelectionToolbar,
@@ -240,11 +241,16 @@ export function WhiteboardCanvas(): JSX.Element {
   );
 
   const handleUpdateElementContent = useCallback((id: string, content: string) => {
-    setElements((prev) =>
-      prev.map((el) =>
+    setElements((prev) => {
+      // If content has no text characters, delete the element
+      if (hasNoTextCharacters(content)) {
+        return prev.filter((el) => el.id !== id);
+      }
+      // Otherwise update the content
+      return prev.map((el) =>
         el.id === id && el.kind === "text" ? { ...el, content } : el
-      )
-    );
+      );
+    });
   }, [setElements]);
 
   const handleFinishEditElement = useCallback(() => {

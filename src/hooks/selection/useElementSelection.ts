@@ -76,7 +76,10 @@ export function useElementSelection(
   const [selectedElementIds, setSelectedElementIds] = useState<string[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const dragStateRef = useRef<DragState | null>(null);
-  const marqueeShiftKeyRef = useRef<boolean>(false);
+  const marqueeModifiersRef = useRef<{ shiftKey: boolean; ctrlKey: boolean }>({
+    shiftKey: false,
+    ctrlKey: false,
+  });
   const dragMovePendingRef = useRef<{ dx: number; dy: number } | null>(null);
   const dragRafRef = useRef<number | null>(null);
 
@@ -151,10 +154,13 @@ export function useElementSelection(
         (e.target as Element).setPointerCapture?.(e.pointerId);
         panZoomHandlers.onPointerDown(e);
       } else {
-        if (!e.shiftKey) {
+        if (!e.shiftKey && !(e.ctrlKey || e.metaKey)) {
           setSelectedElementIds([]);
         }
-        marqueeShiftKeyRef.current = e.shiftKey;
+        marqueeModifiersRef.current = {
+          shiftKey: e.shiftKey,
+          ctrlKey: e.ctrlKey || e.metaKey,
+        };
         dragStateRef.current = null;
         selectionHandlers.handlePointerDown(e);
       }
@@ -232,6 +238,13 @@ export function useElementSelection(
         panZoomHandlers.onPointerMove(e);
         return;
       }
+      // Update modifier keys when selection box is active
+      if (drag === null && (e.buttons & 1) !== 0) {
+        marqueeModifiersRef.current = {
+          shiftKey: e.shiftKey,
+          ctrlKey: e.ctrlKey || e.metaKey,
+        };
+      }
       selectionHandlers.handlePointerMove(e);
     },
     [
@@ -269,15 +282,24 @@ export function useElementSelection(
         } else if (selectionRect !== null) {
           const worldRect = viewBoxRectToWorld(selectionRect, panX, panY, zoom);
           const ids = elementsInRect(worldRect, elements, measuredBounds);
-          if (marqueeShiftKeyRef.current) {
+          const modifiers = marqueeModifiersRef.current;
+          if (modifiers.ctrlKey) {
+            // Ctrl/Cmd: subtract from selection (remove elements in box)
+            setSelectedElementIds((prev) => {
+              const idsSet = new Set(ids);
+              return prev.filter((id) => !idsSet.has(id));
+            });
+          } else if (modifiers.shiftKey) {
+            // Shift: add to selection (union)
             setSelectedElementIds((prev) => {
               const combined = new Set([...prev, ...ids]);
               return Array.from(combined);
             });
           } else {
+            // No modifier: replace selection
             setSelectedElementIds(ids);
           }
-          marqueeShiftKeyRef.current = false;
+          marqueeModifiersRef.current = { shiftKey: false, ctrlKey: false };
         }
         panZoomHandlers.onPointerUp(e);
         selectionHandlers.handlePointerUp(e);
