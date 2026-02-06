@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { clientToWorld } from "../hooks/canvas/canvasCoords";
 import {
   useCanvasEventListeners,
@@ -224,6 +224,39 @@ export function WhiteboardCanvas(): JSX.Element {
 
   const handleResizeHandleUp = clearResizeState;
   const handleErrorRecover = clearResizeState;
+
+  const selectedIdsRef = useRef<string[]>([]);
+  selectedIdsRef.current = elementSelection.selectedElementIds;
+
+  const handleDeleteSelected = useCallback(() => {
+    const ids = new Set(selectedIdsRef.current);
+    setElements((prev) => prev.filter((el) => !ids.has(el.id)));
+  }, []);
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent): void => {
+      if (
+        e.key !== "Delete" &&
+        e.key !== "Backspace"
+      ) return;
+      if (selectedIdsRef.current.length === 0) return;
+      if (editingElementId !== null) return;
+      const target = e.target as HTMLElement;
+      const tag = target.tagName?.toLowerCase();
+      const role = target.getAttribute?.("role");
+      const editable =
+        tag === "input" ||
+        tag === "textarea" ||
+        target.isContentEditable ||
+        role === "textbox";
+      if (editable) return;
+      e.preventDefault();
+      handleDeleteSelected();
+    };
+    document.addEventListener("keydown", onKeyDown, { capture: true });
+    return () =>
+      document.removeEventListener("keydown", onKeyDown, { capture: true });
+  }, [editingElementId, handleDeleteSelected]);
 
   useCanvasEventListeners(
     panZoom.containerRef,

@@ -29,6 +29,7 @@ import {
   AlignVerticalJustifyStart,
   ChevronDown,
   ChevronUp,
+  Trash2,
   TypeIcon,
 } from "lucide-react";
 
@@ -250,6 +251,11 @@ export function SelectionToolbar(props: SelectionToolbarProps): JSX.Element | nu
         return { ...el, textVerticalAlign: align };
       })
     );
+  };
+
+  const handleDeleteSelected = (): void => {
+    const ids = new Set(selectedElementIds);
+    setElements((prev) => prev.filter((el) => !ids.has(el.id)));
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>): void => {
@@ -541,6 +547,22 @@ export function SelectionToolbar(props: SelectionToolbarProps): JSX.Element | nu
           </div>
         </>
       )}
+      <div
+        className={
+          hasText ? "border-l border-border pl-1.5" : ""
+        }
+      >
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7 rounded text-destructive hover:text-destructive [&_svg]:size-3.5"
+          onClick={handleDeleteSelected}
+          aria-label="Delete selected"
+        >
+          <Trash2 aria-hidden />
+        </Button>
+      </div>
     </div>
   );
 }

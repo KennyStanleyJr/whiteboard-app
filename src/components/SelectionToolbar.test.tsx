@@ -97,6 +97,26 @@ describe("SelectionToolbar", () => {
     expect(next[0]).toMatchObject({ id: "a", fontSize: 17 });
   });
 
+  it("calls setElements to remove selected elements when delete is clicked", () => {
+    const setElements = vi.fn();
+    const containerRef = createContainerRef();
+    render(
+      <SelectionToolbar
+        {...defaultProps}
+        containerRef={containerRef}
+        setElements={setElements}
+        selectedElementIds={["a"]}
+        elements={[textEl]}
+        measuredBounds={{ a: { x: 0, y: 0, width: 100, height: 22 } }}
+      />
+    );
+    fireEvent.click(screen.getByRole("button", { name: /delete selected/i }));
+    expect(setElements).toHaveBeenCalled();
+    type Updater = (prev: TextElement[]) => TextElement[];
+    const next = (setElements.mock.calls[0]?.[0] as Updater)([textEl]);
+    expect(next).toHaveLength(0);
+  });
+
   it("calls setElements when text align is changed", () => {
     const setElements = vi.fn();
     const containerRef = createContainerRef();

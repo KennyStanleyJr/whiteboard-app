@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState, RefObject } from "react";
+import { useCallback, useEffect, useRef, useState, RefObject } from "react";
 import { clientToWorld } from "../canvas/canvasCoords";
 import {
   elementAtPoint,
@@ -62,6 +62,11 @@ export function useElementSelection(
   const [selectedElementIds, setSelectedElementIds] = useState<string[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const dragStateRef = useRef<DragState | null>(null);
+
+  useEffect(() => {
+    const ids = new Set(elements.map((el) => el.id));
+    setSelectedElementIds((prev) => prev.filter((id) => ids.has(id)));
+  }, [elements]);
 
   const handlePointerDown = useCallback(
     (e: React.PointerEvent) => {

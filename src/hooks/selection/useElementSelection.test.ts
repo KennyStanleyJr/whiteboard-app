@@ -14,6 +14,10 @@ const textEl: TextElement = {
   fontSize: 16,
 };
 
+/** Stable reference so useEffect in useElementSelection doesn't re-run on every render. */
+const elements = [textEl];
+const measuredBounds = { t1: { x: 100, y: 50, width: 100, height: 22 } };
+
 const noop = (): void => {};
 
 const defaultSelectionHandlers = {
@@ -50,10 +54,10 @@ describe("useElementSelection", () => {
         0,
         0,
         1,
-        [textEl],
+        elements,
         setElements,
         null,
-        { t1: { x: 100, y: 50, width: 100, height: 22 } },
+        measuredBounds,
         defaultSelectionHandlers,
         defaultPanZoomHandlers,
         null
@@ -82,10 +86,10 @@ describe("useElementSelection", () => {
         0,
         0,
         1,
-        [textEl],
+        elements,
         setElements,
         null,
-        { t1: { x: 100, y: 50, width: 100, height: 22 } },
+        measuredBounds,
         selectionHandlers,
         defaultPanZoomHandlers,
         null
@@ -122,10 +126,10 @@ describe("useElementSelection", () => {
         0,
         0,
         1,
-        [textEl],
+        elements,
         setElements,
         null,
-        { t1: { x: 100, y: 50, width: 100, height: 22 } },
+        measuredBounds,
         selectionHandlers,
         defaultPanZoomHandlers,
         null
@@ -178,10 +182,10 @@ describe("useElementSelection", () => {
           0,
           0,
           1,
-          [textEl],
+          elements,
           setElements,
           selectionRect,
-          { t1: { x: 100, y: 50, width: 100, height: 22 } },
+          measuredBounds,
           selectionHandlers,
           defaultPanZoomHandlers,
           null
@@ -220,10 +224,10 @@ describe("useElementSelection", () => {
         0,
         0,
         1,
-        [textEl],
+        elements,
         setElements,
         null,
-        { t1: { x: 100, y: 50, width: 100, height: 22 } },
+        measuredBounds,
         { ...defaultSelectionHandlers, handlePointerDown: vi.fn() },
         { ...defaultPanZoomHandlers, onPointerDown, onPointerUp },
         null
