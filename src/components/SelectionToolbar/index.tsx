@@ -32,8 +32,9 @@ import type {
 } from "@/types/whiteboard";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { Maximize2, PaintBucket, Trash2 } from "lucide-react";
+import { Maximize2, PaintBucket } from "lucide-react";
 import { AlignMenus } from "./AlignMenus";
+import { ElementActionsMenu } from "./ElementActionsMenu";
 import { FontSizeControl } from "./FontSizeControl";
 import { FormatButtonsRow } from "./FormatButtonsRow";
 import { ImageCornerRadiusMenu } from "./ImageCornerRadiusMenu";
@@ -63,6 +64,14 @@ export interface SelectionToolbarProps {
   editingElementId?: string | null;
   /** Run a format command on the active contentEditable (bold, italic, underline, foreColor). */
   onFormatCommand?: (command: string, value?: string) => void;
+  /** Handler for cutting selected elements */
+  onCut?: () => void;
+  /** Handler for copying selected elements */
+  onCopy?: () => void;
+  /** Handler for duplicating selected elements */
+  onDuplicate?: () => void;
+  /** Handler for deleting selected elements */
+  onDelete?: () => void;
 }
 
 export interface SelectionToolbarHandle {
@@ -89,6 +98,10 @@ export const SelectionToolbar = forwardRef<
     viewHeight,
     editingElementId = null,
     onFormatCommand,
+    onCut,
+    onCopy,
+    onDuplicate,
+    onDelete,
   } = props;
 
   const toolbarRef = useRef<HTMLDivElement | null>(null);
@@ -96,6 +109,7 @@ export const SelectionToolbar = forwardRef<
   const verticalAlignMenuRef = useRef<HTMLDivElement>(null);
   const colorPickerMenuRef = useRef<HTMLDivElement>(null);
   const cornerRadiusMenuRef = useRef<HTMLDivElement>(null);
+  const elementActionsMenuRef = useRef<HTMLDivElement>(null);
   const applyColorRef = useRef<(color: string) => void>(() => {});
   const colorThrottleTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const colorLastApplyTimeRef = useRef<number>(0);
@@ -107,6 +121,7 @@ export const SelectionToolbar = forwardRef<
   const [verticalAlignMenuOpen, setVerticalAlignMenuOpen] = useState(false);
   const [colorPickerOpen, setColorPickerOpen] = useState(false);
   const [cornerRadiusMenuOpen, setCornerRadiusMenuOpen] = useState(false);
+  const [elementActionsMenuOpen, setElementActionsMenuOpen] = useState(false);
   const [pickerColor, setPickerColor] = useState("#000000");
   const worldAnchorRef = useRef<{ centerX: number; topY: number } | null>(null);
 
@@ -265,10 +280,22 @@ export const SelectionToolbar = forwardRef<
     [selectedElementIds, setElements]
   );
 
-  // Close color picker when selection changes
+  // Close color picker when selection changes (only if IDs actually changed)
+  const prevSelectedIdsRef = useRef<string[]>([]);
   useEffect(() => {
-    setColorPickerOpen(false);
-  }, [selectedElementIds]);
+    const prevIds = prevSelectedIdsRef.current;
+    const currentIds = selectedElementIds;
+    const prevSet = new Set(prevIds);
+    const currentSet = new Set(currentIds);
+    const idsChanged =
+      prevIds.length !== currentIds.length ||
+      prevIds.some((id) => !currentSet.has(id)) ||
+      currentIds.some((id) => !prevSet.has(id));
+    if (idsChanged && colorPickerOpen) {
+      setColorPickerOpen(false);
+    }
+    prevSelectedIdsRef.current = currentIds;
+  }, [selectedElementIds, colorPickerOpen]);
 
   useImperativeHandle(
     ref,
@@ -483,8 +510,12 @@ export const SelectionToolbar = forwardRef<
   };
 
   const handleDeleteSelected = (): void => {
-    const ids = new Set(selectedElementIds);
-    setElements((prev) => prev.filter((el) => !ids.has(el.id)));
+    if (onDelete) {
+      onDelete();
+    } else {
+      const ids = new Set(selectedElementIds);
+      setElements((prev) => prev.filter((el) => !ids.has(el.id)));
+    }
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>): void => {
@@ -546,6 +577,17 @@ export const SelectionToolbar = forwardRef<
     document.addEventListener("mousedown", close, { capture: true });
     return () => document.removeEventListener("mousedown", close, { capture: true });
   }, [cornerRadiusMenuOpen]);
+
+  useEffect(() => {
+    if (!elementActionsMenuOpen) return;
+    const close = (e: MouseEvent): void => {
+      const el = elementActionsMenuRef.current;
+      if (el != null && !el.contains(e.target as Node))
+        setElementActionsMenuOpen(false);
+    };
+    document.addEventListener("mousedown", close, { capture: true });
+    return () => document.removeEventListener("mousedown", close, { capture: true });
+  }, [elementActionsMenuOpen]);
 
   const presetValue =
     singleFontSize && FONT_SIZE_PRESETS.includes(displayFontSize)
@@ -670,18 +712,15 @@ export const SelectionToolbar = forwardRef<
           colorPickerMenuRef={colorPickerMenuRef}
         />
       )}
-      <div className={hasText || hasShape || hasImage ? "flex items-center" : ""}>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          className="h-7 w-7 rounded text-destructive hover:text-destructive [&_svg]:size-3.5"
-          onClick={handleDeleteSelected}
-          aria-label="Delete selected"
-        >
-          <Trash2 aria-hidden />
-        </Button>
-      </div>
+      <ElementActionsMenu
+        onCut={onCut ?? (() => {})}
+        onCopy={onCopy ?? (() => {})}
+        onDuplicate={onDuplicate ?? (() => {})}
+        onDelete={handleDeleteSelected}
+        menuOpen={elementActionsMenuOpen}
+        setMenuOpen={setElementActionsMenuOpen}
+        menuRef={elementActionsMenuRef}
+      />
     </div>
   );
 });

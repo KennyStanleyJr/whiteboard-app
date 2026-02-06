@@ -11,6 +11,7 @@ import {
 } from "../hooks";
 import type { ElementBounds } from "../utils/elementBounds";
 import {
+  elementAtPoint,
   getElementBounds,
   sanitizeElementBounds,
 } from "../utils/elementBounds";
@@ -30,6 +31,7 @@ import {
   SelectionToolbar,
   type SelectionToolbarHandle,
 } from "./SelectionToolbar";
+import { ElementContextMenu } from "./SelectionToolbar/ElementContextMenu";
 import { WhiteboardCanvasSvg } from "./WhiteboardCanvasSvg";
 import { WhiteboardErrorBoundary } from "./WhiteboardErrorBoundary";
 import { WhiteboardToolbar } from "./WhiteboardToolbar";
@@ -105,7 +107,8 @@ export function WhiteboardCanvas(): JSX.Element {
       onPointerLeave: panZoom.onPointerLeave,
     },
     editingElementId,
-    persistNow
+    persistNow,
+    toolbarContainerRef
   );
 
   const DEFAULT_SHAPE_WIDTH = 180;
@@ -280,6 +283,12 @@ export function WhiteboardCanvas(): JSX.Element {
     /** Whether we have pushed pre-resize state to undo history (once per resize). */
     historyPushed: boolean;
   } | null>(null);
+
+  const [contextMenuPosition, setContextMenuPosition] = useState<{
+    x: number;
+    y: number;
+  } | null>(null);
+  const contextMenuRef = useRef<HTMLDivElement>(null);
 
   const handleResizeHandleDown = useCallback(
     (handleId: ResizeHandleId, e: React.PointerEvent) => {
@@ -565,6 +574,78 @@ export function WhiteboardCanvas(): JSX.Element {
     elementSelection.setSelectedElementIds(newIds);
   }, [elements, setElements, elementSelection]);
 
+  const handleCutSelected = useCallback(() => {
+    handleCopySelected();
+    handleDeleteSelected();
+  }, [handleCopySelected, handleDeleteSelected]);
+
+  const handleContextMenu = useCallback(
+    (e: React.MouseEvent): void => {
+      // Only show context menu if not panning and element is selected
+      if (panZoom.isPanning) return;
+      if (elementSelection.selectedElementIds.length === 0) return;
+      if (editingElementId !== null) return;
+
+      const container = panZoom.containerRef.current;
+      if (container == null) return;
+
+      const world = clientToWorld(
+        container,
+        e.clientX,
+        e.clientY,
+        size.width,
+        size.height,
+        panZoom.panX,
+        panZoom.panY,
+        panZoom.zoom
+      );
+      if (world == null) return;
+
+      const hit = elementAtPoint(world.x, world.y, elements, measuredBounds);
+      if (hit == null) return;
+
+      // Only show if clicking on a selected element
+      if (!elementSelection.selectedElementIds.includes(hit.id)) return;
+
+      e.preventDefault();
+      setContextMenuPosition({ x: e.clientX, y: e.clientY });
+    },
+    [
+      panZoom.isPanning,
+      panZoom.containerRef,
+      panZoom.panX,
+      panZoom.panY,
+      panZoom.zoom,
+      elementSelection.selectedElementIds,
+      editingElementId,
+      elements,
+      measuredBounds,
+      size.width,
+      size.height,
+    ]
+  );
+
+  useEffect(() => {
+    if (contextMenuPosition == null) return;
+    const closeOnClick = (e: MouseEvent): void => {
+      const el = contextMenuRef.current;
+      if (el != null && !el.contains(e.target as Node)) {
+        setContextMenuPosition(null);
+      }
+    };
+    const closeOnEscape = (e: KeyboardEvent): void => {
+      if (e.key === "Escape") {
+        setContextMenuPosition(null);
+      }
+    };
+    document.addEventListener("mousedown", closeOnClick, { capture: true });
+    document.addEventListener("keydown", closeOnEscape, { capture: true });
+    return () => {
+      document.removeEventListener("mousedown", closeOnClick, { capture: true });
+      document.removeEventListener("keydown", closeOnEscape, { capture: true });
+    };
+  }, [contextMenuPosition]);
+
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent): void => {
       if (
@@ -604,11 +685,12 @@ export function WhiteboardCanvas(): JSX.Element {
       const isRedo =
         ((e.key === "y" || e.key === "Y") && (e.ctrlKey || e.metaKey)) ||
         ((e.key === "z" || e.key === "Z") && (e.ctrlKey || e.metaKey) && e.shiftKey);
+      const isCut = (e.key === "x" || e.key === "X") && (e.ctrlKey || e.metaKey);
       const isCopy = (e.key === "c" || e.key === "C") && (e.ctrlKey || e.metaKey);
       const isPaste = (e.key === "v" || e.key === "V") && (e.ctrlKey || e.metaKey);
       const isDuplicate = (e.key === "d" || e.key === "D") && (e.ctrlKey || e.metaKey);
       
-      if (!isUndo && !isRedo && !isCopy && !isPaste && !isDuplicate) return;
+      if (!isUndo && !isRedo && !isCut && !isCopy && !isPaste && !isDuplicate) return;
       
       const target = e.target as HTMLElement;
       const tag = target.tagName?.toLowerCase();
@@ -631,7 +713,12 @@ export function WhiteboardCanvas(): JSX.Element {
       }
       
       if (editable) return;
-      if (isCopy) {
+      if (isCut) {
+        if (selectedIdsRef.current.length === 0) return;
+        if (editingElementId !== null) return;
+        e.preventDefault();
+        handleCutSelected();
+      } else if (isCopy) {
         if (selectedIdsRef.current.length === 0) return;
         if (editingElementId !== null) return;
         e.preventDefault();
@@ -652,6 +739,7 @@ export function WhiteboardCanvas(): JSX.Element {
       document.removeEventListener("keydown", onKeyDown, { capture: true });
   }, [
     editingElementId,
+    handleCutSelected,
     handleCopySelected,
     handlePaste,
     handleDuplicateSelected,
@@ -870,6 +958,10 @@ export function WhiteboardCanvas(): JSX.Element {
           viewHeight={size.height}
           editingElementId={editingElementId}
           onFormatCommand={handleFormatCommand}
+          onCut={handleCutSelected}
+          onCopy={handleCopySelected}
+          onDuplicate={handleDuplicateSelected}
+          onDelete={handleDeleteSelected}
         />
       </div>
       <WhiteboardCanvasSvg
@@ -887,7 +979,10 @@ export function WhiteboardCanvas(): JSX.Element {
         onPointerMove={elementSelection.handlers.handlePointerMove}
         onPointerUp={elementSelection.handlers.handlePointerUp}
         onPointerLeave={elementSelection.handlers.handlePointerLeave}
-        onContextMenu={panZoom.onContextMenu}
+        onContextMenu={(e) => {
+          panZoom.onContextMenu(e);
+          handleContextMenu(e);
+        }}
         isPanning={panZoom.isPanning}
         elements={elements}
         editingElementId={editingElementId}
@@ -902,6 +997,15 @@ export function WhiteboardCanvas(): JSX.Element {
         toolbarContainerRef={toolbarContainerRef}
       />
       </div>
+      <ElementContextMenu
+        onCut={handleCutSelected}
+        onCopy={handleCopySelected}
+        onDuplicate={handleDuplicateSelected}
+        onDelete={handleDeleteSelected}
+        position={contextMenuPosition}
+        onClose={() => setContextMenuPosition(null)}
+        menuRef={contextMenuRef}
+      />
     </WhiteboardErrorBoundary>
   );
 }

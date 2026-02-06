@@ -129,10 +129,98 @@ describe("SelectionToolbar", () => {
         measuredBounds={{ a: { x: 0, y: 0, width: 100, height: 22 } }}
       />
     );
-    fireEvent.click(screen.getByRole("button", { name: /delete selected/i }));
+    // Open the element actions menu
+    fireEvent.click(screen.getByRole("button", { name: /element actions/i }));
+    // Click the Delete menu item
+    fireEvent.click(screen.getByRole("menuitem", { name: /delete/i }));
     expect(setElements).toHaveBeenCalled();
     const next = getNextElements(setElements, [textEl]);
     expect(next).toHaveLength(0);
+  });
+
+  it("calls onCut when cut is clicked from menu", () => {
+    const onCut = vi.fn();
+    const containerRef = createContainerRef();
+    render(
+      <SelectionToolbar
+        {...defaultProps}
+        containerRef={containerRef}
+        selectedElementIds={["a"]}
+        elements={[textEl]}
+        measuredBounds={{ a: { x: 0, y: 0, width: 100, height: 22 } }}
+        onCut={onCut}
+      />
+    );
+    // Open the element actions menu
+    fireEvent.click(screen.getByRole("button", { name: /element actions/i }));
+    // Click the Cut menu item
+    fireEvent.click(screen.getByRole("menuitem", { name: /cut/i }));
+    expect(onCut).toHaveBeenCalledTimes(1);
+  });
+
+  it("calls onCopy when copy is clicked from menu", () => {
+    const onCopy = vi.fn();
+    const containerRef = createContainerRef();
+    render(
+      <SelectionToolbar
+        {...defaultProps}
+        containerRef={containerRef}
+        selectedElementIds={["a"]}
+        elements={[textEl]}
+        measuredBounds={{ a: { x: 0, y: 0, width: 100, height: 22 } }}
+        onCopy={onCopy}
+      />
+    );
+    // Open the element actions menu
+    fireEvent.click(screen.getByRole("button", { name: /element actions/i }));
+    // Click the Copy menu item
+    fireEvent.click(screen.getByRole("menuitem", { name: /copy/i }));
+    expect(onCopy).toHaveBeenCalledTimes(1);
+  });
+
+  it("calls onDuplicate when duplicate is clicked from menu", () => {
+    const onDuplicate = vi.fn();
+    const containerRef = createContainerRef();
+    render(
+      <SelectionToolbar
+        {...defaultProps}
+        containerRef={containerRef}
+        selectedElementIds={["a"]}
+        elements={[textEl]}
+        measuredBounds={{ a: { x: 0, y: 0, width: 100, height: 22 } }}
+        onDuplicate={onDuplicate}
+      />
+    );
+    // Open the element actions menu
+    fireEvent.click(screen.getByRole("button", { name: /element actions/i }));
+    // Click the Duplicate menu item
+    fireEvent.click(screen.getByRole("menuitem", { name: /duplicate/i }));
+    expect(onDuplicate).toHaveBeenCalledTimes(1);
+  });
+
+  it("closes menu after selecting an action", () => {
+    const onCut = vi.fn();
+    const containerRef = createContainerRef();
+    render(
+      <SelectionToolbar
+        {...defaultProps}
+        containerRef={containerRef}
+        selectedElementIds={["a"]}
+        elements={[textEl]}
+        measuredBounds={{ a: { x: 0, y: 0, width: 100, height: 22 } }}
+        onCut={onCut}
+      />
+    );
+    // Open the element actions menu
+    const menuButton = screen.getByRole("button", { name: /element actions/i });
+    fireEvent.click(menuButton);
+    expect(screen.getByRole("menu", { name: /element actions/i })).toBeInTheDocument();
+    
+    // Click the Cut menu item
+    fireEvent.click(screen.getByRole("menuitem", { name: /cut/i }));
+    
+    // Menu should be closed
+    expect(screen.queryByRole("menu", { name: /element actions/i })).not.toBeInTheDocument();
   });
 
   it("calls setElements when text align is changed", () => {

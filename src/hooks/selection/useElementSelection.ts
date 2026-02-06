@@ -66,7 +66,8 @@ export function useElementSelection(
     onPointerLeave: (e: React.PointerEvent) => void;
   },
   editingElementId: string | null,
-  onDragEnd?: () => void
+  onDragEnd?: () => void,
+  toolbarContainerRef?: RefObject<HTMLElement | null>
 ): {
   selectedElementIds: string[];
   setSelectedElementIds: React.Dispatch<React.SetStateAction<string[]>>;
@@ -92,6 +93,10 @@ export function useElementSelection(
     (e: React.PointerEvent) => {
       if (e.button !== 0) {
         selectionHandlers.handlePointerDown(e);
+        return;
+      }
+      // Skip handling if event originated from toolbar
+      if (toolbarContainerRef?.current?.contains(e.target as Node)) {
         return;
       }
       const world = clientToWorld(
@@ -178,6 +183,7 @@ export function useElementSelection(
       editingElementId,
       selectionHandlers,
       panZoomHandlers,
+      toolbarContainerRef,
     ]
   );
 
