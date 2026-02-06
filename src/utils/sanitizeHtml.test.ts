@@ -32,6 +32,23 @@ describe("sanitizeHtml", () => {
     expect(result).toContain("font-size");
     expect(result).toContain("color");
   });
+
+  it("prevents HTML/script injection via style attribute breakout", () => {
+    const malicious =
+      '<span style="color: red&quot;&gt;&lt;script&gt;alert(1)&lt;/script&gt;">ok</span>';
+    const result = sanitizeHtml(malicious);
+    expect(result).not.toMatch(/<script/i);
+    expect(result).not.toContain("alert(1)");
+  });
+
+  it("escapes angle brackets in style so no tag can be injected", () => {
+    const withBracketInStyle =
+      '<span style="color: x&lt;script&gt;y">safe</span>';
+    const result = sanitizeHtml(withBracketInStyle);
+    expect(result).not.toMatch(/<script/i);
+    expect(result).toContain("safe");
+    expect(result).not.toMatch(/style="[^"]*<[a-z]/i);
+  });
 });
 
 describe("plainTextToHtml", () => {

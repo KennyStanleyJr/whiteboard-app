@@ -69,7 +69,14 @@ function sanitizeNode(node: Node, out: string[], depth: number): void {
   }
   const style = el.getAttribute("style");
   const styleStr = style != null ? parseStyle(style) : "";
-  const attrs = styleStr ? ` style="${styleStr.replace(/"/g, "&quot;")}"` : "";
+  const safeStyle =
+    styleStr &&
+    styleStr
+      .replace(/&/g, "&amp;")
+      .replace(/"/g, "&quot;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
+  const attrs = safeStyle ? ` style="${safeStyle}"` : "";
   out.push(`<${tag}${attrs}>`);
   for (let i = 0; i < el.childNodes.length; i++) {
     sanitizeNode(el.childNodes[i]!, out, depth + 1);
