@@ -50,14 +50,10 @@
   box-sizing: border-box;
 }
 
-html,
-body {
-  background-color: transparent; /* #viewport-bg provides the visible background */
-}
-
 html {
   height: 100%;
   overflow: hidden;
+  background-color: var(--color-background); /* overridden by App.tsx for viewport color */
 }
 
 body {
@@ -68,14 +64,7 @@ body {
   line-height: 1.5;
   font-weight: 400;
   color: var(--color-foreground);
-}
-
-/* Viewport background layer; color set from App.tsx. Not animated. */
-#viewport-bg {
-  position: fixed;
-  inset: 0;
-  z-index: -1;
-  background-color: #f5f5f5;
+  background-color: transparent;
 }
 
 #root {
@@ -83,7 +72,6 @@ body {
 }
 
 :root {
-  /* Timing for .app-overlay opacity transition. #viewport-bg stays whiteboard color and is not animated. */
   --viewport-transition-duration: 200ms;
   --viewport-transition-easing: ease-in-out;
   --radius: 0.625rem;

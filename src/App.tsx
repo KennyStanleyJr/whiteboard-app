@@ -79,6 +79,7 @@ function App(): JSX.Element {
   const nameInputRef = useRef<HTMLInputElement>(null);
   const menuRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const renameInputRef = useRef<HTMLInputElement>(null);
+
   const setCanvasPreference = <K extends keyof CanvasPreferences>(
     key: K,
     value: CanvasPreferences[K]
@@ -106,13 +107,20 @@ function App(): JSX.Element {
       ? whiteboardData.gridStyle
       : "dotted";
 
-  // Viewport (top bar on mobile, safe area): always matches active whiteboard background.
+  // Viewport (top bar on mobile, safe area): match whiteboard on canvas, theme on management. No animation.
+  const MANAGEMENT_DARK_BG = "oklch(0.145 0 0)"; // must match .dark --color-background in index.css
+  const MANAGEMENT_LIGHT_BG = "#f5f5f5";
   useEffect(() => {
-    const viewportBgEl = document.getElementById("viewport-bg");
+    const viewportColor =
+      view === "manage"
+        ? canvasPreferences.theme === "dark"
+          ? MANAGEMENT_DARK_BG
+          : MANAGEMENT_LIGHT_BG
+        : boardBackgroundColor;
+    document.documentElement.style.backgroundColor = viewportColor;
     const meta = document.querySelector('meta[name="theme-color"]');
-    if (viewportBgEl) viewportBgEl.style.backgroundColor = boardBackgroundColor;
-    if (meta) meta.setAttribute("content", boardBackgroundColor);
-  }, [boardBackgroundColor]);
+    if (meta) meta.setAttribute("content", viewportColor);
+  }, [view, canvasPreferences.theme, boardBackgroundColor]);
 
   const updateCurrentBoardAppearance = (partial: {
     backgroundColor?: string;
@@ -661,14 +669,13 @@ function App(): JSX.Element {
       <WhiteboardCanvas key={currentBoardId} boardId={currentBoardId} />
       <main
         className={cn(
-          "app-overlay flex flex-col justify-start items-center md:items-start px-5 md:px-20 pt-16 pb-6 box-border overflow-visible",
+          "app-overlay flex flex-col justify-start items-center md:items-start px-5 md:px-20 pt-16 pb-6 box-border bg-background overflow-visible",
           "opacity-0 pointer-events-none invisible",
-          view === "manage" && "opacity-100 pointer-events-auto visible"
+          view === "manage" && "opacity-100 pointer-events-auto visible",
+          view === "manage" && canvasPreferences.theme === "dark" && "dark"
         )}
         aria-hidden={view !== "manage"}
       >
-        <div className="app-overlay-bg fixed inset-0 bg-background -z-10" aria-hidden="true" />
-        <div className="relative z-10 flex flex-col w-full">
         <div className="flex flex-col md:flex-row gap-3 mt-8 mb-6 justify-center items-center md:justify-start overflow-visible w-full md:w-auto" role="toolbar">
           <Button
             type="button"
@@ -819,7 +826,6 @@ function App(): JSX.Element {
               </div>
             </div>
           ))}
-        </div>
         </div>
       </main>
       <Dialog open={deleteDialogOpen} onOpenChange={(open) => {

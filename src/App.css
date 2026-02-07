@@ -1,5 +1,4 @@
 /* Stacking: .app-overlay z-100, .app-header z-110; whiteboard UI stays below. */
-/* .app-overlay-bg inside overlay is the management background; it animates in/out with the overlay (same element). */
 .app-overlay {
   position: fixed;
   inset: 0;
@@ -17,8 +16,9 @@
     visibility 0s linear 0s;
 }
 
-/* Management page: theme text; background comes from .app-overlay-bg child */
+/* Management page: use theme background and text so it responds to light/dark mode */
 .dark .app-overlay {
+  background-color: var(--color-background);
   color: var(--color-foreground);
 }
 
