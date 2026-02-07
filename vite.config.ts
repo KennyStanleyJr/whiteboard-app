@@ -20,8 +20,8 @@ export default defineConfig(({ mode }) => ({
         short_name: "Whiteboard",
         description:
           "Infinite whiteboard for text, images, videos, links, post-it notes, and arrows.",
-        theme_color: "#ffffff",
-        background_color: "#ffffff",
+        theme_color: "#f5f5f5",
+        background_color: "#f5f5f5",
         display: "standalone",
         icons: [
           {
