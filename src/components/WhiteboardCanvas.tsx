@@ -25,12 +25,13 @@ import type {
   WhiteboardElement,
 } from "../types/whiteboard";
 import type { FormatTag } from "../utils/textFormat";
-import { hasNoTextCharacters } from "../utils/sanitizeHtml";
+import { hasNoTextCharacters, plainTextToHtml } from "../utils/sanitizeHtml";
 import { cn } from "@/lib/utils";
 import {
   SelectionToolbar,
   type SelectionToolbarHandle,
 } from "./SelectionToolbar";
+import { CanvasContextMenu } from "./SelectionToolbar/CanvasContextMenu";
 import { ElementContextMenu } from "./SelectionToolbar/ElementContextMenu";
 import { WhiteboardCanvasSvg } from "./WhiteboardCanvasSvg";
 import { WhiteboardErrorBoundary } from "./WhiteboardErrorBoundary";
@@ -61,6 +62,8 @@ export function WhiteboardCanvas({ boardId }: WhiteboardCanvasProps = {}): JSX.E
     redo,
     canUndo,
     canRedo,
+    backgroundColor,
+    gridStyle,
   } = useWhiteboardQuery(boardId);
   const [editingElementId, setEditingElementId] = useState<string | null>(null);
   const [measuredBounds, setMeasuredBounds] = useState<
@@ -144,6 +147,23 @@ export function WhiteboardCanvas({ boardId }: WhiteboardCanvasProps = {}): JSX.E
     setElements((prev) => [...prev, textElement]);
     setEditingElementId(id);
   }, [setElements]);
+
+  const addTextAtWithContent = useCallback(
+    (x: number, y: number, plainText: string) => {
+      const id = generateElementId();
+      const content = plainTextToHtml(plainText.trim());
+      const textElement: WhiteboardElement = {
+        id,
+        x,
+        y,
+        kind: "text",
+        content,
+        fontSize: 24,
+      };
+      setElements((prev) => [...prev, textElement]);
+    },
+    [setElements]
+  );
 
   const addShapeAt = useCallback(
     (x: number, y: number, shapeType: ShapeType) => {
@@ -298,9 +318,10 @@ export function WhiteboardCanvas({ boardId }: WhiteboardCanvasProps = {}): JSX.E
     historyPushed: boolean;
   } | null>(null);
 
-  const [contextMenuPosition, setContextMenuPosition] = useState<{
+  const [contextMenu, setContextMenu] = useState<{
     x: number;
     y: number;
+    type: "element" | "canvas";
   } | null>(null);
   const contextMenuRef = useRef<HTMLDivElement>(null);
 
@@ -493,16 +514,17 @@ export function WhiteboardCanvas({ boardId }: WhiteboardCanvasProps = {}): JSX.E
       }
     }
     clipboardRef.current = copied;
+    /* Clear system clipboard so the next paste only pastes the copied elements. */
+    navigator.clipboard.writeText("").catch(() => {});
   }, [elements, measuredBounds]);
 
-  const handlePaste = useCallback(() => {
-    if (clipboardRef.current.length === 0) return;
+  const getPastePosition = useCallback(() => {
     const mousePos = lastMousePositionRef.current;
     const container = panZoom.containerRef.current;
-    
-    let pasteX: number;
-    let pasteY: number;
-    
+    const centerViewportX = size.width / 2;
+    const centerViewportY = size.height / 2;
+    const centerX = (centerViewportX - panZoom.panX) / panZoom.zoom;
+    const centerY = (centerViewportY - panZoom.panY) / panZoom.zoom;
     if (mousePos != null && container != null) {
       const world = clientToWorld(
         container,
@@ -514,56 +536,98 @@ export function WhiteboardCanvas({ boardId }: WhiteboardCanvasProps = {}): JSX.E
         panZoom.panY,
         panZoom.zoom
       );
-      if (world != null) {
-        pasteX = world.x;
-        pasteY = world.y;
-      } else {
-        const centerViewportX = size.width / 2;
-        const centerViewportY = size.height / 2;
-        pasteX = (centerViewportX - panZoom.panX) / panZoom.zoom;
-        pasteY = (centerViewportY - panZoom.panY) / panZoom.zoom;
+      if (world != null) return { x: world.x, y: world.y };
+    }
+    return { x: centerX, y: centerY };
+  }, [
+    panZoom.containerRef,
+    panZoom.panX,
+    panZoom.panY,
+    panZoom.zoom,
+    size.width,
+    size.height,
+  ]);
+
+  const PASTE_OFFSET_Y = 24;
+
+  const handlePaste = useCallback(() => {
+    const { x: baseX, y: baseY } = getPastePosition();
+    let nextY = baseY;
+
+    const pasteAppClipboard = (pasteY: number) => {
+      const clipboardEntries = clipboardRef.current;
+      if (clipboardEntries.length === 0) return;
+      let centerX = 0;
+      let centerY = 0;
+      let count = 0;
+      for (const entry of clipboardEntries) {
+        const bounds = entry.bounds;
+        centerX += bounds.x + bounds.width / 2;
+        centerY += bounds.y + bounds.height / 2;
+        count += 1;
       }
-    } else {
-      const centerViewportX = size.width / 2;
-      const centerViewportY = size.height / 2;
-      pasteX = (centerViewportX - panZoom.panX) / panZoom.zoom;
-      pasteY = (centerViewportY - panZoom.panY) / panZoom.zoom;
-    }
-
-    const clipboardEntries = clipboardRef.current;
-    if (clipboardEntries.length === 0) return;
-
-    let centerX = 0;
-    let centerY = 0;
-    let count = 0;
-    for (const entry of clipboardEntries) {
-      const bounds = entry.bounds;
-      centerX += bounds.x + bounds.width / 2;
-      centerY += bounds.y + bounds.height / 2;
-      count += 1;
-    }
-    if (count > 0) {
+      if (count === 0) return;
       centerX /= count;
       centerY /= count;
-    }
+      const offsetX = baseX - centerX;
+      const offsetY = pasteY - centerY;
+      const newElements: WhiteboardElement[] = clipboardEntries.map((entry) => {
+        const el = entry.element;
+        const newId = generateElementId();
+        return {
+          ...el,
+          id: newId,
+          x: el.x + offsetX,
+          y: el.y + offsetY,
+        };
+      });
+      setElements((prev) => [...prev, ...newElements]);
+      elementSelection.setSelectedElementIds(newElements.map((el) => el.id));
+    };
 
-    const offsetX = pasteX - centerX;
-    const offsetY = pasteY - centerY;
+    /* Paste system clipboard first (images + text), then app clipboard below. */
+    void navigator.clipboard.read().then((items) => {
+      const imageFiles: File[] = [];
+      let textContent: string | null = null;
 
-    const newElements: WhiteboardElement[] = clipboardEntries.map((entry) => {
-      const el = entry.element;
-      const newId = generateElementId();
-      return {
-        ...el,
-        id: newId,
-        x: el.x + offsetX,
-        y: el.y + offsetY,
+      const processItem = async (item: ClipboardItem): Promise<void> => {
+        const imageType = item.types.find((t) => t.startsWith("image/"));
+        if (imageType != null) {
+          const blob = await item.getType(imageType);
+          imageFiles.push(new File([blob], "pasted.png", { type: blob.type }));
+        }
+        if (item.types.includes("text/plain")) {
+          const blob = await item.getType("text/plain");
+          const t = (await blob.text()).trim();
+          if (t.length > 0) textContent = t;
+        }
       };
+
+      return Promise.all(items.map((item) => processItem(item))).then(() => {
+        const hasSystemContent = imageFiles.length > 0 || textContent != null;
+        if (hasSystemContent) {
+          for (const file of imageFiles) {
+            addImageFromFile(file, baseX, nextY);
+            nextY += PASTE_OFFSET_Y * 5;
+          }
+          if (textContent != null) {
+            addTextAtWithContent(baseX, nextY, textContent);
+          }
+          return;
+        }
+        pasteAppClipboard(baseY);
+      });
+    }).catch(() => {
+      /* Clipboard read denied: still paste app clipboard. */
+      pasteAppClipboard(baseY);
     });
-    setElements((prev) => [...prev, ...newElements]);
-    const newIds = newElements.map((el) => el.id);
-    elementSelection.setSelectedElementIds(newIds);
-  }, [setElements, elementSelection, panZoom, size]);
+  }, [
+    getPastePosition,
+    setElements,
+    elementSelection,
+    addTextAtWithContent,
+    addImageFromFile,
+  ]);
 
   const handleMoveUp = useCallback(() => {
     const ids = new Set(elementSelection.selectedElementIds);
@@ -607,6 +671,34 @@ export function WhiteboardCanvas({ boardId }: WhiteboardCanvasProps = {}): JSX.E
     });
   }, [elementSelection.selectedElementIds, setElements]);
 
+  const handleSendToBack = useCallback(() => {
+    const ids = new Set(elementSelection.selectedElementIds);
+    if (ids.size === 0) return;
+    setElements((prev) => {
+      const selected: WhiteboardElement[] = [];
+      const unselected: WhiteboardElement[] = [];
+      for (const el of prev) {
+        if (ids.has(el.id)) selected.push(el);
+        else unselected.push(el);
+      }
+      return [...selected, ...unselected];
+    });
+  }, [elementSelection.selectedElementIds, setElements]);
+
+  const handleSendToFront = useCallback(() => {
+    const ids = new Set(elementSelection.selectedElementIds);
+    if (ids.size === 0) return;
+    setElements((prev) => {
+      const selected: WhiteboardElement[] = [];
+      const unselected: WhiteboardElement[] = [];
+      for (const el of prev) {
+        if (ids.has(el.id)) selected.push(el);
+        else unselected.push(el);
+      }
+      return [...unselected, ...selected];
+    });
+  }, [elementSelection.selectedElementIds, setElements]);
+
   const handleDuplicateSelected = useCallback(() => {
     const ids = new Set(selectedIdsRef.current);
     if (ids.size === 0) return;
@@ -637,9 +729,7 @@ export function WhiteboardCanvas({ boardId }: WhiteboardCanvasProps = {}): JSX.E
 
   const handleContextMenu = useCallback(
     (e: React.MouseEvent): void => {
-      // Only show context menu if not panning and element is selected
       if (panZoom.isPanning) return;
-      if (elementSelection.selectedElementIds.length === 0) return;
       if (editingElementId !== null) return;
 
       const container = panZoom.containerRef.current;
@@ -658,13 +748,44 @@ export function WhiteboardCanvas({ boardId }: WhiteboardCanvasProps = {}): JSX.E
       if (world == null) return;
 
       const hit = elementAtPoint(world.x, world.y, elements, measuredBounds);
-      if (hit == null) return;
-
-      // Only show if clicking on a selected element
-      if (!elementSelection.selectedElementIds.includes(hit.id)) return;
+      const onSelectedElement =
+        hit != null &&
+        elementSelection.selectedElementIds.length > 0 &&
+        elementSelection.selectedElementIds.includes(hit.id);
 
       e.preventDefault();
-      setContextMenuPosition({ x: e.clientX, y: e.clientY });
+      if (onSelectedElement) {
+        setContextMenu({ x: e.clientX, y: e.clientY, type: "element" });
+      } else {
+        lastMousePositionRef.current = { clientX: e.clientX, clientY: e.clientY };
+        if (clipboardRef.current.length > 0) {
+          setContextMenu({ x: e.clientX, y: e.clientY, type: "canvas" });
+        } else {
+          navigator.clipboard.read().then((items) => {
+            let hasImage = false;
+            const textChecks: Promise<boolean>[] = [];
+            for (const item of items) {
+              for (const type of item.types) {
+                if (type.startsWith("image/")) hasImage = true;
+                if (type === "text/plain") {
+                  textChecks.push(
+                    item.getType("text/plain").then((b) => b.text()).then((t) => t.trim().length > 0)
+                  );
+                }
+              }
+            }
+            if (hasImage) {
+              setContextMenu({ x: e.clientX, y: e.clientY, type: "canvas" });
+              return;
+            }
+            void Promise.all(textChecks).then((results) => {
+              if (results.some(Boolean)) {
+                setContextMenu({ x: e.clientX, y: e.clientY, type: "canvas" });
+              }
+            });
+          }).catch(() => { /* clipboard read permission denied */ });
+        }
+      }
     },
     [
       panZoom.isPanning,
@@ -681,17 +802,31 @@ export function WhiteboardCanvas({ boardId }: WhiteboardCanvasProps = {}): JSX.E
     ]
   );
 
+  const handleCanvasContextMenu = useCallback(
+    (e: React.MouseEvent) => {
+      panZoom.onContextMenu(e);
+      if (panZoom.contextMenuSuppressedRef.current) {
+        panZoom.contextMenuSuppressedRef.current = false;
+        return;
+      }
+      handleContextMenu(e);
+    },
+    // Intentionally depend on stable ref/callback only; panZoom object identity changes each render
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- panZoom.onContextMenu, panZoom.contextMenuSuppressedRef are stable
+    [panZoom.onContextMenu, panZoom.contextMenuSuppressedRef, handleContextMenu]
+  );
+
   useEffect(() => {
-    if (contextMenuPosition == null) return;
+    if (contextMenu == null) return;
     const closeOnClick = (e: MouseEvent): void => {
       const el = contextMenuRef.current;
       if (el != null && !el.contains(e.target as Node)) {
-        setContextMenuPosition(null);
+        setContextMenu(null);
       }
     };
     const closeOnEscape = (e: KeyboardEvent): void => {
       if (e.key === "Escape") {
-        setContextMenuPosition(null);
+        setContextMenu(null);
       }
     };
     document.addEventListener("mousedown", closeOnClick, { capture: true });
@@ -700,7 +835,7 @@ export function WhiteboardCanvas({ boardId }: WhiteboardCanvasProps = {}): JSX.E
       document.removeEventListener("mousedown", closeOnClick, { capture: true });
       document.removeEventListener("keydown", closeOnEscape, { capture: true });
     };
-  }, [contextMenuPosition]);
+  }, [contextMenu]);
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent): void => {
@@ -756,12 +891,12 @@ export function WhiteboardCanvas({ boardId }: WhiteboardCanvasProps = {}): JSX.E
         ((e.key === "z" || e.key === "Z") && (e.ctrlKey || e.metaKey) && e.shiftKey);
       const isCut = (e.key === "x" || e.key === "X") && (e.ctrlKey || e.metaKey);
       const isCopy = (e.key === "c" || e.key === "C") && (e.ctrlKey || e.metaKey);
-      const isPaste = (e.key === "v" || e.key === "V") && (e.ctrlKey || e.metaKey);
+      /* Paste (Ctrl+V) is handled only by the document paste listener to avoid double-paste. */
       const isDuplicate = (e.key === "d" || e.key === "D") && (e.ctrlKey || e.metaKey);
       const isMoveUp = e.key === "]" && (e.ctrlKey || e.metaKey);
       const isMoveDown = e.key === "[" && (e.ctrlKey || e.metaKey);
       
-      if (!isUndo && !isRedo && !isCut && !isCopy && !isPaste && !isDuplicate && !isMoveUp && !isMoveDown) return;
+      if (!isUndo && !isRedo && !isCut && !isCopy && !isDuplicate && !isMoveUp && !isMoveDown) return;
       
       const target = e.target as HTMLElement;
       const tag = target.tagName?.toLowerCase();
@@ -794,10 +929,6 @@ export function WhiteboardCanvas({ boardId }: WhiteboardCanvasProps = {}): JSX.E
         if (editingElementId !== null) return;
         e.preventDefault();
         handleCopySelected();
-      } else if (isPaste) {
-        if (editingElementId !== null) return;
-        e.preventDefault();
-        handlePaste();
       } else if (isDuplicate) {
         if (selectedIdsRef.current.length === 0) return;
         if (editingElementId !== null) return;
@@ -822,7 +953,6 @@ export function WhiteboardCanvas({ boardId }: WhiteboardCanvasProps = {}): JSX.E
     editingElementId,
     handleCutSelected,
     handleCopySelected,
-    handlePaste,
     handleDuplicateSelected,
     handleMoveUp,
     handleMoveDown,
@@ -831,50 +961,6 @@ export function WhiteboardCanvas({ boardId }: WhiteboardCanvasProps = {}): JSX.E
     canUndo,
     canRedo,
   ]);
-
-  const handlePasteImage = useCallback(
-    (e: ClipboardEvent) => {
-      const data = e.clipboardData;
-      if (data == null) return;
-      const item = Array.from(data.items).find((i) =>
-        i.type.startsWith("image/")
-      );
-      if (item == null) return;
-      const file = item.getAsFile();
-      if (file == null) return;
-      const mousePos = lastMousePositionRef.current;
-      const container = panZoom.containerRef.current;
-      let pasteX: number;
-      let pasteY: number;
-      if (mousePos != null && container != null) {
-        const world = clientToWorld(
-          container,
-          mousePos.clientX,
-          mousePos.clientY,
-          size.width,
-          size.height,
-          panZoom.panX,
-          panZoom.panY,
-          panZoom.zoom
-        );
-        if (world != null) {
-          pasteX = world.x;
-          pasteY = world.y;
-        } else {
-          const { x, y } = centerWorld();
-          pasteX = x;
-          pasteY = y;
-        }
-      } else {
-        const { x, y } = centerWorld();
-        pasteX = x;
-        pasteY = y;
-      }
-      e.preventDefault();
-      addImageFromFile(file, pasteX, pasteY);
-    },
-    [addImageFromFile, centerWorld, panZoom, size]
-  );
 
   const handleDropImage = useCallback(
     (e: React.DragEvent) => {
@@ -919,22 +1005,73 @@ export function WhiteboardCanvas({ boardId }: WhiteboardCanvasProps = {}): JSX.E
         target.getAttribute?.("role") === "textbox";
       if (editable) return;
       if (editingElementId !== null) return;
-      /* Prefer internal whiteboard clipboard; don't paste image if we have copied elements. */
-      if (clipboardRef.current.length > 0) return;
       const data = e.clipboardData;
       if (data == null) return;
-      const hasImage = Array.from(data.items).some((i) =>
-        i.type.startsWith("image/")
-      );
-      if (hasImage) {
-        e.preventDefault();
-        handlePasteImage(e);
+      const items = Array.from(data.items);
+      const hasImage = items.some((i) => i.type.startsWith("image/"));
+      const text = data.getData("text/plain")?.trim();
+      const hasText = (text?.length ?? 0) > 0;
+      const hasAppClipboard = clipboardRef.current.length > 0;
+      if (!hasImage && !hasText && !hasAppClipboard) return;
+      e.preventDefault();
+      const { x: baseX, y: baseY } = getPastePosition();
+      /* If system clipboard has content, paste only that; otherwise paste app clipboard. */
+      if (hasImage || hasText) {
+        let nextY = baseY;
+        for (const item of items) {
+          if (!item.type.startsWith("image/")) continue;
+          const file = item.getAsFile();
+          if (file == null) continue;
+          addImageFromFile(file, baseX, nextY);
+          nextY += PASTE_OFFSET_Y * 5;
+        }
+        if (hasText && text != null) {
+          addTextAtWithContent(baseX, nextY, text);
+        }
+        return;
+      }
+      if (hasAppClipboard) {
+        const clipboardEntries = clipboardRef.current;
+        let centerX = 0;
+        let centerY = 0;
+        let count = 0;
+        for (const entry of clipboardEntries) {
+          const bounds = entry.bounds;
+          centerX += bounds.x + bounds.width / 2;
+          centerY += bounds.y + bounds.height / 2;
+          count += 1;
+        }
+        if (count > 0) {
+          centerX /= count;
+          centerY /= count;
+          const offsetX = baseX - centerX;
+          const offsetY = baseY - centerY;
+          const newElements: WhiteboardElement[] = clipboardEntries.map((entry) => {
+            const el = entry.element;
+            const newId = generateElementId();
+            return {
+              ...el,
+              id: newId,
+              x: el.x + offsetX,
+              y: el.y + offsetY,
+            };
+          });
+          setElements((prev) => [...prev, ...newElements]);
+          elementSelection.setSelectedElementIds(newElements.map((el) => el.id));
+        }
       }
     };
     document.addEventListener("paste", onPaste, { capture: true });
     return () =>
       document.removeEventListener("paste", onPaste, { capture: true });
-  }, [editingElementId, handlePasteImage]);
+  }, [
+    editingElementId,
+    getPastePosition,
+    addTextAtWithContent,
+    addImageFromFile,
+    setElements,
+    elementSelection,
+  ]);
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent): void => {
@@ -1062,10 +1199,7 @@ export function WhiteboardCanvas({ boardId }: WhiteboardCanvasProps = {}): JSX.E
         onPointerMove={elementSelection.handlers.handlePointerMove}
         onPointerUp={elementSelection.handlers.handlePointerUp}
         onPointerLeave={elementSelection.handlers.handlePointerLeave}
-        onContextMenu={(e) => {
-          panZoom.onContextMenu(e);
-          handleContextMenu(e);
-        }}
+        onContextMenu={handleCanvasContextMenu}
         isPanning={panZoom.isPanning}
         elements={elements}
         editingElementId={editingElementId}
@@ -1078,6 +1212,8 @@ export function WhiteboardCanvas({ boardId }: WhiteboardCanvasProps = {}): JSX.E
         onImageNaturalDimensions={handleImageNaturalDimensions}
         isResizing={isResizing}
         toolbarContainerRef={toolbarContainerRef}
+        backgroundColor={backgroundColor}
+        gridStyle={gridStyle}
       />
       </div>
       <ElementContextMenu
@@ -1085,8 +1221,16 @@ export function WhiteboardCanvas({ boardId }: WhiteboardCanvasProps = {}): JSX.E
         onCopy={handleCopySelected}
         onDuplicate={handleDuplicateSelected}
         onDelete={handleDeleteSelected}
-        position={contextMenuPosition}
-        onClose={() => setContextMenuPosition(null)}
+        onSendToBack={handleSendToBack}
+        onSendToFront={handleSendToFront}
+        position={contextMenu?.type === "element" ? { x: contextMenu.x, y: contextMenu.y } : null}
+        onClose={() => setContextMenu(null)}
+        menuRef={contextMenuRef}
+      />
+      <CanvasContextMenu
+        position={contextMenu?.type === "canvas" ? { x: contextMenu.x, y: contextMenu.y } : null}
+        onClose={() => setContextMenu(null)}
+        onPaste={handlePaste}
         menuRef={contextMenuRef}
       />
     </WhiteboardErrorBoundary>

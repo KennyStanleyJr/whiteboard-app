@@ -14,7 +14,7 @@ export interface WhiteboardToolbarProps {
 
 const BUTTON_CLASS = "rounded-md";
 const TOOLBAR_CONTAINER_CLASS =
-  "whiteboard-toolbar fixed left-5 top-[5rem] z-10 flex flex-col items-center gap-1 rounded-lg border border-border bg-background p-1.5 shadow-sm";
+  "whiteboard-toolbar fixed left-5 top-[5rem] z-10 flex flex-col items-center gap-1 rounded-lg border p-1.5 shadow-sm";
 
 export function WhiteboardToolbar({
   undo,

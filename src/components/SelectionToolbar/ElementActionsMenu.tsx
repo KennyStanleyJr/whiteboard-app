@@ -135,7 +135,7 @@ export function ElementActionsMenu({
             type="button"
             variant="ghost"
             size="sm"
-            className="h-7 justify-start gap-2 px-2 text-sm text-destructive hover:text-destructive [&_svg]:size-3.5"
+            className="destructive-menu-item h-7 justify-start gap-2 px-2 text-sm [&_svg]:size-3.5"
             onClick={() => {
               onDelete();
               setMenuOpen(false);

@@ -6,6 +6,8 @@ import {
   elementAtPoint,
   TEXT_EDIT_WIDTH,
   TEXT_EDIT_HEIGHT,
+  DEFAULT_UNMEASURED_TEXT_WIDTH,
+  DEFAULT_UNMEASURED_TEXT_HEIGHT,
 } from "./elementBounds";
 import type { ImageElement, TextElement } from "../types/whiteboard";
 
@@ -81,6 +83,18 @@ describe("getElementBounds", () => {
       width: TEXT_EDIT_WIDTH,
       height: TEXT_EDIT_HEIGHT,
     });
+  });
+
+  it("exports default unmeasured text dimensions for initial layout before measurement", () => {
+    expect(DEFAULT_UNMEASURED_TEXT_WIDTH).toBeGreaterThan(0);
+    expect(DEFAULT_UNMEASURED_TEXT_HEIGHT).toBeGreaterThan(0);
+    expect(DEFAULT_UNMEASURED_TEXT_WIDTH).toBeGreaterThan(TEXT_EDIT_WIDTH);
+  });
+
+  it("exports default unmeasured text dimensions for initial layout before measurement", () => {
+    expect(DEFAULT_UNMEASURED_TEXT_WIDTH).toBeGreaterThan(0);
+    expect(DEFAULT_UNMEASURED_TEXT_HEIGHT).toBeGreaterThan(0);
+    expect(DEFAULT_UNMEASURED_TEXT_WIDTH).toBeGreaterThan(TEXT_EDIT_WIDTH);
   });
 
   it("sanitizes bounds with invalid numbers", () => {

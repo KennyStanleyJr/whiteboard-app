@@ -16,14 +16,96 @@
     visibility 0s linear 0s;
 }
 
+/* Management page: use theme background and text so it responds to light/dark mode */
+.dark .app-overlay {
+  background-color: var(--color-background);
+  color: var(--color-foreground);
+}
+
 .app-header {
   z-index: 110;
   pointer-events: none;
+  transition: color 0.2s ease;
+  background-color: transparent;
 }
 .app-header > * {
   pointer-events: auto;
 }
 
+/* Header board name input: no visible background */
+.app-header .header-input,
+.dark .app-header .header-input {
+  background-color: transparent;
+}
+
+/* Header contrast "dark" = dark text (light canvas or light theme on management) */
+.app-header[data-header-contrast="dark"] {
+  color: oklch(0.2 0 0);
+}
+.app-header[data-header-contrast="dark"] .header-input,
+.app-header[data-header-contrast="dark"] .header-input::placeholder {
+  color: inherit;
+}
+.app-header[data-header-contrast="dark"] .management-toggle-button span {
+  border-color: rgba(0, 0, 0, 0.4);
+}
+
+/* Header contrast "light" = light text (dark canvas or dark theme on management) */
+.app-header[data-header-contrast="light"] {
+  color: #e8e8e8;
+}
+.app-header[data-header-contrast="light"] .header-input,
+.app-header[data-header-contrast="light"] .header-input::placeholder {
+  color: inherit;
+}
+.app-header[data-header-contrast="light"] .management-toggle-button span {
+  border-color: rgba(255, 255, 255, 0.55);
+}
+
+/* Management and hamburger buttons always use theme foreground (same as toolbars) */
+.management-toggle-button,
+.management-toggle-button span,
+.app-menu-button {
+  color: var(--color-foreground) !important;
+}
+.management-toggle-button span {
+  border-color: var(--color-foreground) !important;
+}
+/* Menu dropdown always uses theme (light/dark mode) colors, not canvas contrast */
+.app-header[data-header-contrast="dark"] .app-menu-dropdown,
+.app-header[data-header-contrast="light"] .app-menu-dropdown {
+  color: var(--color-foreground);
+}
+.app-header[data-header-contrast="dark"] .app-menu-dropdown .text-muted-foreground,
+.app-header[data-header-contrast="light"] .app-menu-dropdown .text-muted-foreground {
+  color: var(--color-muted-foreground);
+}
+/* Grid style selector in menu: match toolbar colors (background, border, hover, selected) */
+.app-menu-dropdown .grid-style-selector {
+  background-color: var(--color-background);
+  border: 1px solid var(--color-border);
+}
+.dark .app-menu-dropdown .grid-style-selector {
+  background-color: oklch(0.205 0 0) !important;
+  border-color: oklch(0.35 0 0);
+}
+.app-menu-dropdown .grid-style-btn {
+  color: var(--color-foreground);
+}
+.app-menu-dropdown .grid-style-btn:hover {
+  background-color: var(--toolbar-hover-bg);
+  color: var(--toolbar-hover-fg);
+}
+.app-menu-dropdown .grid-style-btn--selected {
+  background-color: oklch(0.88 0 0) !important;
+  color: oklch(0.2 0 0) !important;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+}
+.dark .app-menu-dropdown .grid-style-btn--selected {
+  background-color: oklch(0.3 0 0) !important;
+  color: oklch(0.95 0 0) !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+}
 /* Whiteboard canvas and text elements (SVG/foreignObject-specific) */
 
 .whiteboard-canvas-wrap {
@@ -43,49 +125,87 @@
   outline: none;
 }
 
-/* Shared hover colors for toolbar-style buttons (light/dark) */
+/* Shared hover for menus, toolbars, management – subtle and consistent */
 :root {
-  --toolbar-hover-bg: oklch(0.91 0 0);
-  --toolbar-hover-fg: oklch(0.2 0 0);
+  --toolbar-hover-bg: oklch(0.93 0 0);
+  --toolbar-hover-fg: oklch(0.25 0 0);
+  --card-menu-button-hover-bg: oklch(0.88 0 0); /* darker than card so button stands out */
 }
 .dark {
-  --toolbar-hover-bg: oklch(0.32 0 0);
-  --toolbar-hover-fg: oklch(0.98 0 0);
+  --toolbar-hover-bg: oklch(0.28 0 0);
+  --toolbar-hover-fg: oklch(0.95 0 0);
+  --card-menu-button-hover-bg: oklch(0.35 0 0); /* lighter than card so button stands out */
 }
 
-/* Whiteboard toolbar: no outline; rounded rectangle bg only on hover */
+/* Both toolbars: same background, foreground, and border in light and dark mode */
+.whiteboard-toolbar,
+.selection-toolbar {
+  outline: none;
+  background-color: var(--color-background) !important;
+  color: var(--color-foreground);
+  border-color: var(--color-border);
+}
+.dark .whiteboard-toolbar,
+.dark .selection-toolbar {
+  background-color: oklch(0.205 0 0) !important;
+  border-color: oklch(0.35 0 0);
+}
 .whiteboard-toolbar button {
   background-color: transparent;
   border: none;
 }
-.whiteboard-toolbar button:not(:disabled):hover {
+.whiteboard-toolbar button:not(:disabled):not(.destructive-menu-item):hover,
+.selection-toolbar button:not(:disabled):not(.destructive-menu-item):hover {
   background-color: var(--toolbar-hover-bg);
   color: var(--toolbar-hover-fg);
-  border-radius: 0.375rem;
+  border-radius: 0.5rem;
 }
-
-/* Management toggle button: rounded rectangle bg only on hover */
-.management-toggle-button {
+.selection-toolbar button[aria-pressed="true"] {
+  background-color: oklch(0.88 0 0) !important;
+  color: oklch(0.2 0 0) !important;
+  border-radius: 0.5rem;
+}
+.dark .selection-toolbar button[aria-pressed="true"] {
+  background-color: oklch(0.3 0 0) !important;
+  color: oklch(0.95 0 0) !important;
+}
+.selection-toolbar input {
+  color: var(--color-foreground);
+}
+.selection-toolbar input::placeholder {
+  color: var(--color-muted-foreground);
+}
+/* Font size control: blend with toolbar (no dark container/input background, buttons transparent) */
+.selection-toolbar .font-size-control {
   background-color: transparent;
-  border: none;
 }
-.management-toggle-button:not(:disabled):hover {
-  background-color: var(--toolbar-hover-bg);
-  color: var(--toolbar-hover-fg);
-  border-radius: 0.5rem;
+.selection-toolbar .font-size-control input,
+.selection-toolbar .font-size-control button,
+.selection-toolbar .font-size-control [data-slot="select-trigger"] {
+  background-color: transparent !important;
 }
 
-/* Hamburger menu button: white background by default, hover effect */
+/* Header toolbar buttons: management and hamburger – same background/border as toolbars */
+.management-toggle-button,
 .app-menu-button {
-  background-color: white;
+  background-color: var(--color-background);
+  border: 1px solid var(--color-border);
 }
+.dark .management-toggle-button,
 .dark .app-menu-button {
-  background-color: oklch(0.2 0 0);
+  background-color: oklch(0.205 0 0) !important;
+  border-color: oklch(0.35 0 0);
 }
+.management-toggle-button:not(:disabled):hover,
 .app-menu-button:not(:disabled):hover {
-  background-color: var(--toolbar-hover-bg);
-  color: var(--toolbar-hover-fg);
+  background-color: oklch(0.85 0 0) !important;
+  color: oklch(0.25 0 0) !important;
   border-radius: 0.5rem;
+}
+.dark .management-toggle-button:not(:disabled):hover,
+.dark .app-menu-button:not(:disabled):hover {
+  background-color: oklch(0.35 0 0) !important;
+  color: oklch(0.95 0 0) !important;
 }
 
 /* Board card wrapper - sized to allow scale transform without clipping */
@@ -94,6 +214,119 @@
   align-items: center;
   justify-content: center;
   overflow: visible;
+}
+
+/* Management page cards: theme-aware text in dark mode (override Tailwind utilities) */
+.dark .app-overlay .board-card-wrapper,
+.dark .app-overlay .board-card-wrapper span,
+.dark .app-overlay .board-card-wrapper button:not(.destructive-menu-item),
+.dark .app-overlay .board-card-wrapper input {
+  color: var(--color-foreground) !important;
+}
+/* Destructive menu item (Delete): card menu + selection toolbar context menus */
+.destructive-menu-item,
+.destructive-menu-item span,
+.destructive-menu-item [class*="size-4"],
+.destructive-menu-item svg {
+  color: var(--color-destructive) !important;
+}
+.destructive-menu-item:hover {
+  background-color: oklch(0.577 0.245 27.325 / 0.1) !important;
+}
+.destructive-menu-item:hover,
+.destructive-menu-item:hover span,
+.destructive-menu-item:hover svg {
+  color: var(--color-destructive) !important;
+}
+/* Override theme so Delete stays red where theme forces foreground color */
+.dark .app-overlay .board-card-wrapper .destructive-menu-item,
+.dark .app-overlay .board-card-wrapper .destructive-menu-item span,
+.dark .app-overlay .board-card-wrapper .destructive-menu-item svg,
+.selection-toolbar .destructive-menu-item,
+.selection-toolbar .destructive-menu-item span,
+.selection-toolbar .destructive-menu-item svg {
+  color: var(--color-destructive) !important;
+}
+.dark .app-overlay .board-card-wrapper .destructive-menu-item:hover,
+.dark .app-overlay .board-card-wrapper .destructive-menu-item:hover span,
+.dark .app-overlay .board-card-wrapper .destructive-menu-item:hover svg,
+.selection-toolbar .destructive-menu-item:hover,
+.selection-toolbar .destructive-menu-item:hover span,
+.selection-toolbar .destructive-menu-item:hover svg {
+  color: var(--color-destructive) !important;
+}
+
+/* Dark mode: less saturated red for both delete buttons */
+.dark .destructive-menu-item,
+.dark .destructive-menu-item span,
+.dark .destructive-menu-item [class*="size-4"],
+.dark .destructive-menu-item svg,
+.dark .app-overlay .board-card-wrapper .destructive-menu-item,
+.dark .app-overlay .board-card-wrapper .destructive-menu-item span,
+.dark .app-overlay .board-card-wrapper .destructive-menu-item svg,
+.dark .selection-toolbar .destructive-menu-item,
+.dark .selection-toolbar .destructive-menu-item span,
+.dark .selection-toolbar .destructive-menu-item svg {
+  color: var(--destructive-menu-item-dark) !important;
+}
+.dark .destructive-menu-item:hover,
+.dark .destructive-menu-item:hover span,
+.dark .destructive-menu-item:hover svg,
+.dark .app-overlay .board-card-wrapper .destructive-menu-item:hover,
+.dark .app-overlay .board-card-wrapper .destructive-menu-item:hover span,
+.dark .app-overlay .board-card-wrapper .destructive-menu-item:hover svg,
+.dark .selection-toolbar .destructive-menu-item:hover,
+.dark .selection-toolbar .destructive-menu-item:hover span,
+.dark .selection-toolbar .destructive-menu-item:hover svg {
+  color: var(--destructive-menu-item-dark) !important;
+}
+.dark .destructive-menu-item:hover {
+  background-color: color-mix(in oklch, var(--destructive-menu-item-dark) 15%, transparent) !important;
+}
+
+/* Management page cards: simple hover, no inner outline from button */
+.app-overlay .board-card-wrapper > div > button:first-of-type:hover {
+  background-color: transparent;
+}
+/* Card hover: same as Import/Download All (toolbar hover, border unchanged) */
+.app-overlay .board-card-wrapper > div:hover {
+  background-color: var(--toolbar-hover-bg);
+  color: var(--toolbar-hover-fg);
+}
+.app-overlay .board-card-wrapper > div:hover span {
+  color: inherit;
+}
+
+/* New Whiteboard: more prominent hover (default primary/90 is too subtle) */
+.app-overlay .management-new-board-btn:not(:disabled):hover {
+  background-color: oklch(0.32 0 0) !important;
+  color: oklch(0.985 0 0) !important;
+}
+.dark .app-overlay .management-new-board-btn:not(:disabled):hover {
+  background-color: oklch(0.75 0 0) !important;
+  color: oklch(0.2 0 0) !important;
+}
+
+/* Upload and Download All: border matches whiteboard cards, hover same as toolbar */
+.app-overlay .management-upload-download-btn,
+.app-overlay .management-upload-download-btn:hover {
+  border-color: var(--border) !important;
+}
+.app-overlay .management-upload-download-btn:not(:disabled):hover {
+  background-color: var(--toolbar-hover-bg) !important;
+  color: var(--toolbar-hover-fg) !important;
+}
+
+/* Upload warning dialog: theme-aware title and visible Cancel hover */
+.upload-warning-dialog .upload-warning-dialog__title {
+  color: oklch(0.145 0 0);
+}
+.upload-warning-dialog.dark .upload-warning-dialog__title {
+  color: oklch(0.985 0 0);
+}
+.upload-warning-dialog .upload-warning-dialog__cancel:hover {
+  background-color: var(--toolbar-hover-bg) !important;
+  color: var(--toolbar-hover-fg) !important;
 }
 
 .whiteboard-canvas {

@@ -1,6 +1,9 @@
 import type { RefObject } from "react";
+import { memo } from "react";
 import {
   type ElementBounds,
+  DEFAULT_UNMEASURED_TEXT_HEIGHT,
+  DEFAULT_UNMEASURED_TEXT_WIDTH,
   TEXT_EDIT_HEIGHT,
   TEXT_EDIT_WIDTH,
 } from "@/utils/elementBounds";
@@ -24,7 +27,7 @@ export interface WhiteboardTextElementProps {
   toolbarContainerRef?: RefObject<HTMLElement | null>;
 }
 
-export function WhiteboardTextElement({
+function WhiteboardTextElementInner({
   element: el,
   isEditing,
   measuredBounds,
@@ -48,14 +51,14 @@ export function WhiteboardTextElement({
       ? Math.max(measured.width, MIN_FOREIGN_OBJECT_SIZE)
       : isEditing
         ? TEXT_EDIT_WIDTH
-        : MIN_FOREIGN_OBJECT_SIZE;
+        : DEFAULT_UNMEASURED_TEXT_WIDTH;
   const foHeight = hasExplicitSize
     ? Math.max(MIN_FOREIGN_OBJECT_SIZE, el.height!)
     : measured !== undefined
       ? Math.max(measured.height, MIN_FOREIGN_OBJECT_SIZE)
       : isEditing
         ? TEXT_EDIT_HEIGHT
-        : MIN_FOREIGN_OBJECT_SIZE;
+        : DEFAULT_UNMEASURED_TEXT_HEIGHT;
 
   const justifyContent = verticalAlignToJustifyContent(el.textVerticalAlign);
   const baseStyle = {
@@ -154,3 +157,5 @@ export function WhiteboardTextElement({
     </foreignObject>
   );
 }
+
+export const WhiteboardTextElement = memo(WhiteboardTextElementInner);

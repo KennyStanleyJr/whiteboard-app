@@ -1,5 +1,5 @@
 import type { RefObject } from "react";
-import { forwardRef, useImperativeHandle, useLayoutEffect, useRef, useEffect } from "react";
+import { forwardRef, useCallback, useImperativeHandle, useLayoutEffect, useRef, useEffect } from "react";
 import { clientToViewBox, viewBoxToWorld } from "../../hooks/canvas/canvasCoords";
 import type { SelectionRect } from "../../hooks";
 import type { WhiteboardElement } from "../../types/whiteboard";
@@ -13,7 +13,14 @@ import {
   sanitizeHtml,
 } from "../../utils/sanitizeHtml";
 import { applyFormatToContent, type FormatTag } from "../../utils/textFormat";
+import type { GridStyle } from "../../lib/canvasPreferences";
+import { getContrastingGridColor } from "../../lib/contrastColor";
 import { DotGridPattern, PATTERN_ID } from "../DotGridPattern";
+import { LineGridPattern, LINE_PATTERN_ID } from "../LineGridPattern";
+import {
+  NotebookGridPattern,
+  NOTEBOOK_PATTERN_ID,
+} from "../NotebookGridPattern";
 import { ElementSelectionOverlay } from "./ElementSelectionOverlay";
 import { WhiteboardImageElement } from "./WhiteboardImageElement";
 import { WhiteboardShapeElement } from "./WhiteboardShapeElement";
@@ -54,6 +61,10 @@ export interface WhiteboardCanvasSvgProps {
   isResizing?: boolean;
   /** If focus moves into this container (e.g. toolbar), do not end editing on blur. */
   toolbarContainerRef?: RefObject<HTMLElement | null>;
+  /** Canvas background fill color. */
+  backgroundColor?: string;
+  /** Grid style: empty, dotted, or lined. */
+  gridStyle?: GridStyle;
 }
 
 export interface WhiteboardCanvasSvgHandle {
@@ -94,7 +105,11 @@ export const WhiteboardCanvasSvg = forwardRef<
     onImageNaturalDimensions,
     isResizing = false,
     toolbarContainerRef,
+    backgroundColor = "#ffffff",
+    gridStyle = "dotted",
   } = props;
+
+  const gridColor = getContrastingGridColor(backgroundColor);
 
   const transform = `translate(${panX}, ${panY}) scale(${zoom})`;
   const viewBox = `0 0 ${width} ${height}`;
@@ -227,27 +242,31 @@ export const WhiteboardCanvasSvg = forwardRef<
     editingRef.current.focus();
   }, [editingElementId, elements]);
 
-  const handleEditKeyDown = (
-    e: React.KeyboardEvent<HTMLDivElement>,
-    id: string
-  ) => {
-    if (e.key === "Escape") {
-      e.preventDefault();
-      const editor = editingRef.current;
-      if (editor) {
-        const raw = editor.innerHTML ?? "";
-        const content = sanitizeHtml(raw);
-        onUpdateElementContent(id, content);
+  const handleEditKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLDivElement>, id: string) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        const editor = editingRef.current;
+        if (editor) {
+          const raw = editor.innerHTML ?? "";
+          const content = sanitizeHtml(raw);
+          onUpdateElementContent(id, content);
+        }
+        onFinishEditElement();
       }
-      onFinishEditElement();
-    }
-    // Enter: allow default (insert newline in contentEditable)
-  };
+      // Enter: allow default (insert newline in contentEditable)
+    },
+    [onUpdateElementContent, onFinishEditElement]
+  );
 
-  const setTextDivRef = (id: string, el: HTMLDivElement | null): void => {
+  const setTextDivRef = useCallback((id: string, el: HTMLDivElement | null): void => {
     if (el) textDivRefs.current.set(id, el);
     else textDivRefs.current.delete(id);
-  };
+  }, []);
+
+  const setEditingRef = useCallback((el: HTMLDivElement | null): void => {
+    editingRef.current = el;
+  }, []);
 
   return (
     <svg
@@ -257,7 +276,9 @@ export const WhiteboardCanvasSvg = forwardRef<
       preserveAspectRatio="none"
     >
       <defs>
-        <DotGridPattern />
+        <DotGridPattern color={gridStyle === "dotted" ? gridColor : undefined} />
+        <LineGridPattern color={gridColor} />
+        <NotebookGridPattern color={gridColor} />
       </defs>
       <g
         transform={transform}
@@ -273,8 +294,23 @@ export const WhiteboardCanvasSvg = forwardRef<
           y={-CANVAS_EXTENT}
           width={CANVAS_EXTENT * 2}
           height={CANVAS_EXTENT * 2}
-          fill={`url(#${PATTERN_ID})`}
+          fill={backgroundColor}
         />
+        {gridStyle !== "empty" && (
+          <rect
+            x={-CANVAS_EXTENT}
+            y={-CANVAS_EXTENT}
+            width={CANVAS_EXTENT * 2}
+            height={CANVAS_EXTENT * 2}
+            fill={
+              gridStyle === "dotted"
+                ? `url(#${PATTERN_ID})`
+                : gridStyle === "lined"
+                  ? `url(#${NOTEBOOK_PATTERN_ID})`
+                  : `url(#${LINE_PATTERN_ID})`
+            }
+          />
+        )}
         {elements.map((el) => {
           if (el.kind === "text") {
             return (
@@ -288,9 +324,7 @@ export const WhiteboardCanvasSvg = forwardRef<
                 onUpdateContent={onUpdateElementContent}
                 onFinishEdit={onFinishEditElement}
                 onEditKeyDown={handleEditKeyDown}
-                editingRefSetter={(r) => {
-                  editingRef.current = r;
-                }}
+                editingRefSetter={setEditingRef}
                 toolbarContainerRef={toolbarContainerRef}
               />
             );

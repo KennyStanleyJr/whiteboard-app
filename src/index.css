@@ -5,6 +5,7 @@
 
 @theme inline {
   --font-sans: system-ui, -apple-system, sans-serif;
+  /* Light defaults; .dark overrides these for menus, toolbars, management */
   --color-background: #f5f5f5;
   --color-foreground: rgba(0, 0, 0, 0.87);
   --color-sidebar-ring: var(--sidebar-ring);
@@ -105,8 +106,13 @@ body {
 }
 
 .dark {
+  color: var(--foreground);
+  /* Semantic tokens (used by some components) */
   --background: oklch(0.145 0 0);
   --foreground: oklch(0.985 0 0);
+  /* Tailwind theme colors so bg-background, text-foreground etc. work in dark mode */
+  --color-background: oklch(0.145 0 0);
+  --color-foreground: oklch(0.985 0 0);
   --card: oklch(0.205 0 0);
   --card-foreground: oklch(0.985 0 0);
   --popover: oklch(0.205 0 0);
@@ -120,6 +126,7 @@ body {
   --accent: oklch(0.269 0 0);
   --accent-foreground: oklch(0.985 0 0);
   --destructive: oklch(0.704 0.191 22.216);
+  --destructive-menu-item-dark: oklch(0.71 0.18 24);
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
   --ring: oklch(0.556 0 0);

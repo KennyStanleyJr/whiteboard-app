@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { WhiteboardElement } from "@/types/whiteboard";
 
 /**
@@ -7,7 +7,7 @@ import type { WhiteboardElement } from "@/types/whiteboard";
  */
 const MAX_HISTORY_SIZE = 50;
 
-interface HistoryState {
+export interface HistoryState {
   past: WhiteboardElement[][];
   present: WhiteboardElement[];
   future: WhiteboardElement[][];
@@ -20,15 +20,22 @@ export interface SetElementsOptions {
   pushToPast?: boolean;
 }
 
+export interface UseUndoRedoOptions {
+  /** Called whenever history changes (e.g. to persist per-board history). */
+  onHistoryChange?: (state: HistoryState) => void;
+}
+
 /**
  * Hook for managing undo/redo functionality for whiteboard elements.
  * Maintains a bounded history stack of element states.
  *
  * @param initialElements - Initial elements array
- * @returns Object with elements, setElements wrapper, undo, redo, and state flags
+ * @param options - Optional onHistoryChange callback
+ * @returns Object with elements, setElements wrapper, undo, redo, replaceState, and state flags
  */
 export function useUndoRedo(
-  initialElements: WhiteboardElement[]
+  initialElements: WhiteboardElement[],
+  options?: UseUndoRedoOptions
 ): {
   elements: WhiteboardElement[];
   setElements: (
@@ -37,14 +44,21 @@ export function useUndoRedo(
   ) => void;
   undo: () => void;
   redo: () => void;
+  replaceState: (state: HistoryState) => void;
   canUndo: boolean;
   canRedo: boolean;
 } {
+  const { onHistoryChange } = options ?? {};
   const [history, setHistory] = useState<HistoryState>(() => ({
     past: [],
     present: initialElements,
     future: [],
   }));
+
+  useEffect(() => {
+    if (history.past.length === 0 && history.future.length === 0) return; // avoid overwriting stored history on mount
+    onHistoryChange?.(history);
+  }, [history, onHistoryChange]);
 
   /**
    * Truncate array to max size, keeping most recent entries.
@@ -172,11 +186,23 @@ export function useUndoRedo(
     });
   }, [copyElements, truncateHistory]);
 
+  const replaceState = useCallback(
+    (state: HistoryState) => {
+      setHistory({
+        past: truncateHistory(state.past),
+        present: copyElements(state.present),
+        future: state.future.slice(),
+      });
+    },
+    [copyElements, truncateHistory]
+  );
+
   return {
     elements: history.present,
     setElements,
     undo,
     redo,
+    replaceState,
     canUndo: history.past.length > 0,
     canRedo: history.future.length > 0,
   };

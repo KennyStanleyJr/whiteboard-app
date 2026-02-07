@@ -8,14 +8,29 @@ import {
   setWhiteboard,
   type WhiteboardState,
 } from "@/api/whiteboard";
+import type { GridStyle } from "@/lib/canvasPreferences";
 import { useUndoRedo } from "./useUndoRedo";
+import type { HistoryState, SetElementsOptions } from "./useUndoRedo";
 import { getCurrentBoardIdSync } from "@/api/boards";
 
 export function getWhiteboardQueryKey(boardId: string): readonly [string, string] {
   return ["whiteboard", boardId] as const;
 }
 
-import type { SetElementsOptions } from "./useUndoRedo";
+const DEFAULT_BACKGROUND_COLOR = "#ffffff";
+const DEFAULT_GRID_STYLE: GridStyle = "dotted";
+const PERSIST_DEBOUNCE_MS = 250;
+
+/** Per-board undo history; survives unmount so switching boards keeps each board's undo stack. */
+const boardHistoryStore = new Map<
+  string,
+  { past: WhiteboardElement[][]; future: WhiteboardElement[][] }
+>();
+
+/** Clears per-board history store. For tests. */
+export function clearBoardHistoryStore(): void {
+  boardHistoryStore.clear();
+}
 
 export function useWhiteboardQuery(boardId?: string): {
   elements: WhiteboardElement[];
@@ -29,6 +44,8 @@ export function useWhiteboardQuery(boardId?: string): {
   redo: () => void;
   canUndo: boolean;
   canRedo: boolean;
+  backgroundColor: string;
+  gridStyle: GridStyle;
 } {
   const queryClient = useQueryClient();
   const currentBoardId = boardId ?? getCurrentBoardIdSync();
@@ -40,7 +57,16 @@ export function useWhiteboardQuery(boardId?: string): {
   });
 
   const initialElements = data?.elements ?? [];
-  const undoRedo = useUndoRedo(initialElements);
+  const onHistoryChange = useCallback(
+    (state: HistoryState) => {
+      boardHistoryStore.set(currentBoardId, {
+        past: state.past,
+        future: state.future,
+      });
+    },
+    [currentBoardId]
+  );
+  const undoRedo = useUndoRedo(initialElements, { onHistoryChange });
   const lastSyncedRef = useRef<string>(JSON.stringify(initialElements));
   const pendingElementsRef = useRef<WhiteboardElement[]>(undoRedo.elements);
   const persistTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -48,8 +74,116 @@ export function useWhiteboardQuery(boardId?: string): {
   const isExternalUpdateRef = useRef(false);
   const lastBoardIdRef = useRef<string>(currentBoardId);
   const persistBoardIdRef = useRef<string>(currentBoardId);
+  const cacheJustWrittenByUsRef = useRef(false);
 
-  const PERSIST_DEBOUNCE_MS = 250;
+  useEffect(() => {
+    const saved = boardHistoryStore.get(currentBoardId);
+    if (saved?.past.length === 0 && saved?.future.length === 0) return;
+    if (saved == null) return;
+    const present = data?.elements ?? [];
+    undoRedo.replaceState({ past: saved.past, present, future: saved.future });
+    lastSyncedRef.current = JSON.stringify(present);
+    pendingElementsRef.current = present;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- run once on mount to restore this board's history
+  }, []);
+
+  // Sync to query cache immediately when undo/redo state changes (run before sync-from-query so cache is fresh)
+  useEffect(() => {
+    if (isExternalUpdateRef.current) {
+      isExternalUpdateRef.current = false;
+      return;
+    }
+    // Do not write to cache when board has changed: undo state may still be the previous board's.
+    if (lastBoardIdRef.current !== currentBoardId) {
+      if (persistTimeoutRef.current != null) {
+        clearTimeout(persistTimeoutRef.current);
+        persistTimeoutRef.current = null;
+      }
+      return;
+    }
+    pendingElementsRef.current = undoRedo.elements;
+    const undoRedoStr = JSON.stringify(undoRedo.elements);
+    const lastSyncedStr = lastSyncedRef.current;
+    if (undoRedoStr !== lastSyncedStr) {
+      const current = queryClient.getQueryData<WhiteboardState>(queryKey);
+      const newState: WhiteboardState = {
+        elements: undoRedo.elements,
+        panZoom: current?.panZoom,
+        backgroundColor: current?.backgroundColor,
+        gridStyle: current?.gridStyle,
+      };
+      queryClient.setQueryData(queryKey, newState);
+      lastSyncedRef.current = undoRedoStr;
+      cacheJustWrittenByUsRef.current = true;
+      if (skipPersistRef.current) {
+        skipPersistRef.current = false;
+        if (persistTimeoutRef.current != null) {
+          clearTimeout(persistTimeoutRef.current);
+          persistTimeoutRef.current = null;
+        }
+        return;
+      }
+      if (persistTimeoutRef.current != null) {
+        clearTimeout(persistTimeoutRef.current);
+      }
+      persistBoardIdRef.current = currentBoardId;
+      persistTimeoutRef.current = setTimeout(() => {
+        persistTimeoutRef.current = null;
+        skipPersistRef.current = false;
+        const boardIdToPersist = persistBoardIdRef.current;
+        if (boardIdToPersist === currentBoardId) {
+          const toPersist = pendingElementsRef.current;
+          lastSyncedRef.current = JSON.stringify(toPersist);
+          const persistQueryKey = getWhiteboardQueryKey(boardIdToPersist);
+          const currentPersist = queryClient.getQueryData<WhiteboardState>(persistQueryKey);
+          const state: WhiteboardState = {
+            elements: toPersist,
+            panZoom: currentPersist?.panZoom,
+            backgroundColor: currentPersist?.backgroundColor,
+            gridStyle: currentPersist?.gridStyle,
+          };
+          setWhiteboard(state, boardIdToPersist).catch((err) => {
+            console.error("[useWhiteboard] persist failed", err);
+          });
+        }
+      }, PERSIST_DEBOUNCE_MS);
+    }
+    return () => {
+      if (persistTimeoutRef.current != null) {
+        clearTimeout(persistTimeoutRef.current);
+        persistTimeoutRef.current = null;
+      }
+    };
+  }, [undoRedo.elements, queryClient, queryKey, currentBoardId]);
+
+  // Sync undo/redo state when query data changes externally (e.g., from upload)
+  useEffect(() => {
+    if (cacheJustWrittenByUsRef.current) {
+      cacheJustWrittenByUsRef.current = false;
+      return;
+    }
+    if (lastBoardIdRef.current !== currentBoardId) {
+      return;
+    }
+    const queryElements = data?.elements ?? [];
+    const queryElementsStr = JSON.stringify(queryElements);
+    const currentElementsStr = JSON.stringify(undoRedo.elements);
+    if (
+      queryElementsStr !== lastSyncedRef.current &&
+      queryElementsStr !== currentElementsStr &&
+      !isExternalUpdateRef.current
+    ) {
+      isExternalUpdateRef.current = true;
+      undoRedo.setElements(queryElements);
+      lastSyncedRef.current = queryElementsStr;
+      pendingElementsRef.current = queryElements;
+      if (persistTimeoutRef.current != null) {
+        clearTimeout(persistTimeoutRef.current);
+        persistTimeoutRef.current = null;
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- We intentionally only depend on specific properties to avoid infinite loops
+  }, [currentBoardId, data?.elements, undoRedo.elements, undoRedo.setElements]);
 
   // Reset undo/redo state when boardId changes
   useEffect(() => {
@@ -68,6 +202,8 @@ export function useWhiteboardQuery(boardId?: string): {
         const oldStateToPersist: WhiteboardState = {
           elements: oldPendingElements,
           panZoom: oldState.panZoom,
+          backgroundColor: oldState.backgroundColor,
+          gridStyle: oldState.gridStyle,
         };
         // Only persist if elements actually changed
         const oldStateStr = JSON.stringify(oldState.elements);
@@ -78,43 +214,32 @@ export function useWhiteboardQuery(boardId?: string): {
           });
         }
       }
-      
+
       lastBoardIdRef.current = currentBoardId;
       persistBoardIdRef.current = currentBoardId;
       const queryElements = data?.elements ?? [];
       isExternalUpdateRef.current = true;
-      undoRedo.setElements(queryElements);
+
+      // Restore the new board's undo/redo history from store if we have it
+      const saved = boardHistoryStore.get(currentBoardId);
+      if (
+        saved != null &&
+        (saved.past.length > 0 || saved.future.length > 0)
+      ) {
+        undoRedo.replaceState({
+          past: saved.past,
+          present: queryElements,
+          future: saved.future,
+        });
+      } else {
+        undoRedo.setElements(queryElements);
+      }
+
       lastSyncedRef.current = JSON.stringify(queryElements);
       pendingElementsRef.current = queryElements;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- undoRedo identity can change; we only need setElements and board/query deps
-  }, [currentBoardId, data?.elements, undoRedo.setElements, queryClient]);
-
-  // Sync undo/redo state when query data changes externally (e.g., from import)
-  useEffect(() => {
-    const queryElements = data?.elements ?? [];
-    const queryElementsStr = JSON.stringify(queryElements);
-    const currentElementsStr = JSON.stringify(undoRedo.elements);
-
-    // If query data changed and doesn't match current undo/redo state, reset it
-    // Only sync if this is an external change (not from our own setElements)
-    if (
-      queryElementsStr !== lastSyncedRef.current &&
-      queryElementsStr !== currentElementsStr &&
-      !isExternalUpdateRef.current
-    ) {
-      isExternalUpdateRef.current = true;
-      undoRedo.setElements(queryElements);
-      lastSyncedRef.current = queryElementsStr;
-      pendingElementsRef.current = queryElements;
-      // Clear any pending persist since this is an external update
-      if (persistTimeoutRef.current != null) {
-        clearTimeout(persistTimeoutRef.current);
-        persistTimeoutRef.current = null;
-      }
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- We intentionally only depend on specific properties to avoid infinite loops
-  }, [data?.elements, undoRedo.elements, undoRedo.setElements]);
+  }, [currentBoardId, data?.elements, undoRedo.setElements, undoRedo.replaceState, queryClient]);
 
   const persistNow = useCallback(() => {
     skipPersistRef.current = false;
@@ -129,6 +254,8 @@ export function useWhiteboardQuery(boardId?: string): {
     const state: WhiteboardState = {
       elements: toPersist,
       panZoom: current?.panZoom,
+      backgroundColor: current?.backgroundColor,
+      gridStyle: current?.gridStyle,
     };
     lastSyncedRef.current = JSON.stringify(toPersist);
     setWhiteboard(state, boardIdToPersist).catch((err) => {
@@ -151,70 +278,6 @@ export function useWhiteboardQuery(boardId?: string): {
     };
   }, [flushPendingPersist]);
 
-  // Sync to query cache immediately; debounce localStorage persist (skip during drag/resize)
-  useEffect(() => {
-    // Skip sync if this update came from external source (we already synced above)
-    if (isExternalUpdateRef.current) {
-      isExternalUpdateRef.current = false;
-      return;
-    }
-
-    pendingElementsRef.current = undoRedo.elements;
-    const undoRedoStr = JSON.stringify(undoRedo.elements);
-    const lastSyncedStr = lastSyncedRef.current;
-
-    if (undoRedoStr !== lastSyncedStr) {
-      const current = queryClient.getQueryData<WhiteboardState>(queryKey);
-      const newState: WhiteboardState = {
-        elements: undoRedo.elements,
-        panZoom: current?.panZoom,
-      };
-      queryClient.setQueryData(queryKey, newState);
-      // Update lastSyncedRef immediately to prevent external sync from triggering
-      lastSyncedRef.current = undoRedoStr;
-
-      if (skipPersistRef.current) {
-        skipPersistRef.current = false;
-        if (persistTimeoutRef.current != null) {
-          clearTimeout(persistTimeoutRef.current);
-          persistTimeoutRef.current = null;
-        }
-        return;
-      }
-      if (persistTimeoutRef.current != null) {
-        clearTimeout(persistTimeoutRef.current);
-      }
-      // Store the boardId when setting up the timeout to ensure we persist to the correct board
-      persistBoardIdRef.current = currentBoardId;
-      persistTimeoutRef.current = setTimeout(() => {
-        persistTimeoutRef.current = null;
-        skipPersistRef.current = false;
-        // Use the boardId from when the timeout was set up, not the current one
-        const boardIdToPersist = persistBoardIdRef.current;
-        // Only persist if we're still on the same board
-        if (boardIdToPersist === currentBoardId) {
-          const toPersist = pendingElementsRef.current;
-          lastSyncedRef.current = JSON.stringify(toPersist);
-          const persistQueryKey = getWhiteboardQueryKey(boardIdToPersist);
-          const state: WhiteboardState = {
-            elements: toPersist,
-            panZoom: queryClient.getQueryData<WhiteboardState>(persistQueryKey)?.panZoom,
-          };
-          setWhiteboard(state, boardIdToPersist).catch((err) => {
-            console.error("[useWhiteboard] persist failed", err);
-          });
-        }
-      }, PERSIST_DEBOUNCE_MS);
-    }
-
-    return () => {
-      if (persistTimeoutRef.current != null) {
-        clearTimeout(persistTimeoutRef.current);
-        persistTimeoutRef.current = null;
-      }
-    };
-  }, [undoRedo.elements, queryClient, queryKey, currentBoardId]);
-
   const setElements = (
     action: SetStateAction<WhiteboardElement[]>,
     options?: SetElementsOptions
@@ -225,6 +288,18 @@ export function useWhiteboardQuery(boardId?: string): {
     undoRedo.setElements(action, options);
   };
 
+  const backgroundColor =
+    data?.backgroundColor != null && /^#[0-9A-Fa-f]{6}$/.test(data.backgroundColor)
+      ? data.backgroundColor
+      : DEFAULT_BACKGROUND_COLOR;
+  const gridStyle =
+    data?.gridStyle === "empty" ||
+    data?.gridStyle === "dotted" ||
+    data?.gridStyle === "lined" ||
+    data?.gridStyle === "grid-lined"
+      ? data.gridStyle
+      : DEFAULT_GRID_STYLE;
+
   return {
     elements: undoRedo.elements,
     setElements,
@@ -234,5 +309,7 @@ export function useWhiteboardQuery(boardId?: string): {
     redo: undoRedo.redo,
     canUndo: undoRedo.canUndo,
     canRedo: undoRedo.canRedo,
+    backgroundColor,
+    gridStyle,
   };
 }

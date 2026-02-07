@@ -259,4 +259,48 @@ describe("useUndoRedo", () => {
     }
     expect(result.current.elements[0]).not.toBe(initial[0]);
   });
+
+  it("replaceState replaces full history for board switching", () => {
+    const initial: WhiteboardElement[] = [createTextElement("a", "A")];
+    const { result } = renderHook(() => useUndoRedo(initial));
+
+    act(() => {
+      result.current.setElements([...initial, createTextElement("b", "B")]);
+    });
+    expect(result.current.canUndo).toBe(true);
+
+    const otherBoardPresent = [createTextElement("x", "X")];
+    act(() => {
+      result.current.replaceState({
+        past: [],
+        present: otherBoardPresent,
+        future: [],
+      });
+    });
+
+    expect(result.current.elements).toEqual(otherBoardPresent);
+    expect(result.current.canUndo).toBe(false);
+    expect(result.current.canRedo).toBe(false);
+  });
+
+  it("calls onHistoryChange when history changes (skips initial empty state)", () => {
+    const initial: WhiteboardElement[] = [createTextElement("a", "A")];
+    const onHistoryChange = vi.fn();
+    const { result } = renderHook(() =>
+      useUndoRedo(initial, { onHistoryChange })
+    );
+
+    expect(onHistoryChange).not.toHaveBeenCalled();
+
+    act(() => {
+      result.current.setElements([...initial, createTextElement("b", "B")]);
+    });
+    expect(onHistoryChange).toHaveBeenCalledWith(
+      expect.objectContaining({
+        past: expect.any(Array) as unknown as WhiteboardElement[],
+        present: expect.any(Array) as unknown as WhiteboardElement[],
+        future: [],
+      })
+    );
+  });
 });

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { memo, useEffect, useRef } from "react";
 import type { ImageElement } from "@/types/whiteboard";
 import { safeSvgNumber } from "@/utils/safeSvgNumber";
 
@@ -60,7 +60,7 @@ function meetRect(
   };
 }
 
-export function WhiteboardImageElement({
+function WhiteboardImageElementInner({
   element,
   onNaturalDimensions,
 }: WhiteboardImageElementProps): JSX.Element {
@@ -152,3 +152,5 @@ export function WhiteboardImageElement({
     </g>
   );
 }
+
+export const WhiteboardImageElement = memo(WhiteboardImageElementInner);

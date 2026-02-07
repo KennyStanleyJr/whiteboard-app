@@ -26,7 +26,10 @@ export class WhiteboardErrorBoundary extends Component<
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo): void {
-    console.error("[WhiteboardErrorBoundary]", error, errorInfo.componentStack);
+    // Log only in development so tests and production stay quiet
+    if (import.meta.env.MODE === "development") {
+      console.error("[WhiteboardErrorBoundary]", error, errorInfo.componentStack);
+    }
   }
 
   handleRecover = (): void => {

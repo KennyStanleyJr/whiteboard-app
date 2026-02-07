@@ -649,7 +649,7 @@ export const SelectionToolbar = forwardRef<
   return (
     <div
       ref={toolbarRef}
-      className="fixed z-50 flex items-stretch gap-1.5 rounded-md border border-border bg-popover px-2 py-1.5 shadow-md"
+      className="selection-toolbar fixed z-50 flex items-stretch gap-1.5 rounded-md border px-2 py-1.5 shadow-md"
       style={{
         left: position.left,
         top: position.top,

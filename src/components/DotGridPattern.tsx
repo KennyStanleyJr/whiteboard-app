@@ -1,8 +1,15 @@
-const GRID_SPACING = 24;
+import { GRID_OPACITY, GRID_SPACING } from "@/lib/gridPatternConstants";
+
 const GRID_DOT_RADIUS = 1;
 const PATTERN_ID = "whiteboard-dot-grid";
 
-export function DotGridPattern(): JSX.Element {
+export interface DotGridPatternProps {
+  /** Grid dot color. Defaults to currentColor with opacity. */
+  color?: string;
+}
+
+export function DotGridPattern({ color }: DotGridPatternProps = {}): JSX.Element {
+  const fill = color ?? "currentColor";
   return (
     <pattern
       id={PATTERN_ID}
@@ -16,8 +23,8 @@ export function DotGridPattern(): JSX.Element {
         cx={GRID_SPACING / 2}
         cy={GRID_SPACING / 2}
         r={GRID_DOT_RADIUS}
-        fill="currentColor"
-        opacity={0.2}
+        fill={fill}
+        opacity={color != null ? GRID_OPACITY : 0.2}
       />
     </pattern>
   );

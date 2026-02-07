@@ -1,7 +1,8 @@
 import { useEffect, useState, useRef } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Download, Plus, Upload, MoreVertical, Pencil, Trash2 } from "lucide-react";
 import JSZip from "jszip";
+import { AppMenu } from "./components/AppMenu";
 import { WhiteboardCanvas } from "./components/WhiteboardCanvas";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,8 +15,19 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
+import {
+  PortalContainerProvider,
+  usePortalContainerRef,
+} from "./contexts/PortalContainerContext";
 import { getWhiteboardQueryKey } from "./hooks/useWhiteboard";
-import { setWhiteboard, type WhiteboardState } from "./api/whiteboard";
+import {
+  getWhiteboard,
+  getWhiteboardSync,
+  setWhiteboard,
+  type WhiteboardState,
+} from "./api/whiteboard";
+import type { GridStyle } from "./lib/canvasPreferences";
+import { isCanvasBackgroundDark } from "./lib/contrastColor";
 import {
   getBoards,
   getBoardsSync,
@@ -27,12 +39,19 @@ import {
   type Board,
   getCurrentBoardIdSync,
 } from "./api/boards";
+import {
+  loadCanvasPreferences,
+  saveCanvasPreference,
+  type CanvasPreferences,
+} from "./lib/canvasPreferences";
+import { remapElementIdsForAppend } from "./utils/remapElementIds";
 import "./App.css";
 
 const MANAGEMENT_GRID_DOT_CLASS =
   "h-3 w-3 rounded-[3px] border-2 border-muted-foreground";
 
 function App(): JSX.Element {
+  const [portalContainerRef, portalContainer] = usePortalContainerRef();
   const [view, setView] = useState<"canvas" | "manage">("canvas");
   // Initialize boards synchronously to ensure canvas can render immediately
   const initialBoards = getBoardsSync();
@@ -48,10 +67,58 @@ function App(): JSX.Element {
   const [renameValue, setRenameValue] = useState<string>("");
   const [deleteDialogOpen, setDeleteDialogOpen] = useState<boolean>(false);
   const [boardToDelete, setBoardToDelete] = useState<string | null>(null);
+  const [canvasPreferences, setCanvasPreferences] = useState<CanvasPreferences>(
+    loadCanvasPreferences
+  );
   const queryClient = useQueryClient();
   const nameInputRef = useRef<HTMLInputElement>(null);
   const menuRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const renameInputRef = useRef<HTMLInputElement>(null);
+
+  const setCanvasPreference = <K extends keyof CanvasPreferences>(
+    key: K,
+    value: CanvasPreferences[K]
+  ): void => {
+    setCanvasPreferences((prev) => ({ ...prev, [key]: value }));
+    saveCanvasPreference(key, value);
+  };
+
+  const { data: whiteboardData } = useQuery({
+    queryKey: getWhiteboardQueryKey(currentBoardId),
+    queryFn: () => getWhiteboard(currentBoardId),
+    initialData: () => getWhiteboardSync(currentBoardId),
+  });
+
+  const boardBackgroundColor =
+    whiteboardData?.backgroundColor != null &&
+    /^#[0-9A-Fa-f]{6}$/.test(whiteboardData.backgroundColor)
+      ? whiteboardData.backgroundColor
+      : "#ffffff";
+  const boardGridStyle: GridStyle =
+    whiteboardData?.gridStyle === "empty" ||
+    whiteboardData?.gridStyle === "dotted" ||
+    whiteboardData?.gridStyle === "lined" ||
+    whiteboardData?.gridStyle === "grid-lined"
+      ? whiteboardData.gridStyle
+      : "dotted";
+
+  const updateCurrentBoardAppearance = (partial: {
+    backgroundColor?: string;
+    gridStyle?: GridStyle;
+  }): void => {
+    const queryKey = getWhiteboardQueryKey(currentBoardId);
+    const current = queryClient.getQueryData<WhiteboardState>(queryKey);
+    if (current == null) return;
+    const next: WhiteboardState = {
+      ...current,
+      ...(partial.backgroundColor != null && { backgroundColor: partial.backgroundColor }),
+      ...(partial.gridStyle != null && { gridStyle: partial.gridStyle }),
+    };
+    queryClient.setQueryData(queryKey, next);
+    setWhiteboard(next, currentBoardId).catch((err) => {
+      console.error("[App] Update board appearance failed", err);
+    });
+  };
 
   // Load boards and current board
   useEffect(() => {
@@ -204,13 +271,32 @@ function App(): JSX.Element {
     return state;
   };
 
-  const handleImport = (state: WhiteboardState, targetBoardId?: string): void => {
+  const handleUpload = (
+    state: WhiteboardState,
+    targetBoardId?: string,
+    options?: { mode?: "replace" | "append" }
+  ): void => {
     const id = targetBoardId ?? currentBoardId;
     const queryKey = getWhiteboardQueryKey(id);
-    queryClient.setQueryData(queryKey, state);
-    setWhiteboard(state, id).catch((err) => {
-      console.error("[App] Import persist failed", err);
-    });
+    const mode = options?.mode ?? "replace";
+    if (mode === "append") {
+      const current = getWhiteboardSync(id);
+      const existingIds = new Set(current.elements.map((e) => e.id));
+      const appended = remapElementIdsForAppend(existingIds, state.elements);
+      const merged: WhiteboardState = {
+        ...current,
+        elements: [...current.elements, ...appended],
+      };
+      queryClient.setQueryData(queryKey, merged);
+      setWhiteboard(merged, id).catch((err) => {
+        console.error("[App] Upload append persist failed", err);
+      });
+    } else {
+      queryClient.setQueryData(queryKey, state);
+      setWhiteboard(state, id).catch((err) => {
+        console.error("[App] Upload replace persist failed", err);
+      });
+    }
   };
 
   const handleDownloadBoard = (boardId?: string): void => {
@@ -390,7 +476,7 @@ function App(): JSX.Element {
   };
 
   /**
-   * Create a new board and import state into it.
+   * Create a new board and upload state into it.
    */
   const processWhiteboardState = async (
     state: WhiteboardState,
@@ -398,12 +484,12 @@ function App(): JSX.Element {
   ): Promise<string | null> => {
     validatePanZoom(state);
     const newBoard = await addBoard(boardName);
-    handleImport(state, newBoard.id);
+    handleUpload(state, newBoard.id);
     return newBoard.id;
   };
 
   /**
-   * Process a ZIP file and import all JSON whiteboards from it.
+   * Process a ZIP file and upload all JSON whiteboards from it.
    */
   const processZipFile = async (
     file: File
@@ -425,7 +511,7 @@ function App(): JSX.Element {
       const text = await zipFile.async("string");
       const state = parseWhiteboardState(text);
       if (state != null) {
-        const boardName = relativePath.replace(/\.json$/i, "").replace(/.*\//, "") || "Imported Whiteboard";
+        const boardName = relativePath.replace(/\.json$/i, "").replace(/.*\//, "") || "Uploaded Whiteboard";
         const boardId = await processWhiteboardState(state, boardName);
         if (boardId != null) {
           lastBoardId = boardId;
@@ -436,7 +522,7 @@ function App(): JSX.Element {
   };
 
   /**
-   * Process an individual JSON file and import it.
+   * Process an individual JSON file and upload it.
    */
   const processJsonFile = async (
     file: File
@@ -444,11 +530,11 @@ function App(): JSX.Element {
     const text = await file.text();
     const state = parseWhiteboardState(text);
     if (state == null) return null;
-    const boardName = file.name.replace(/\.json$/i, "") || "Imported Whiteboard";
+    const boardName = file.name.replace(/\.json$/i, "") || "Uploaded Whiteboard";
     return await processWhiteboardState(state, boardName);
   };
 
-  const handleImportClick = (): void => {
+  const handleUploadClick = (): void => {
     const input = document.createElement("input");
     input.type = "file";
     input.accept = ".json,.zip";
@@ -458,8 +544,8 @@ function App(): JSX.Element {
       if (files == null || files.length === 0) return;
 
       try {
-        let lastImportedBoardId: string | null = null;
-        let importedJsonFileCount = 0;
+        let lastUploadedBoardId: string | null = null;
+        let uploadedJsonFileCount = 0;
         let hasZipFile = false;
         
         // Process files in selection order (FileList order)
@@ -470,39 +556,57 @@ function App(): JSX.Element {
             hasZipFile = true;
             const boardId = await processZipFile(file);
             if (boardId != null) {
-              lastImportedBoardId = boardId;
+              lastUploadedBoardId = boardId;
             }
           } else {
             const boardId = await processJsonFile(file);
             if (boardId != null) {
-              importedJsonFileCount += 1;
-              lastImportedBoardId = boardId;
+              uploadedJsonFileCount += 1;
+              lastUploadedBoardId = boardId;
             }
           }
         }
         // Reload boards and refresh view
         const loadedBoards = await getBoards();
         setBoards(loadedBoards);
-        // Only open the board if exactly one individual JSON file was imported (not ZIP, not multiple files)
-        if (lastImportedBoardId != null && !hasZipFile && importedJsonFileCount === 1) {
-          await openBoard(lastImportedBoardId);
+        // Only open the board if exactly one individual JSON file was uploaded (not ZIP, not multiple files)
+        if (lastUploadedBoardId != null && !hasZipFile && uploadedJsonFileCount === 1) {
+          await openBoard(lastUploadedBoardId);
         }
       } catch (err) {
-        console.error("[App] Import failed", err);
+        console.error("[App] Upload failed", err);
       }
     };
     input.click();
   };
 
   return (
-    <div className="flex h-full flex-col overflow-hidden relative">
-      <header className="app-header fixed left-5 top-3 right-5 flex items-center justify-between gap-4">
+    <PortalContainerProvider container={portalContainer}>
+      <div
+        ref={portalContainerRef}
+        className={cn(
+          "flex h-full flex-col overflow-hidden relative",
+          canvasPreferences.theme === "dark" && "dark"
+        )}
+      >
+      <header
+        className="app-header fixed left-5 top-3 right-5 flex items-center justify-between gap-4"
+        data-header-contrast={
+          view === "manage"
+            ? canvasPreferences.theme === "dark"
+              ? "light"
+              : "dark"
+            : isCanvasBackgroundDark(boardBackgroundColor)
+              ? "light"
+              : "dark"
+        }
+      >
         <div className="flex items-center gap-4">
           <Button
             type="button"
             variant="ghost"
             size="icon"
-            className="management-toggle-button size-[50px] rounded-lg font-semibold text-foreground shadow-none"
+            className="management-toggle-button size-[50px] rounded-lg font-semibold shadow-none"
             aria-label={
               view === "manage"
                 ? "Close whiteboard management"
@@ -524,12 +628,24 @@ function App(): JSX.Element {
             onChange={(e) => handleNameChange(e.target.value)}
             onBlur={() => void handleNameBlur()}
             onKeyDown={handleNameKeyDown}
-            className="text-lg font-semibold leading-tight text-foreground border-none bg-transparent shadow-none focus-visible:ring-0 px-0 h-auto w-[150px] truncate"
+            className="text-lg font-semibold leading-tight border-none bg-transparent shadow-none focus-visible:ring-0 px-0 h-auto w-[150px] truncate header-input"
             placeholder="Whiteboard name"
           />
         </div>
+        {view !== "manage" && (
+          <AppMenu
+            onUpload={(state, options) => handleUpload(state, undefined, options)}
+            onDownload={() => handleDownload()}
+            currentBoardName={boardName ?? "Whiteboard"}
+            boardBackgroundColor={boardBackgroundColor}
+            boardGridStyle={boardGridStyle}
+            onBoardAppearanceChange={updateCurrentBoardAppearance}
+            canvasPreferences={canvasPreferences}
+            onCanvasPreferenceChange={setCanvasPreference}
+          />
+        )}
       </header>
-      <WhiteboardCanvas boardId={currentBoardId} />
+      <WhiteboardCanvas key={currentBoardId} boardId={currentBoardId} />
       <main
         className={cn(
           "app-overlay flex flex-col justify-start items-center md:items-start px-5 md:px-20 pt-16 pb-6 box-border bg-background overflow-visible",
@@ -542,7 +658,7 @@ function App(): JSX.Element {
           <Button
             type="button"
             variant="default"
-            className="flex items-center gap-2 w-full md:w-[168px] min-w-[168px]"
+            className="management-new-board-btn flex items-center gap-2 w-full md:w-[168px] min-w-[168px]"
             onClick={() => void handleCreateBoard()}
             aria-label="Create new whiteboard"
           >
@@ -552,17 +668,17 @@ function App(): JSX.Element {
           <Button
             type="button"
             variant="outline"
-            className="flex items-center gap-2 w-full md:w-[168px] min-w-[168px]"
-            onClick={handleImportClick}
-            aria-label="Import whiteboard(s) from file(s)"
+            className="management-upload-download-btn border-border flex items-center gap-2 w-full md:w-[168px] min-w-[168px]"
+            onClick={handleUploadClick}
+            aria-label="Upload whiteboard(s) from file(s)"
           >
             <Upload aria-hidden className="size-4" />
-            <span>Import</span>
+            <span>Upload</span>
           </Button>
           <Button
             type="button"
             variant="outline"
-            className="flex items-center gap-2 w-full md:w-[168px] min-w-[168px]"
+            className="management-upload-download-btn border-border flex items-center gap-2 w-full md:w-[168px] min-w-[168px]"
             onClick={() => void handleDownloadAll()}
             aria-label="Download all whiteboards"
             disabled={boards.length === 0}
@@ -576,10 +692,10 @@ function App(): JSX.Element {
             <div key={board.id} className="board-card-wrapper">
               <div
                 className={cn(
-                  "relative flex h-[168px] w-[168px] flex-col rounded-xl border shadow-sm transition-all hover:border-primary/50 hover:shadow-md hover:scale-[1.015] p-1",
+                  "relative flex h-[168px] w-[168px] flex-col rounded-xl border shadow-sm transition-all p-1 bg-card",
                   board.id === currentBoardId
-                    ? "border-primary bg-gradient-to-b from-card to-muted/20"
-                    : "border-border bg-gradient-to-b from-card to-muted/20"
+                    ? "border-primary"
+                    : "border-border"
                 )}
               >
               {renamingBoardId === board.id ? (
@@ -618,18 +734,20 @@ function App(): JSX.Element {
                 }}
                 className="absolute top-2 right-2"
               >
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="h-7 w-7 rounded [&_svg]:size-4"
-                  aria-label={`Menu for ${board.name}`}
-                  aria-expanded={openMenuId === board.id}
-                  aria-haspopup="menu"
-                  onClick={(e) => handleMenuToggle(board.id, e)}
-                >
-                  <MoreVertical aria-hidden />
-                </Button>
+                <div className="group flex size-7 items-center justify-center rounded-md hover:bg-[var(--card-menu-button-hover-bg)]">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="size-7 rounded [&_svg]:size-4 !bg-transparent hover:!bg-transparent group-hover:!text-[var(--toolbar-hover-fg)]"
+                    aria-label={`Menu for ${board.name}`}
+                    aria-expanded={openMenuId === board.id}
+                    aria-haspopup="menu"
+                    onClick={(e) => handleMenuToggle(board.id, e)}
+                  >
+                    <MoreVertical aria-hidden />
+                  </Button>
+                </div>
                 {openMenuId === board.id && (
                   <div
                     className="absolute right-0 top-full z-[60] mt-1 flex flex-col gap-0.5 rounded-md border border-border bg-popover px-1 py-1 shadow-md min-w-[160px]"
@@ -668,7 +786,7 @@ function App(): JSX.Element {
                     <Button
                       type="button"
                       variant="ghost"
-                      className="h-9 w-full justify-start gap-2 px-3 text-sm text-destructive hover:text-destructive hover:bg-destructive/10"
+                      className="destructive-menu-item h-9 w-full justify-start gap-2 px-3 text-sm"
                       onClick={(e) => {
                         e.stopPropagation();
                         handleDeleteClick(board.id);
@@ -718,7 +836,8 @@ function App(): JSX.Element {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+      </div>
+    </PortalContainerProvider>
   );
 }
 

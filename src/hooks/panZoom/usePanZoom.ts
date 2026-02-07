@@ -36,12 +36,16 @@ export interface UsePanZoomReturn extends PanZoomState {
   onPointerUp: (e: React.PointerEvent) => void;
   onPointerLeave: (e: React.PointerEvent) => void;
   containerRef: React.RefObject<HTMLElement | null>;
+  /** True when the last context menu should be suppressed (e.g. after right-drag pan). Caller clears after reading. */
+  contextMenuSuppressedRef: React.MutableRefObject<boolean>;
 }
 
 function getInitialPanZoom(boardId?: string): PanZoomState {
   const stored = getWhiteboardSync(boardId);
   return stored.panZoom ?? { panX: 0, panY: 0, zoom: 1 };
 }
+
+type PanZoomUpdater = number | ((prev: number) => number);
 
 export function usePanZoom(options: UsePanZoomOptions = {}): UsePanZoomReturn {
   const { minZoom = MIN_ZOOM, maxZoom = MAX_ZOOM, zoomSensitivity = ZOOM_SENSITIVITY, boardId } = options;
@@ -55,17 +59,31 @@ export function usePanZoom(options: UsePanZoomOptions = {}): UsePanZoomReturn {
     }
     return initialPanZoom;
   };
-  const [panX, setPanX] = useState(() => getInitial().panX);
-  const [panY, setPanY] = useState(() => getInitial().panY);
-  const [zoom, setZoom] = useState(() => getInitial().zoom);
+  const [panZoom, setPanZoom] = useState<PanZoomState>(() => getInitial());
 
   const containerRef = useRef<HTMLElement | null>(null);
-  const stateRef = useRef({ panX: 0, panY: 0, zoom: 1 });
+  const stateRef = useRef(panZoom);
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const interactingRef = useRef(false);
   const lastBoardIdRef = useRef<string>(currentBoardId);
   const persistBoardIdRef = useRef<string>(currentBoardId);
-  stateRef.current = { panX, panY, zoom };
+  stateRef.current = panZoom;
+
+  const setPanX = useCallback((value: PanZoomUpdater) => {
+    setPanZoom((prev) => ({
+      ...prev,
+      panX: typeof value === "function" ? value(prev.panX) : value,
+    }));
+  }, []);
+  const setPanY = useCallback((value: PanZoomUpdater) => {
+    setPanZoom((prev) => ({
+      ...prev,
+      panY: typeof value === "function" ? value(prev.panY) : value,
+    }));
+  }, []);
+  const setZoom = useCallback((z: number) => {
+    setPanZoom((prev) => ({ ...prev, zoom: z }));
+  }, []);
 
   const persistPanZoom = useCallback(() => {
     if (saveTimeoutRef.current != null) {
@@ -108,20 +126,18 @@ export function usePanZoom(options: UsePanZoomOptions = {}): UsePanZoomReturn {
       
       lastBoardIdRef.current = currentBoardId;
       persistBoardIdRef.current = currentBoardId;
-      // Load the new board's panZoom
-      const newPanZoom = getInitialPanZoom(currentBoardId);
-      setPanX(newPanZoom.panX);
-      setPanY(newPanZoom.panY);
-      setZoom(newPanZoom.zoom);
+      setPanZoom(getInitialPanZoom(currentBoardId));
     }
   }, [currentBoardId]);
 
   useEffect(() => {
     if (interactingRef.current) return;
+    if (lastBoardIdRef.current !== currentBoardId) {
+      return;
+    }
     if (saveTimeoutRef.current != null) {
       clearTimeout(saveTimeoutRef.current);
     }
-    // Store the boardId when setting up the timeout
     persistBoardIdRef.current = currentBoardId;
     saveTimeoutRef.current = setTimeout(() => {
       saveTimeoutRef.current = null;
@@ -130,9 +146,10 @@ export function usePanZoom(options: UsePanZoomOptions = {}): UsePanZoomReturn {
       // Only persist if we're still on the same board
       if (boardIdToPersist === currentBoardId) {
         const current = getWhiteboardSync(boardIdToPersist);
+        const { panX: px, panY: py, zoom: z } = stateRef.current;
         const newState: WhiteboardState = {
           ...current,
-          panZoom: { panX, panY, zoom },
+          panZoom: { panX: px, panY: py, zoom: z },
         };
         const persistQueryKey = getWhiteboardQueryKey(boardIdToPersist);
         queryClient.setQueryData(persistQueryKey, newState);
@@ -147,7 +164,7 @@ export function usePanZoom(options: UsePanZoomOptions = {}): UsePanZoomReturn {
         saveTimeoutRef.current = null;
       }
     };
-  }, [panX, panY, zoom, queryClient, queryKey, currentBoardId]);
+  }, [panZoom.panX, panZoom.panY, panZoom.zoom, queryClient, queryKey, currentBoardId]);
 
   useEffect(() => {
     return () => {
@@ -176,6 +193,7 @@ export function usePanZoom(options: UsePanZoomOptions = {}): UsePanZoomReturn {
     setPanY,
     wheelOpts
   );
+  const contextMenuSuppressedRef = useRef(false);
   const touch = useTouchPanZoomHandlers(
     containerRef,
     stateRef,
@@ -187,12 +205,13 @@ export function usePanZoom(options: UsePanZoomOptions = {}): UsePanZoomReturn {
   const pointer = useRightButtonPanHandlers(setPanX, setPanY, {
     onPanEnd: persistPanZoom,
     interactingRef,
+    contextMenuSuppressedRef,
   });
 
   return {
-    panX,
-    panY,
-    zoom,
+    panX: panZoom.panX,
+    panY: panZoom.panY,
+    zoom: panZoom.zoom,
     isPanning: pointer.isPanning,
     onWheel: wheel.onWheel,
     handleWheelRaw: wheel.handleWheelRaw,
@@ -205,5 +224,6 @@ export function usePanZoom(options: UsePanZoomOptions = {}): UsePanZoomReturn {
     onPointerUp: pointer.onPointerUp,
     onPointerLeave: pointer.onPointerLeave,
     containerRef,
+    contextMenuSuppressedRef,
   };
 }

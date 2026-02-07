@@ -10,15 +10,16 @@ describe("App", () => {
     localStorage.clear();
   });
 
-  it("renders whiteboard header with editable name input", () => {
+  it("renders whiteboard header with editable name input", async () => {
     render(withQueryClient(<App />));
-    const nameInput = screen.getByPlaceholderText("Whiteboard name");
+    const nameInput = await screen.findByPlaceholderText("Whiteboard name");
     expect(nameInput).toBeInTheDocument();
     expect(nameInput).toHaveValue("Whiteboard");
   });
 
-  it("renders whiteboard canvas", () => {
+  it("renders whiteboard canvas", async () => {
     const { container } = render(withQueryClient(<App />));
+    await screen.findByPlaceholderText("Whiteboard name");
     const root = container.querySelector(".whiteboard-canvas-wrap");
     expect(root).toBeInTheDocument();
   });
@@ -64,9 +65,25 @@ describe("App", () => {
       expect(window.location.hash).toBe("");
     });
 
-    // Should have navigated to canvas view (main is aria-hidden so use hidden: true)
+    // Should have navigated to canvas view (main loses "visible" after hashchange)
     const managementMain = screen.getByRole("main", { hidden: true });
-    expect(managementMain).not.toHaveClass("visible");
+    await waitFor(() => {
+      expect(managementMain).not.toHaveClass("visible");
+    });
+  });
+
+  it("shows Upload button on management page", async () => {
+    render(withQueryClient(<App />));
+
+    const toggleButton = screen.getByRole("button", {
+      name: /open whiteboard management/i,
+    });
+    fireEvent.click(toggleButton);
+
+    const uploadButton = await screen.findByRole("button", {
+      name: /upload/i,
+    });
+    expect(uploadButton).toBeInTheDocument();
   });
 
   it("opens an existing board and closes management page", async () => {

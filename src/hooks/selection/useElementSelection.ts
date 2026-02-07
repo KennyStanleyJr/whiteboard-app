@@ -81,8 +81,6 @@ export function useElementSelection(
     shiftKey: false,
     ctrlKey: false,
   });
-  const dragMovePendingRef = useRef<{ dx: number; dy: number } | null>(null);
-  const dragRafRef = useRef<number | null>(null);
   const activeTouchPointersRef = useRef<Set<number>>(new Set());
 
   useEffect(() => {
@@ -90,26 +88,26 @@ export function useElementSelection(
     setSelectedElementIds((prev) => prev.filter((id) => ids.has(id)));
   }, [elements]);
 
-  const flushDragMove = useCallback(() => {
-    const pending = dragMovePendingRef.current;
-    if (pending == null) return;
-    const drag = dragStateRef.current;
-    if (drag == null) return;
-    dragMovePendingRef.current = null;
-    setElements(
-      (prev) =>
-        prev.map((el) => {
-          const start = drag.startPositions.get(el.id);
-          if (start === undefined) return el;
-          return {
-            ...el,
-            x: start.x + pending.dx,
-            y: start.y + pending.dy,
-          };
-        }),
-      { skipHistory: true }
-    );
-  }, [setElements]);
+  const applyDragMove = useCallback(
+    (dx: number, dy: number) => {
+      const drag = dragStateRef.current;
+      if (drag == null) return;
+      setElements(
+        (prev) =>
+          prev.map((el) => {
+            const start = drag.startPositions.get(el.id);
+            if (start === undefined) return el;
+            return {
+              ...el,
+              x: start.x + dx,
+              y: start.y + dy,
+            };
+          }),
+        { skipHistory: true }
+      );
+    },
+    [setElements]
+  );
 
   const handlePointerDown = useCallback(
     (e: React.PointerEvent) => {
@@ -118,18 +116,10 @@ export function useElementSelection(
       }
       const isMultiTouch = activeTouchPointersRef.current.size >= 2;
       if (isMultiTouch) {
-        // Cancel any ongoing drag when multi-touch is detected
         if (dragStateRef.current !== null) {
-          if (dragRafRef.current != null) {
-            cancelAnimationFrame(dragRafRef.current);
-            dragRafRef.current = null;
-          }
-          flushDragMove();
-          dragMovePendingRef.current = null;
           dragStateRef.current = null;
           setIsDragging(false);
         }
-        // Don't handle selection/dragging during multi-touch
         selectionHandlers.handlePointerDown(e);
         return;
       }
@@ -226,7 +216,6 @@ export function useElementSelection(
       selectionHandlers,
       panZoomHandlers,
       toolbarContainerRef,
-      flushDragMove,
     ]
   );
 
@@ -234,14 +223,7 @@ export function useElementSelection(
     (e: React.PointerEvent) => {
       const isMultiTouch = activeTouchPointersRef.current.size >= 2;
       if (isMultiTouch) {
-        // Cancel any ongoing drag when multi-touch is detected
         if (dragStateRef.current !== null) {
-          if (dragRafRef.current != null) {
-            cancelAnimationFrame(dragRafRef.current);
-            dragRafRef.current = null;
-          }
-          flushDragMove();
-          dragMovePendingRef.current = null;
           dragStateRef.current = null;
           setIsDragging(false);
         }
@@ -270,13 +252,7 @@ export function useElementSelection(
               drag.historyPushed = true;
             }
             drag.hasMoved = true;
-          }
-          dragMovePendingRef.current = { dx, dy };
-          if (dragRafRef.current == null) {
-            dragRafRef.current = requestAnimationFrame(() => {
-              dragRafRef.current = null;
-              flushDragMove();
-            });
+            applyDragMove(dx, dy);
           }
         }
         panZoomHandlers.onPointerMove(e);
@@ -299,7 +275,7 @@ export function useElementSelection(
       panY,
       zoom,
       setElements,
-      flushDragMove,
+      applyDragMove,
       selectionHandlers,
       panZoomHandlers,
     ]
@@ -317,11 +293,6 @@ export function useElementSelection(
             setSelectedElementIds([drag.clickElementId]);
           }
           const hadMoved = drag.hasMoved;
-          if (dragRafRef.current != null) {
-            cancelAnimationFrame(dragRafRef.current);
-            dragRafRef.current = null;
-          }
-          flushDragMove();
           dragStateRef.current = null;
           setIsDragging(false);
           (e.target as Element).releasePointerCapture?.(e.pointerId);
@@ -361,7 +332,6 @@ export function useElementSelection(
       elements,
       measuredBounds,
       selectionRect,
-      flushDragMove,
       onDragEnd,
       panZoomHandlers,
       selectionHandlers,
@@ -374,10 +344,6 @@ export function useElementSelection(
         activeTouchPointersRef.current.delete(e.pointerId);
       }
       if ((e.buttons & 1) === 0) {
-        if (dragRafRef.current != null) {
-          cancelAnimationFrame(dragRafRef.current);
-          dragRafRef.current = null;
-        }
         if (dragStateRef.current !== null) setIsDragging(false);
         dragStateRef.current = null;
       }

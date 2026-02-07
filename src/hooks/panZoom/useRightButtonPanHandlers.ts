@@ -3,6 +3,8 @@ import { useCallback, useRef, useState } from "react";
 export interface UseRightButtonPanHandlersOptions {
   onPanEnd?: () => void;
   interactingRef?: React.MutableRefObject<boolean>;
+  /** Set to true when context menu should be suppressed (e.g. after panning). Caller clears after reading. */
+  contextMenuSuppressedRef?: React.MutableRefObject<boolean>;
 }
 
 export function useRightButtonPanHandlers(
@@ -17,7 +19,7 @@ export function useRightButtonPanHandlers(
   onPointerUp: (e: React.PointerEvent) => void;
   onPointerLeave: (e: React.PointerEvent) => void;
 } {
-  const { onPanEnd, interactingRef } = options;
+  const { onPanEnd, interactingRef, contextMenuSuppressedRef } = options;
   const [isPanning, setIsPanning] = useState(false);
   const isPanningRef = useRef(false);
   const hasMovedRef = useRef(false);
@@ -25,16 +27,24 @@ export function useRightButtonPanHandlers(
 
   const stopPanning = useCallback(() => {
     const wasPanning = isPanningRef.current;
+    const didMove = hasMovedRef.current;
     isPanningRef.current = false;
     hasMovedRef.current = false;
+    if (wasPanning && didMove && contextMenuSuppressedRef) contextMenuSuppressedRef.current = true;
     if (interactingRef) interactingRef.current = false;
     setIsPanning(false);
     if (wasPanning) onPanEnd?.();
-  }, [onPanEnd, interactingRef]);
+  }, [onPanEnd, interactingRef, contextMenuSuppressedRef]);
 
-  const onContextMenu = useCallback((e: React.MouseEvent) => {
-    if (hasMovedRef.current) e.preventDefault();
-  }, []);
+  const onContextMenu = useCallback(
+    (e: React.MouseEvent) => {
+      if (hasMovedRef.current || contextMenuSuppressedRef?.current) {
+        e.preventDefault();
+        if (contextMenuSuppressedRef) contextMenuSuppressedRef.current = true;
+      }
+    },
+    [contextMenuSuppressedRef]
+  );
 
   const onPointerDown = useCallback(
     (e: React.PointerEvent) => {

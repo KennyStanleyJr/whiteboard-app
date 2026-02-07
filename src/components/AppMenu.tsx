@@ -1,27 +1,158 @@
-import { useRef, useState, useEffect } from "react";
-import { Menu, Download, Upload } from "lucide-react";
+import { useRef, useState, useEffect, useLayoutEffect } from "react";
+import { createPortal } from "react-dom";
+import { Menu, Download, Upload, Palette, Moon, Sun } from "lucide-react";
+import { HexColorPicker } from "react-colorful";
 import { Button } from "@/components/ui/button";
 import type { WhiteboardState } from "@/api/whiteboard";
+import type { CanvasPreferences, GridStyle, Theme } from "@/lib/canvasPreferences";
+import { cn } from "@/lib/utils";
 
-export interface AppMenuProps {
-  onImport: (state: WhiteboardState) => void;
-  onDownload: () => WhiteboardState;
+/** Icon: no grid (single square outline). */
+function GridIconEmpty({
+  className,
+  ...props
+}: React.SVGProps<SVGSVGElement>): JSX.Element {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={cn("size-4", className)}
+      {...props}
+    >
+      <rect width="18" height="18" x="3" y="3" rx="1" />
+    </svg>
+  );
 }
 
-export function AppMenu({ onImport, onDownload }: AppMenuProps): JSX.Element {
+/** Icon: dotted grid (2x2 dots). */
+function GridIconDotted({
+  className,
+  ...props
+}: React.SVGProps<SVGSVGElement>): JSX.Element {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      className={cn("size-4", className)}
+      {...props}
+    >
+      <circle cx="8" cy="8" r="1.5" />
+      <circle cx="16" cy="8" r="1.5" />
+      <circle cx="8" cy="16" r="1.5" />
+      <circle cx="16" cy="16" r="1.5" />
+    </svg>
+  );
+}
+
+/** Icon: grid-lined (full grid). */
+function GridIconGridLined({
+  className,
+  ...props
+}: React.SVGProps<SVGSVGElement>): JSX.Element {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      className={cn("size-4", className)}
+      {...props}
+    >
+      <line x1="3" y1="8" x2="21" y2="8" />
+      <line x1="3" y1="16" x2="21" y2="16" />
+      <line x1="8" y1="3" x2="8" y2="21" />
+      <line x1="16" y1="3" x2="16" y2="21" />
+    </svg>
+  );
+}
+
+/** Icon: lined (notebook-style horizontal lines). */
+function GridIconLined({
+  className,
+  ...props
+}: React.SVGProps<SVGSVGElement>): JSX.Element {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      className={cn("size-4", className)}
+      {...props}
+    >
+      <line x1="3" y1="6" x2="21" y2="6" />
+      <line x1="3" y1="12" x2="21" y2="12" />
+      <line x1="3" y1="18" x2="21" y2="18" />
+    </svg>
+  );
+}
+
+export interface AppMenuProps {
+  onUpload: (
+    state: WhiteboardState,
+    options?: { mode?: "replace" | "append" }
+  ) => void;
+  onDownload: () => WhiteboardState;
+  /** Current whiteboard name, used for the download filename. */
+  currentBoardName: string;
+  /** Current board background color (from board state). */
+  boardBackgroundColor: string;
+  /** Current board grid style (from board state). */
+  boardGridStyle: GridStyle;
+  /** Update current board appearance (persisted with board state). */
+  onBoardAppearanceChange: (partial: {
+    backgroundColor?: string;
+    gridStyle?: GridStyle;
+  }) => void;
+  canvasPreferences: CanvasPreferences;
+  onCanvasPreferenceChange: <K extends keyof CanvasPreferences>(
+    key: K,
+    value: CanvasPreferences[K]
+  ) => void;
+}
+
+export function AppMenu({
+  onUpload,
+  onDownload,
+  currentBoardName,
+  boardBackgroundColor,
+  boardGridStyle,
+  onBoardAppearanceChange,
+  canvasPreferences,
+  onCanvasPreferenceChange,
+}: AppMenuProps): JSX.Element {
   const [menuOpen, setMenuOpen] = useState(false);
-  const [showImportWarning, setShowImportWarning] = useState(false);
+  const [showUploadModeChoice, setShowUploadModeChoice] = useState(false);
+  const [openPicker, setOpenPicker] = useState<"background" | null>(null);
+  const [pickerAnchor, setPickerAnchor] = useState<{
+    top: number;
+    centerX: number;
+  } | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const backgroundTriggerRef = useRef<HTMLDivElement>(null);
+  const backgroundPopupRef = useRef<HTMLDivElement>(null);
   const pendingFileRef = useRef<File | null>(null);
+
+  const PICKER_SIZE = 128;
+  const PICKER_GAP = 8;
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent): void => {
-      if (
-        menuRef.current != null &&
-        !menuRef.current.contains(e.target as Node)
-      ) {
-        setMenuOpen(false);
-      }
+      const target = e.target as Node;
+      if (menuRef.current?.contains(target) === true) return;
+      if (backgroundPopupRef.current?.contains(target) === true) return;
+      setMenuOpen(false);
+      setOpenPicker(null);
     };
 
     if (menuOpen) {
@@ -32,42 +163,92 @@ export function AppMenu({ onImport, onDownload }: AppMenuProps): JSX.Element {
     }
   }, [menuOpen]);
 
+  useLayoutEffect(() => {
+    if (openPicker !== "background") {
+      setPickerAnchor(null);
+      return;
+    }
+    const el = backgroundTriggerRef.current;
+    if (el == null) {
+      setPickerAnchor({
+        top: Math.max(0, (window.innerHeight - PICKER_SIZE) / 2),
+        centerX: window.innerWidth / 2,
+      });
+      return;
+    }
+    const rect = el.getBoundingClientRect();
+    const centerX = rect.left + rect.width / 2;
+    const top = Math.max(
+      PICKER_GAP,
+      Math.min(
+        rect.bottom + 8,
+        window.innerHeight - PICKER_SIZE - PICKER_GAP
+      )
+    );
+    setPickerAnchor({
+      top,
+      centerX: Math.max(
+        PICKER_SIZE / 2 + PICKER_GAP,
+        Math.min(centerX, window.innerWidth - PICKER_SIZE / 2 - PICKER_GAP)
+      ),
+    });
+  }, [openPicker]);
+
+  useEffect(() => {
+    const handleClickOutsidePicker = (e: MouseEvent): void => {
+      if (openPicker !== "background") return;
+      const target = e.target as Node;
+      if (
+        backgroundPopupRef.current?.contains(target) === true ||
+        backgroundTriggerRef.current?.contains(target) === true
+      ) {
+        return;
+      }
+      setOpenPicker(null);
+    };
+    const handleEscapePicker = (e: KeyboardEvent): void => {
+      if (e.key === "Escape" && openPicker === "background") {
+        setOpenPicker(null);
+      }
+    };
+    if (openPicker === "background") {
+      document.addEventListener("mousedown", handleClickOutsidePicker);
+      document.addEventListener("keydown", handleEscapePicker);
+      return () => {
+        document.removeEventListener("mousedown", handleClickOutsidePicker);
+        document.removeEventListener("keydown", handleEscapePicker);
+      };
+    }
+  }, [openPicker]);
+
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent): void => {
-      if (e.key === "Escape" && showImportWarning) {
-        setShowImportWarning(false);
+      if (e.key !== "Escape") return;
+      if (showUploadModeChoice) {
+        setShowUploadModeChoice(false);
         pendingFileRef.current = null;
       }
     };
 
-    if (showImportWarning) {
+    if (showUploadModeChoice) {
       document.addEventListener("keydown", handleEscape);
       return () => {
         document.removeEventListener("keydown", handleEscape);
       };
     }
-  }, [showImportWarning]);
+  }, [showUploadModeChoice]);
 
   const handleDownload = (): void => {
     try {
       const state = onDownload();
       const json = JSON.stringify(state, null, 2);
-      const blob = new Blob([json], { type: "text/plain" });
+      const blob = new Blob([json], { type: "application/json" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      
-      // Generate readable filename: whiteboard-YYYY-MM-DD-HH-MM-SS.txt
-      const now = new Date();
-      const year = now.getFullYear();
-      const month = String(now.getMonth() + 1).padStart(2, "0");
-      const day = String(now.getDate()).padStart(2, "0");
-      const hours = String(now.getHours()).padStart(2, "0");
-      const minutes = String(now.getMinutes()).padStart(2, "0");
-      const seconds = String(now.getSeconds()).padStart(2, "0");
-      const filename = `whiteboard-${year}-${month}-${day}-${hours}-${minutes}-${seconds}.txt`;
-      
-      a.download = filename;
+      const sanitizedName =
+        currentBoardName.replace(/[^a-z0-9]/gi, "-") || "whiteboard";
+      a.download = `${sanitizedName}.json`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -78,27 +259,24 @@ export function AppMenu({ onImport, onDownload }: AppMenuProps): JSX.Element {
     }
   };
 
-  const handleImportClick = (): void => {
+  const openFileInput = (): void => {
     setMenuOpen(false);
     const input = document.createElement("input");
     input.type = "file";
-    input.accept = ".txt";
+    input.accept = ".json";
     input.onchange = (e) => {
       const file = (e.target as HTMLInputElement).files?.[0];
       if (file == null) return;
       pendingFileRef.current = file;
-      setShowImportWarning(true);
+      setShowUploadModeChoice(true);
     };
     input.click();
   };
 
-  const handleImportConfirm = (): void => {
-    const file = pendingFileRef.current;
-    if (file == null) {
-      setShowImportWarning(false);
-      pendingFileRef.current = null;
-      return;
-    }
+  const readAndApplyFile = (
+    file: File,
+    mode: "append" | "replace"
+  ): void => {
     const reader = new FileReader();
     reader.onload = (event) => {
       try {
@@ -110,7 +288,6 @@ export function AppMenu({ onImport, onDownload }: AppMenuProps): JSX.Element {
           Array.isArray((parsed as WhiteboardState).elements)
         ) {
           const state = parsed as WhiteboardState;
-          // Validate panZoom if present
           if (state.panZoom != null) {
             const pz = state.panZoom;
             if (
@@ -122,36 +299,73 @@ export function AppMenu({ onImport, onDownload }: AppMenuProps): JSX.Element {
               !Number.isFinite(pz.zoom) ||
               pz.zoom <= 0
             ) {
-              // Invalid panZoom, remove it
               state.panZoom = undefined;
             }
           }
-          onImport(state);
-          setShowImportWarning(false);
-          pendingFileRef.current = null;
+          onUpload(state, { mode });
+          if (mode === "replace") {
+            pendingFileRef.current = null;
+          }
         } else {
           console.error("[AppMenu] Invalid file format");
-          setShowImportWarning(false);
-          pendingFileRef.current = null;
+          if (mode === "replace") {
+            pendingFileRef.current = null;
+          }
         }
       } catch (err) {
-        console.error("[AppMenu] Import failed", err);
-        setShowImportWarning(false);
-        pendingFileRef.current = null;
+        console.error("[AppMenu] Upload failed", err);
+        if (mode === "replace") {
+          pendingFileRef.current = null;
+        }
       }
     };
     reader.onerror = () => {
       console.error("[AppMenu] File read failed", reader.error);
-      setShowImportWarning(false);
-      pendingFileRef.current = null;
+      if (mode === "replace") {
+        pendingFileRef.current = null;
+      }
     };
     reader.readAsText(file);
   };
 
-  const handleImportCancel = (): void => {
-    setShowImportWarning(false);
+  const handleUploadModeAppend = (): void => {
+    const file = pendingFileRef.current;
+    if (file == null) {
+      setShowUploadModeChoice(false);
+      return;
+    }
+    setShowUploadModeChoice(false);
+    pendingFileRef.current = null;
+    readAndApplyFile(file, "append");
+  };
+
+  const handleUploadModeReplace = (): void => {
+    const file = pendingFileRef.current;
+    if (file == null) {
+      setShowUploadModeChoice(false);
+      return;
+    }
+    setShowUploadModeChoice(false);
+    pendingFileRef.current = null;
+    readAndApplyFile(file, "replace");
+  };
+
+  const handleUploadModeChoiceCancel = (): void => {
+    setShowUploadModeChoice(false);
     pendingFileRef.current = null;
   };
+
+  const handleThemeToggle = (): void => {
+    const next: Theme = canvasPreferences.theme === "dark" ? "light" : "dark";
+    onCanvasPreferenceChange("theme", next);
+  };
+
+  const handleGridStyleSelect = (style: GridStyle): void => {
+    onBoardAppearanceChange({ gridStyle: style });
+  };
+
+  const backgroundHex =
+    boardBackgroundColor.startsWith("#") ? boardBackgroundColor : "#ffffff";
 
   return (
     <div ref={menuRef} className="relative flex items-center">
@@ -159,7 +373,7 @@ export function AppMenu({ onImport, onDownload }: AppMenuProps): JSX.Element {
         type="button"
         variant="ghost"
         size="icon"
-        className="app-menu-button size-[50px] rounded-lg border border-border font-semibold text-foreground shadow-none"
+        className="app-menu-button size-[50px] rounded-lg font-semibold shadow-none"
         aria-label="Menu"
         aria-expanded={menuOpen}
         aria-haspopup="menu"
@@ -170,20 +384,128 @@ export function AppMenu({ onImport, onDownload }: AppMenuProps): JSX.Element {
       </Button>
       {menuOpen && (
         <div
-          className="absolute right-0 top-full z-[60] mt-1 flex flex-col gap-0.5 rounded-md border border-border bg-popover px-1 py-1 shadow-md min-w-[160px]"
+          className="app-menu-dropdown absolute right-0 top-full z-[60] mt-1 flex flex-col gap-0.5 rounded-md border border-border bg-popover px-1 py-1 shadow-md min-w-[200px] max-h-[min(80vh,400px)] overflow-y-auto text-foreground"
           role="menu"
           aria-label="App menu"
         >
+          <div className="px-2 py-1">
+            <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+              App
+            </span>
+          </div>
           <Button
             type="button"
             variant="ghost"
             className="h-9 w-full justify-start gap-2 px-3 text-sm"
-            onClick={handleImportClick}
+            onClick={handleThemeToggle}
             role="menuitem"
-            aria-label="Import file"
+            aria-label={
+              canvasPreferences.theme === "dark"
+                ? "Switch to light mode"
+                : "Switch to dark mode"
+            }
+          >
+            {canvasPreferences.theme === "dark" ? (
+              <Sun aria-hidden className="size-4" />
+            ) : (
+              <Moon aria-hidden className="size-4" />
+            )}
+            <span>
+              {canvasPreferences.theme === "dark" ? "Light mode" : "Dark mode"}
+            </span>
+          </Button>
+          <div className="my-1 border-t border-border" role="separator" />
+          <div className="px-2 py-1">
+            <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+              Whiteboard
+            </span>
+          </div>
+          <div ref={backgroundTriggerRef} className="relative">
+            <Button
+              type="button"
+              variant="ghost"
+              className="h-9 w-full justify-start gap-2 px-3 text-sm"
+              onClick={() =>
+                setOpenPicker(openPicker === "background" ? null : "background")
+              }
+              role="menuitem"
+              aria-label="Background color"
+              aria-expanded={openPicker === "background"}
+            >
+              <Palette aria-hidden className="size-4" />
+              <span>Background color</span>
+              <span
+                className="ml-auto size-4 rounded border border-border shrink-0"
+                style={{ backgroundColor: backgroundHex }}
+                aria-hidden
+              />
+            </Button>
+          </div>
+          <div className="px-2 py-1.5">
+            <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide block mb-1.5">
+              Grid
+            </span>
+            <div
+              className="grid-style-selector flex w-full items-center gap-1 rounded-md p-0.5"
+              role="group"
+              aria-label="Grid style"
+            >
+              {(["empty", "dotted", "grid-lined", "lined"] as const).map(
+                (style) => (
+                  <Button
+                    key={style}
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className={cn(
+                      "grid-style-btn h-8 min-w-0 flex-1 rounded text-foreground",
+                      boardGridStyle === style && "grid-style-btn--selected"
+                    )}
+                    onClick={() => handleGridStyleSelect(style)}
+                    role="menuitemradio"
+                    aria-label={
+                      style === "lined"
+                        ? "Lined (notebook)"
+                        : style === "grid-lined"
+                          ? "Grid lined"
+                          : `Grid ${style}`
+                    }
+                    aria-checked={boardGridStyle === style}
+                    title={
+                      style === "empty"
+                        ? "No grid"
+                        : style === "dotted"
+                          ? "Dotted grid"
+                          : style === "lined"
+                            ? "Lined (notebook)"
+                            : "Grid lined"
+                    }
+                  >
+                    {style === "empty" ? (
+                      <GridIconEmpty aria-hidden className="size-4" />
+                    ) : style === "dotted" ? (
+                      <GridIconDotted aria-hidden className="size-4" />
+                    ) : style === "lined" ? (
+                      <GridIconLined aria-hidden className="size-4" />
+                    ) : (
+                      <GridIconGridLined aria-hidden className="size-4" />
+                    )}
+                  </Button>
+                )
+              )}
+            </div>
+          </div>
+          <div className="my-1 border-t border-border" role="separator" />
+          <Button
+            type="button"
+            variant="ghost"
+            className="h-9 w-full justify-start gap-2 px-3 text-sm"
+            onClick={openFileInput}
+            role="menuitem"
+            aria-label="Upload file"
           >
             <Upload aria-hidden className="size-4" />
-            <span>Import</span>
+            <span>Upload</span>
           </Button>
           <Button
             type="button"
@@ -198,43 +520,88 @@ export function AppMenu({ onImport, onDownload }: AppMenuProps): JSX.Element {
           </Button>
         </div>
       )}
-      {showImportWarning && (
+      {pickerAnchor != null &&
+        createPortal(
+          <div
+            ref={backgroundPopupRef}
+            className={cn(
+              "flex rounded-lg border border-border bg-popover p-2 shadow-md text-popover-foreground",
+              canvasPreferences.theme === "dark" && "dark"
+            )}
+            style={{
+              position: "fixed",
+              top: pickerAnchor.top,
+              left: pickerAnchor.centerX,
+              transform: "translate(-50%, 0)",
+              zIndex: 115,
+            }}
+            role="dialog"
+            aria-label="Pick background color"
+          >
+            <HexColorPicker
+              color={backgroundHex}
+              onChange={(hex) =>
+                onBoardAppearanceChange({ backgroundColor: hex })
+              }
+              style={{ width: PICKER_SIZE, height: PICKER_SIZE }}
+            />
+          </div>,
+          document.body
+        )}
+      {showUploadModeChoice && (
         <div
           className="fixed inset-0 z-[120] flex items-center justify-center bg-black/50"
           role="dialog"
           aria-modal="true"
-          aria-labelledby="import-warning-title"
-          onClick={handleImportCancel}
+          aria-labelledby="upload-mode-choice-title"
+          onClick={handleUploadModeChoiceCancel}
         >
           <div
-            className="relative flex flex-col gap-4 rounded-lg border border-border bg-popover p-6 shadow-lg max-w-md mx-4"
+            className={cn(
+              "upload-warning-dialog relative flex flex-col gap-4 rounded-lg border border-border bg-popover p-6 shadow-lg max-w-md mx-4 text-popover-foreground",
+              canvasPreferences.theme === "dark" && "dark"
+            )}
             onClick={(e) => e.stopPropagation()}
           >
             <h2
-              id="import-warning-title"
-              className="text-lg font-semibold text-foreground"
+              id="upload-mode-choice-title"
+              className="upload-warning-dialog__title text-lg font-semibold"
             >
-              Warning
+              Add content from file
             </h2>
             <p className="text-sm text-muted-foreground">
-              Importing a file will replace all existing content on the
-              whiteboard. This action cannot be undone.
+              Append to the current whiteboard or replace its content?
             </p>
-            <div className="flex gap-2 justify-end">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={handleImportCancel}
-              >
-                Cancel
-              </Button>
-              <Button
-                type="button"
-                variant="default"
-                onClick={handleImportConfirm}
-              >
-                Continue
-              </Button>
+            <div className="flex flex-col gap-1">
+              <p className="text-xs text-muted-foreground text-right">
+                both can be undone
+              </p>
+              <div className="flex flex-col gap-2">
+                <Button
+                  type="button"
+                  variant="default"
+                  className="w-full justify-start"
+                  onClick={handleUploadModeAppend}
+                >
+                  Append content
+                </Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  className="w-full justify-start"
+                  onClick={handleUploadModeReplace}
+                >
+                  Replace content
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="upload-warning-dialog__cancel w-full"
+                  onClick={handleUploadModeChoiceCancel}
+                >
+                  Cancel
+                </Button>
+              </div>
             </div>
           </div>
         </div>

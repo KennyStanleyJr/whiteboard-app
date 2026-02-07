@@ -3,6 +3,10 @@ import { render, fireEvent } from "@testing-library/react";
 import { vi } from "vitest";
 import { WhiteboardTextElement } from "./WhiteboardTextElement";
 import type { TextElement } from "@/types/whiteboard";
+import {
+  DEFAULT_UNMEASURED_TEXT_HEIGHT,
+  DEFAULT_UNMEASURED_TEXT_WIDTH,
+} from "@/utils/elementBounds";
 
 const textEl: TextElement = {
   id: "t1",
@@ -162,5 +166,31 @@ describe("WhiteboardTextElement", () => {
     const div = container.querySelector(".whiteboard-text-display");
     expect(div).toBeInTheDocument();
     expect(div).toHaveStyle({ justifyContent: "center" });
+  });
+
+  it("uses default unmeasured size when element has no width/height and no measured bounds (e.g. pasted text)", () => {
+    const elNoSize: TextElement = {
+      ...textEl,
+      id: "t-new",
+      content: "Pasted line",
+    };
+    const emptyMeasured: Record<string, { x: number; y: number; width: number; height: number }> = {};
+    const { container } = renderInSvg(
+      <WhiteboardTextElement
+        element={elNoSize}
+        isEditing={false}
+        measuredBounds={emptyMeasured}
+        onDoubleClick={vi.fn()}
+        setTextDivRef={vi.fn()}
+        onUpdateContent={vi.fn()}
+        onFinishEdit={vi.fn()}
+        onEditKeyDown={vi.fn()}
+        editingRefSetter={vi.fn()}
+      />
+    );
+    const fo = container.querySelector("foreignObject.whiteboard-text-edit");
+    expect(fo).toBeInTheDocument();
+    expect(fo).toHaveAttribute("width", String(DEFAULT_UNMEASURED_TEXT_WIDTH));
+    expect(fo).toHaveAttribute("height", String(DEFAULT_UNMEASURED_TEXT_HEIGHT));
   });
 });

@@ -264,7 +264,7 @@ describe("useElementSelection", () => {
     expect(onPointerUp).toHaveBeenCalled();
   });
 
-  it("uses pushToPast on first drag move and skipHistory for subsequent moves", async () => {
+  it("uses pushToPast on first drag move and skipHistory for subsequent moves", () => {
     const containerRef = createContainer();
     const setElements = vi.fn<
       (
@@ -306,14 +306,13 @@ describe("useElementSelection", () => {
     expect(result.current.selectedElementIds).toContain("t1");
     expect(setElements).not.toHaveBeenCalled();
 
-    await act(async () => {
+    act(() => {
       result.current.handlers.handlePointerMove({
         clientX: 160,
         clientY: 71,
         pointerId: 1,
         buttons: 1,
       } as unknown as React.PointerEvent);
-      await new Promise<void>((r) => requestAnimationFrame(() => r()));
     });
 
     expect(setElements).toHaveBeenCalledTimes(2);
@@ -323,14 +322,13 @@ describe("useElementSelection", () => {
     expect(firstCall?.[1]).toEqual({ pushToPast: true });
     expect(secondCall?.[1]).toEqual({ skipHistory: true });
 
-    await act(async () => {
+    act(() => {
       result.current.handlers.handlePointerMove({
         clientX: 170,
         clientY: 81,
         pointerId: 1,
         buttons: 1,
       } as unknown as React.PointerEvent);
-      await new Promise<void>((r) => requestAnimationFrame(() => r()));
     });
 
     expect(setElements).toHaveBeenCalledTimes(3);

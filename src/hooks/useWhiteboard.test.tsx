@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   useWhiteboardQuery,
   getWhiteboardQueryKey,
+  clearBoardHistoryStore,
 } from "./useWhiteboard";
 import * as whiteboardApi from "@/api/whiteboard";
 import { getCurrentBoardIdSync } from "@/api/boards";
@@ -30,6 +31,7 @@ function createWrapper(): {
 describe("useWhiteboardQuery", () => {
   beforeEach(() => {
     localStorage.removeItem(currentBoardStorageKey());
+    clearBoardHistoryStore();
     vi.restoreAllMocks();
   });
 

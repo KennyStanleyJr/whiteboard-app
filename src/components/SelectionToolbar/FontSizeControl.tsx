@@ -33,12 +33,12 @@ export function FontSizeControl({
 }: FontSizeControlProps): JSX.Element {
   return (
     <div className="flex items-center">
-      <div className="flex h-7 items-center overflow-hidden rounded-md border border-border bg-muted/30">
+      <div className="font-size-control flex h-7 items-center overflow-hidden rounded-md border border-border bg-transparent">
         <Button
           type="button"
           variant="ghost"
           size="icon"
-          className="h-7 w-6 min-w-0 shrink-0 rounded-l-md rounded-r-none text-muted-foreground hover:bg-muted/50 [&_svg]:size-3"
+          className="h-7 w-6 min-w-0 shrink-0 rounded-l-md rounded-r-none border-0 text-muted-foreground hover:bg-muted/50 [&_svg]:size-3"
           onClick={() => onFontSizeChange(displayFontSize - 1)}
           aria-label="Decrease font size"
         >
@@ -59,7 +59,7 @@ export function FontSizeControl({
           type="button"
           variant="ghost"
           size="icon"
-          className="h-7 w-6 min-w-0 shrink-0 rounded-none border-r border-border text-muted-foreground hover:bg-muted/50 [&_svg]:size-3"
+          className="h-7 w-6 min-w-0 shrink-0 rounded-none border-0 text-muted-foreground hover:bg-muted/50 [&_svg]:size-3"
           onClick={() => onFontSizeChange(displayFontSize + 1)}
           aria-label="Increase font size"
         >

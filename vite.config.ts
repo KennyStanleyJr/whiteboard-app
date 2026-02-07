@@ -12,6 +12,20 @@ export default defineConfig(({ mode }) => ({
   resolve: {
     alias: { "@": path.resolve(__dirname, "./src") },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id: string): string | undefined {
+          if (!id.includes("node_modules")) return undefined;
+          if (id.includes("jszip")) return "jszip";
+          if (id.includes("@tanstack/react-query")) return "query";
+          if (id.includes("radix-ui")) return "radix";
+          if (id.includes("lucide-react")) return "lucide";
+          return undefined;
+        },
+      },
+    },
+  },
   test: {
     environment: "happy-dom",
     setupFiles: ["./src/test/setup.ts"],

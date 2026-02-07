@@ -1,3 +1,4 @@
+import { memo } from "react";
 import type { ShapeElement } from "@/types/whiteboard";
 import { safeSvgNumber } from "@/utils/safeSvgNumber";
 
@@ -8,7 +9,7 @@ export interface WhiteboardShapeElementProps {
   element: ShapeElement;
 }
 
-export function WhiteboardShapeElement({
+function WhiteboardShapeElementInner({
   element,
 }: WhiteboardShapeElementProps): JSX.Element {
   const color = element.color ?? DEFAULT_SHAPE_COLOR;
@@ -54,3 +55,5 @@ export function WhiteboardShapeElement({
     />
   );
 }
+
+export const WhiteboardShapeElement = memo(WhiteboardShapeElementInner);
