@@ -76,7 +76,7 @@ body {
   inset: 0;
   z-index: -1;
   background-color: #f5f5f5;
-  transition: background-color 200ms ease-in-out; /* match .app-overlay */
+  transition: background-color var(--viewport-transition-duration) var(--viewport-transition-easing);
 }
 
 #root {
@@ -84,6 +84,9 @@ body {
 }
 
 :root {
+  /* Single timing for #viewport-bg and .app-overlay so they stay in sync on mobile */
+  --viewport-transition-duration: 200ms;
+  --viewport-transition-easing: ease-in-out;
   --radius: 0.625rem;
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);

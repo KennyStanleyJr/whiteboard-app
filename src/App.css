@@ -1,5 +1,5 @@
 /* Stacking: .app-overlay z-100, .app-header z-110; whiteboard UI stays below. */
-/* Duration matches typical mobile viewport/theme-color transition so overlay and chrome animate in sync */
+/* Uses --viewport-transition-* from index.css so overlay and #viewport-bg stay in sync on mobile */
 .app-overlay {
   position: fixed;
   inset: 0;
@@ -7,13 +7,13 @@
   overflow: visible;
   clip-path: none;
   transition:
-    opacity 200ms ease-in-out,
-    visibility 0s linear 200ms;
+    opacity var(--viewport-transition-duration) var(--viewport-transition-easing),
+    visibility 0s linear var(--viewport-transition-duration);
 }
 
 .app-overlay.visible {
   transition:
-    opacity 200ms ease-in-out,
+    opacity var(--viewport-transition-duration) var(--viewport-transition-easing),
     visibility 0s linear 0s;
 }
 
