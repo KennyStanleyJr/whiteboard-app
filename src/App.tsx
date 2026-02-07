@@ -19,6 +19,7 @@ import {
   PortalContainerProvider,
   usePortalContainerRef,
 } from "./contexts/PortalContainerContext";
+import { ThemeProvider } from "./contexts/ThemeProvider";
 import { getWhiteboardQueryKey } from "./hooks/useWhiteboard";
 import {
   getWhiteboard,
@@ -582,6 +583,7 @@ function App(): JSX.Element {
 
   return (
     <PortalContainerProvider container={portalContainer}>
+      <ThemeProvider theme={canvasPreferences.theme}>
       <div
         ref={portalContainerRef}
         className={cn(
@@ -811,17 +813,27 @@ function App(): JSX.Element {
           handleDeleteCancel();
         }
       }}>
-        <DialogContent>
+        <DialogContent
+          className={cn(
+            "delete-whiteboard-dialog max-w-sm overflow-hidden bg-background text-foreground border-border",
+            canvasPreferences.theme === "dark" && "dark"
+          )}
+        >
           <DialogHeader>
-            <DialogTitle>Delete Whiteboard</DialogTitle>
+            <DialogTitle className="delete-whiteboard-dialog__title text-foreground">
+              Delete Whiteboard
+            </DialogTitle>
             <DialogDescription>
-              Are you sure you want to delete "{boards.find((b) => b.id === boardToDelete)?.name ?? "this whiteboard"}"? This action cannot be undone.
+              Are you sure you want to delete "{boards.find((b) => b.id === boardToDelete)?.name ?? "this whiteboard"}"?
+              <br />
+              This action cannot be undone.
             </DialogDescription>
           </DialogHeader>
-          <DialogFooter>
+          <DialogFooter className="min-w-0 flex flex-col gap-2 sm:flex-col sm:space-x-0">
             <Button
               type="button"
-              variant="outline"
+              variant="ghost"
+              className="delete-whiteboard-dialog__cancel min-w-0 shrink-0 w-full"
               onClick={handleDeleteCancel}
             >
               Cancel
@@ -829,6 +841,7 @@ function App(): JSX.Element {
             <Button
               type="button"
               variant="destructive"
+              className="delete-whiteboard-dialog__confirm min-w-0 shrink-0 w-full"
               onClick={() => void handleDeleteConfirm()}
             >
               Delete
@@ -837,6 +850,7 @@ function App(): JSX.Element {
         </DialogContent>
       </Dialog>
       </div>
+      </ThemeProvider>
     </PortalContainerProvider>
   );
 }

@@ -317,16 +317,140 @@
   color: var(--toolbar-hover-fg) !important;
 }
 
-/* Upload warning dialog: theme-aware title and visible Cancel hover */
-.upload-warning-dialog .upload-warning-dialog__title {
-  color: oklch(0.145 0 0);
+/* Portaled dialogs: explicit light/dark so they match theme when rendered outside themed root */
+.image-info-dialog .image-info-dialog__title {
+  color: oklch(0.145 0 0) !important;
 }
-.upload-warning-dialog.dark .upload-warning-dialog__title {
-  color: oklch(0.985 0 0);
+.image-info-dialog .image-info-dialog__optimize-btn {
+  border: 1px solid var(--border) !important;
+  background-color: var(--background) !important;
+  color: var(--foreground) !important;
 }
-.upload-warning-dialog .upload-warning-dialog__cancel:hover {
+.image-info-dialog .image-info-dialog__optimize-btn:hover:not(:disabled) {
   background-color: var(--toolbar-hover-bg) !important;
   color: var(--toolbar-hover-fg) !important;
+}
+.image-info-dialog.dark .image-info-dialog__title {
+  color: oklch(0.985 0 0) !important;
+}
+.image-info-dialog.dark dt,
+.image-info-dialog.dark .text-muted-foreground {
+  color: oklch(0.708 0 0) !important;
+}
+.image-info-dialog.dark dd,
+.image-info-dialog.dark .text-foreground {
+  color: oklch(0.985 0 0) !important;
+}
+.image-info-dialog.dark > button {
+  color: oklch(0.985 0 0) !important;
+}
+.image-info-dialog.dark > button:hover {
+  opacity: 1;
+}
+.image-info-dialog.dark,
+.import-image-options-dialog.dark,
+.upload-warning-dialog.dark,
+.delete-whiteboard-dialog.dark {
+  background-color: oklch(0.145 0 0) !important;
+  color: oklch(0.985 0 0) !important;
+  border-color: oklch(1 0 0 / 10%) !important;
+}
+.image-info-dialog.dark .image-info-dialog__optimize-btn {
+  background-color: oklch(0.205 0 0) !important;
+  border-color: oklch(1 0 0 / 25%) !important;
+  color: oklch(0.985 0 0) !important;
+}
+.image-info-dialog.dark .image-info-dialog__optimize-btn:hover:not(:disabled) {
+  background-color: oklch(0.269 0 0) !important;
+  border-color: oklch(1 0 0 / 35%) !important;
+  color: oklch(0.985 0 0) !important;
+}
+.import-image-options-dialog .import-image-options-dialog__title {
+  color: oklch(0.145 0 0) !important;
+}
+.import-image-options-dialog.dark .import-image-options-dialog__title {
+  color: oklch(0.985 0 0) !important;
+}
+
+/* Upload (add content) dialog: same portaled styling */
+.upload-warning-dialog .upload-warning-dialog__title {
+  color: oklch(0.145 0 0) !important;
+}
+.upload-warning-dialog.dark .upload-warning-dialog__title {
+  color: oklch(0.985 0 0) !important;
+}
+.upload-warning-dialog.dark .text-muted-foreground {
+  color: oklch(0.708 0 0) !important;
+}
+.upload-warning-dialog .upload-warning-dialog__replace {
+  border-color: var(--border) !important;
+}
+.upload-warning-dialog .upload-warning-dialog__replace:hover:not(:disabled),
+.upload-warning-dialog .upload-warning-dialog__cancel:hover:not(:disabled) {
+  background-color: var(--toolbar-hover-bg) !important;
+  color: var(--toolbar-hover-fg) !important;
+}
+.upload-warning-dialog.dark .upload-warning-dialog__replace {
+  background-color: oklch(0.205 0 0) !important;
+  border-color: oklch(1 0 0 / 25%) !important;
+  color: oklch(0.985 0 0) !important;
+}
+.upload-warning-dialog.dark .upload-warning-dialog__replace:hover:not(:disabled),
+.upload-warning-dialog.dark .upload-warning-dialog__cancel:hover:not(:disabled) {
+  background-color: oklch(0.269 0 0) !important;
+  color: oklch(0.985 0 0) !important;
+}
+.upload-warning-dialog.dark .upload-warning-dialog__replace:hover:not(:disabled) {
+  border-color: oklch(1 0 0 / 35%) !important;
+}
+.upload-warning-dialog.dark > button {
+  color: oklch(0.985 0 0) !important;
+}
+.upload-warning-dialog.dark > button:hover {
+  opacity: 1;
+}
+
+/* Delete whiteboard dialog: same portaled styling */
+.delete-whiteboard-dialog .delete-whiteboard-dialog__title {
+  color: oklch(0.145 0 0) !important;
+}
+.delete-whiteboard-dialog.dark .delete-whiteboard-dialog__title {
+  color: oklch(0.985 0 0) !important;
+}
+.delete-whiteboard-dialog.dark .text-muted-foreground {
+  color: oklch(0.708 0 0) !important;
+}
+.delete-whiteboard-dialog .delete-whiteboard-dialog__cancel {
+  border-color: var(--border) !important;
+}
+.delete-whiteboard-dialog .delete-whiteboard-dialog__cancel:hover:not(:disabled) {
+  background-color: var(--toolbar-hover-bg) !important;
+  color: var(--toolbar-hover-fg) !important;
+}
+.delete-whiteboard-dialog.dark .delete-whiteboard-dialog__cancel {
+  background-color: oklch(0.205 0 0) !important;
+  border-color: oklch(1 0 0 / 25%) !important;
+  color: oklch(0.985 0 0) !important;
+}
+.delete-whiteboard-dialog.dark .delete-whiteboard-dialog__cancel:hover:not(:disabled) {
+  background-color: oklch(0.269 0 0) !important;
+  color: oklch(0.985 0 0) !important;
+}
+.delete-whiteboard-dialog.dark .delete-whiteboard-dialog__confirm {
+  background-color: oklch(0.55 0.2 25) !important;
+  border-color: oklch(0.55 0.2 25) !important;
+  color: oklch(0.985 0 0) !important;
+}
+.delete-whiteboard-dialog.dark .delete-whiteboard-dialog__confirm:hover:not(:disabled) {
+  background-color: oklch(0.45 0.2 25) !important;
+  border-color: oklch(0.45 0.2 25) !important;
+  color: oklch(0.985 0 0) !important;
+}
+.delete-whiteboard-dialog.dark > button {
+  color: oklch(0.985 0 0) !important;
+}
+.delete-whiteboard-dialog.dark > button:hover {
+  opacity: 1;
 }
 
 .whiteboard-canvas {

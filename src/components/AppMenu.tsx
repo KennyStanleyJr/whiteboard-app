@@ -3,6 +3,14 @@ import { createPortal } from "react-dom";
 import { Menu, Download, Upload, Palette, Moon, Sun } from "lucide-react";
 import { HexColorPicker } from "react-colorful";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import type { WhiteboardState } from "@/api/whiteboard";
 import type { CanvasPreferences, GridStyle, Theme } from "@/lib/canvasPreferences";
 import { cn } from "@/lib/utils";
@@ -548,64 +556,56 @@ export function AppMenu({
           </div>,
           document.body
         )}
-      {showUploadModeChoice && (
-        <div
-          className="fixed inset-0 z-[120] flex items-center justify-center bg-black/50"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="upload-mode-choice-title"
-          onClick={handleUploadModeChoiceCancel}
+      <Dialog
+        open={showUploadModeChoice}
+        onOpenChange={(open) => {
+          if (!open) handleUploadModeChoiceCancel();
+        }}
+      >
+        <DialogContent
+          className={cn(
+            "upload-warning-dialog max-w-sm overflow-hidden bg-background text-foreground border-border",
+            canvasPreferences.theme === "dark" && "dark"
+          )}
         >
-          <div
-            className={cn(
-              "upload-warning-dialog relative flex flex-col gap-4 rounded-lg border border-border bg-popover p-6 shadow-lg max-w-md mx-4 text-popover-foreground",
-              canvasPreferences.theme === "dark" && "dark"
-            )}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h2
-              id="upload-mode-choice-title"
-              className="upload-warning-dialog__title text-lg font-semibold"
-            >
+          <DialogHeader>
+            <DialogTitle className="upload-warning-dialog__title text-foreground">
               Add content from file
-            </h2>
-            <p className="text-sm text-muted-foreground">
+            </DialogTitle>
+            <DialogDescription>
               Append to the current whiteboard or replace its content?
-            </p>
-            <div className="flex flex-col gap-1">
-              <p className="text-xs text-muted-foreground text-right">
-                both can be undone
-              </p>
-              <div className="flex flex-col gap-2">
-                <Button
-                  type="button"
-                  variant="default"
-                  className="w-full justify-start"
-                  onClick={handleUploadModeAppend}
-                >
-                  Append content
-                </Button>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  className="w-full justify-start"
-                  onClick={handleUploadModeReplace}
-                >
-                  Replace content
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  className="upload-warning-dialog__cancel w-full"
-                  onClick={handleUploadModeChoiceCancel}
-                >
-                  Cancel
-                </Button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+              <br />
+              Both can be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="min-w-0 flex flex-col gap-2 sm:flex-col sm:space-x-0">
+            <Button
+              type="button"
+              variant="default"
+              className="min-w-0 shrink-0 w-full"
+              onClick={handleUploadModeAppend}
+            >
+              Append content
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              className="upload-warning-dialog__replace min-w-0 shrink-0 w-full"
+              onClick={handleUploadModeReplace}
+            >
+              Replace content
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              className="upload-warning-dialog__cancel min-w-0 shrink-0 w-full"
+              onClick={handleUploadModeChoiceCancel}
+            >
+              Cancel
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

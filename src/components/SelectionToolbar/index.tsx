@@ -34,7 +34,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { Maximize2, PaintBucket } from "lucide-react";
 import { AlignMenus } from "./AlignMenus";
-import { ElementActionsMenu } from "./ElementActionsMenu";
+import { ElementActionsMenu } from "./ElementContextMenu";
 import { FontSizeControl } from "./FontSizeControl";
 import { FormatButtonsRow } from "./FormatButtonsRow";
 import { ImageCornerRadiusMenu } from "./ImageCornerRadiusMenu";
@@ -72,6 +72,8 @@ export interface SelectionToolbarProps {
   onDuplicate?: () => void;
   /** Handler for deleting selected elements */
   onDelete?: () => void;
+  /** When provided and a single image is selected, "Get info" is shown in the element actions menu. */
+  onGetImageInfo?: () => void;
 }
 
 export interface SelectionToolbarHandle {
@@ -102,6 +104,7 @@ export const SelectionToolbar = forwardRef<
     onCopy,
     onDuplicate,
     onDelete,
+    onGetImageInfo,
   } = props;
 
   const toolbarRef = useRef<HTMLDivElement | null>(null);
@@ -768,6 +771,11 @@ export const SelectionToolbar = forwardRef<
         onDelete={handleDeleteSelected}
         onSendToBack={handleSendToBack}
         onSendToFront={handleSendToFront}
+        onGetImageInfo={
+          selectedElementIds.length === 1 && hasImage
+            ? onGetImageInfo
+            : undefined
+        }
         menuOpen={elementActionsMenuOpen}
         setMenuOpen={setElementActionsMenuOpen}
         menuRef={elementActionsMenuRef}

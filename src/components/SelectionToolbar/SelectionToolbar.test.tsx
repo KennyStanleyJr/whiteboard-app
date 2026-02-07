@@ -656,6 +656,35 @@ describe("SelectionToolbar", () => {
     expect(next[0]).toMatchObject({ kind: "image", imageFill: true });
   });
 
+  it("shows Get info in element actions and calls onGetImageInfo when single image selected", () => {
+    const imageEl: ImageElement = {
+      id: "img1",
+      kind: "image",
+      x: 0,
+      y: 0,
+      src: "data:image/png;base64,x",
+      width: 100,
+      height: 80,
+    };
+    const onGetImageInfo = vi.fn();
+    const containerRef = createContainerRef();
+    render(
+      <SelectionToolbar
+        {...defaultProps}
+        containerRef={containerRef}
+        selectedElementIds={["img1"]}
+        elements={[imageEl]}
+        measuredBounds={{ img1: { x: 0, y: 0, width: 100, height: 80 } }}
+        onGetImageInfo={onGetImageInfo}
+      />
+    );
+    fireEvent.click(screen.getByRole("button", { name: /element actions/i }));
+    const getInfoItem = screen.getByRole("menuitem", { name: /get info/i });
+    expect(getInfoItem).toBeInTheDocument();
+    fireEvent.click(getInfoItem);
+    expect(onGetImageInfo).toHaveBeenCalledTimes(1);
+  });
+
   it("removes underline from all selected when all have it (multi-select)", () => {
     const setElements = vi.fn();
     const containerRef = createContainerRef();

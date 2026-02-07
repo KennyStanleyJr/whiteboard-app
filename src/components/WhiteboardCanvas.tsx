@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { WhiteboardCanvasSvgHandle } from "./WhiteboardCanvasSvg";
 import { clientToWorld } from "../hooks/canvas/canvasCoords";
 import {
@@ -33,6 +33,14 @@ import {
 } from "./SelectionToolbar";
 import { CanvasContextMenu } from "./SelectionToolbar/CanvasContextMenu";
 import { ElementContextMenu } from "./SelectionToolbar/ElementContextMenu";
+import {
+  imageSrcToFile,
+  optimizeImage,
+  OPTIMIZE_IMAGE_MAX_DIMENSION,
+} from "../utils/optimizeImage";
+import type { ImportImageOptionsItem } from "./SelectionToolbar/ImportImageOptionsDialog";
+import { ImageInfoDialog } from "./SelectionToolbar/ImageInfoDialog";
+import { ImportImageOptionsDialog } from "./SelectionToolbar/ImportImageOptionsDialog";
 import { WhiteboardCanvasSvg } from "./WhiteboardCanvasSvg";
 import { WhiteboardErrorBoundary } from "./WhiteboardErrorBoundary";
 import { WhiteboardToolbar } from "./WhiteboardToolbar";
@@ -130,7 +138,6 @@ export function WhiteboardCanvas({ boardId }: WhiteboardCanvasProps = {}): JSX.E
 
   const DEFAULT_SHAPE_WIDTH = 180;
   const DEFAULT_SHAPE_HEIGHT = 120;
-  const DEFAULT_IMAGE_MAX_SIZE = 400;
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -217,18 +224,14 @@ export function WhiteboardCanvas({ boardId }: WhiteboardCanvasProps = {}): JSX.E
   const addImageAt = useCallback(
     (x: number, y: number, src: string, imgWidth: number, imgHeight: number) => {
       const id = generateElementId();
-      const maxDim = Math.max(imgWidth, imgHeight, 1);
-      const scale = Math.min(1, DEFAULT_IMAGE_MAX_SIZE / maxDim);
-      const w = Math.round(imgWidth * scale);
-      const h = Math.round(imgHeight * scale);
       const imageElement: ImageElement = {
         id,
-        x: x - w / 2,
-        y: y - h / 2,
+        x: x - imgWidth / 2,
+        y: y - imgHeight / 2,
         kind: "image",
         src,
-        width: w,
-        height: h,
+        width: imgWidth,
+        height: imgHeight,
         naturalWidth: imgWidth,
         naturalHeight: imgHeight,
       };
@@ -270,11 +273,11 @@ export function WhiteboardCanvas({ boardId }: WhiteboardCanvasProps = {}): JSX.E
       if (files == null || files.length === 0) return;
       const file = files[0];
       if (file == null || !file.type.startsWith("image/")) return;
-      const { x, y } = centerWorld();
-      addImageFromFile(file, x, y);
       e.target.value = "";
+      const { x, y } = centerWorld();
+      setPendingImportItems([{ file, worldX: x, worldY: y }]);
     },
-    [addImageFromFile, centerWorld]
+    [centerWorld]
   );
 
   const handleUpdateElementContent = useCallback((id: string, content: string) => {
@@ -324,6 +327,20 @@ export function WhiteboardCanvas({ boardId }: WhiteboardCanvasProps = {}): JSX.E
     type: "element" | "canvas";
   } | null>(null);
   const contextMenuRef = useRef<HTMLDivElement>(null);
+  const [imageInfoDialogElementId, setImageInfoDialogElementId] = useState<
+    string | null
+  >(null);
+  const [isOptimizingImage, setIsOptimizingImage] = useState(false);
+  const [pendingImportItems, setPendingImportItems] = useState<
+    ImportImageOptionsItem[]
+  >([]);
+  const [, setPendingPasteText] = useState<{
+    x: number;
+    y: number;
+    content: string;
+  } | null>(null);
+  const [isOptimizingImport, setIsOptimizingImport] = useState(false);
+  const importOptimizeBatchIdRef = useRef(0);
 
   const handleResizeHandleDown = useCallback(
     (handleId: ResizeHandleId, e: React.PointerEvent) => {
@@ -552,7 +569,7 @@ export function WhiteboardCanvas({ boardId }: WhiteboardCanvasProps = {}): JSX.E
 
   const handlePaste = useCallback(() => {
     const { x: baseX, y: baseY } = getPastePosition();
-    let nextY = baseY;
+    const nextY = baseY;
 
     const pasteAppClipboard = (pasteY: number) => {
       const clipboardEntries = clipboardRef.current;
@@ -606,11 +623,23 @@ export function WhiteboardCanvas({ boardId }: WhiteboardCanvasProps = {}): JSX.E
       return Promise.all(items.map((item) => processItem(item))).then(() => {
         const hasSystemContent = imageFiles.length > 0 || textContent != null;
         if (hasSystemContent) {
-          for (const file of imageFiles) {
-            addImageFromFile(file, baseX, nextY);
-            nextY += PASTE_OFFSET_Y * 5;
-          }
-          if (textContent != null) {
+          if (imageFiles.length > 0) {
+            const importItems: ImportImageOptionsItem[] = imageFiles.map(
+              (file, i) => ({
+                file,
+                worldX: baseX,
+                worldY: nextY + i * PASTE_OFFSET_Y * 5,
+              })
+            );
+            setPendingImportItems(importItems);
+            if (textContent != null) {
+              setPendingPasteText({
+                x: baseX,
+                y: nextY + imageFiles.length * PASTE_OFFSET_Y * 5,
+                content: textContent,
+              });
+            }
+          } else if (textContent != null) {
             addTextAtWithContent(baseX, nextY, textContent);
           }
           return;
@@ -626,7 +655,6 @@ export function WhiteboardCanvas({ boardId }: WhiteboardCanvasProps = {}): JSX.E
     setElements,
     elementSelection,
     addTextAtWithContent,
-    addImageFromFile,
   ]);
 
   const handleMoveUp = useCallback(() => {
@@ -698,6 +726,126 @@ export function WhiteboardCanvas({ boardId }: WhiteboardCanvasProps = {}): JSX.E
       return [...unselected, ...selected];
     });
   }, [elementSelection.selectedElementIds, setElements]);
+
+  const selectedImageForInfo = useMemo((): ImageElement | null => {
+    if (elementSelection.selectedElementIds.length !== 1) return null;
+    const id = elementSelection.selectedElementIds[0];
+    const el = elements.find((e) => e.id === id);
+    return el?.kind === "image" ? el : null;
+  }, [elements, elementSelection.selectedElementIds]);
+
+  const imageInfoDialogImage = useMemo((): ImageElement | null => {
+    if (imageInfoDialogElementId == null) return null;
+    const el = elements.find((e) => e.id === imageInfoDialogElementId);
+    return el?.kind === "image" ? el : null;
+  }, [elements, imageInfoDialogElementId]);
+
+  useEffect(() => {
+    if (
+      imageInfoDialogElementId != null &&
+      imageInfoDialogImage == null
+    ) {
+      setImageInfoDialogElementId(null);
+    }
+  }, [imageInfoDialogElementId, imageInfoDialogImage]);
+
+  const handleGetImageInfo = useCallback(() => {
+    if (selectedImageForInfo == null) return;
+    setImageInfoDialogElementId(selectedImageForInfo.id);
+    setContextMenu(null);
+  }, [selectedImageForInfo]);
+
+  const handleImageInfoDialogOpenChange = useCallback((open: boolean) => {
+    if (!open) setImageInfoDialogElementId(null);
+  }, []);
+
+  const handleOptimizeImage = useCallback(() => {
+    const img = imageInfoDialogImage;
+    if (img == null) return;
+    setIsOptimizingImage(true);
+    const w = img.naturalWidth ?? img.width;
+    const h = img.naturalHeight ?? img.height;
+    const maxDim = Math.max(w, h, 1);
+    void imageSrcToFile(img.src)
+      .then((file) => optimizeImage(file, maxDim))
+      .then(({ dataUrl, width: natW, height: natH }) => {
+        // Only replace if the optimized result is actually smaller (avoid increasing file size).
+        if (dataUrl.length >= img.src.length) return;
+        // Replace pixel data and natural size; keep display size so the image does not grow on canvas.
+        setElements((prev) =>
+          prev.map((el) =>
+            el.id === img.id && el.kind === "image"
+              ? {
+                  ...el,
+                  src: dataUrl,
+                  naturalWidth: natW,
+                  naturalHeight: natH,
+                }
+              : el
+          )
+        );
+      })
+      .catch(() => {
+        // e.g. revoked blob URL or invalid image; keep original
+      })
+      .finally(() => setIsOptimizingImage(false));
+  }, [imageInfoDialogImage, setElements]);
+
+  const flushPendingPasteText = useCallback(() => {
+    setPendingPasteText((text) => {
+      if (text != null) addTextAtWithContent(text.x, text.y, text.content);
+      return null;
+    });
+  }, [addTextAtWithContent]);
+
+  const handleImportKeepOriginal = useCallback(() => {
+    setPendingImportItems((items) => {
+      flushPendingPasteText();
+      for (const item of items) {
+        addImageFromFile(item.file, item.worldX, item.worldY);
+      }
+      return [];
+    });
+  }, [addImageFromFile, flushPendingPasteText]);
+
+  const handleImportOptimize = useCallback(() => {
+    setPendingImportItems((items) => {
+      if (items.length === 0) return items;
+      const batchId = (importOptimizeBatchIdRef.current += 1);
+      setIsOptimizingImport(true);
+      let completed = 0;
+      const done = (): void => {
+        completed += 1;
+        if (completed >= items.length) {
+          if (batchId === importOptimizeBatchIdRef.current) {
+            setPendingImportItems([]);
+            flushPendingPasteText();
+            setIsOptimizingImport(false);
+          }
+        }
+      };
+      for (const item of items) {
+        void optimizeImage(item.file, OPTIMIZE_IMAGE_MAX_DIMENSION)
+          .then(({ dataUrl, width, height }) => {
+            addImageAt(item.worldX, item.worldY, dataUrl, width, height);
+          })
+          .catch(() => {
+            addImageFromFile(item.file, item.worldX, item.worldY);
+          })
+          .finally(done);
+      }
+      return items;
+    });
+  }, [addImageAt, addImageFromFile, flushPendingPasteText]);
+
+  const handleImportDialogOpenChange = useCallback((open: boolean) => {
+    if (!open) {
+      setPendingImportItems([]);
+      setPendingPasteText(null);
+      setIsOptimizingImport(false);
+      importOptimizeBatchIdRef.current += 1;
+    }
+  }, []);
 
   const handleDuplicateSelected = useCallback(() => {
     const ids = new Set(selectedIdsRef.current);
@@ -982,9 +1130,9 @@ export function WhiteboardCanvas({ boardId }: WhiteboardCanvasProps = {}): JSX.E
         panZoom.zoom
       );
       const { x, y } = world ?? centerWorld();
-      addImageFromFile(file, x, y);
+      setPendingImportItems([{ file, worldX: x, worldY: y }]);
     },
-    [addImageFromFile, centerWorld, panZoom, size]
+    [centerWorld, panZoom, size]
   );
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
@@ -1017,16 +1165,24 @@ export function WhiteboardCanvas({ boardId }: WhiteboardCanvasProps = {}): JSX.E
       const { x: baseX, y: baseY } = getPastePosition();
       /* If system clipboard has content, paste only that; otherwise paste app clipboard. */
       if (hasImage || hasText) {
+        const importItems: ImportImageOptionsItem[] = [];
         let nextY = baseY;
         for (const item of items) {
           if (!item.type.startsWith("image/")) continue;
           const file = item.getAsFile();
           if (file == null) continue;
-          addImageFromFile(file, baseX, nextY);
+          importItems.push({ file, worldX: baseX, worldY: nextY });
           nextY += PASTE_OFFSET_Y * 5;
         }
+        if (importItems.length > 0) {
+          setPendingImportItems(importItems);
+          if (hasText && text != null) {
+            setPendingPasteText({ x: baseX, y: nextY, content: text });
+          }
+          return;
+        }
         if (hasText && text != null) {
-          addTextAtWithContent(baseX, nextY, text);
+          addTextAtWithContent(baseX, baseY, text);
         }
         return;
       }
@@ -1182,6 +1338,7 @@ export function WhiteboardCanvas({ boardId }: WhiteboardCanvasProps = {}): JSX.E
           onCopy={handleCopySelected}
           onDuplicate={handleDuplicateSelected}
           onDelete={handleDeleteSelected}
+          onGetImageInfo={selectedImageForInfo != null ? handleGetImageInfo : undefined}
         />
       </div>
       <WhiteboardCanvasSvg
@@ -1223,9 +1380,25 @@ export function WhiteboardCanvas({ boardId }: WhiteboardCanvasProps = {}): JSX.E
         onDelete={handleDeleteSelected}
         onSendToBack={handleSendToBack}
         onSendToFront={handleSendToFront}
+        onGetImageInfo={selectedImageForInfo != null ? handleGetImageInfo : undefined}
         position={contextMenu?.type === "element" ? { x: contextMenu.x, y: contextMenu.y } : null}
         onClose={() => setContextMenu(null)}
         menuRef={contextMenuRef}
+      />
+      <ImageInfoDialog
+        image={imageInfoDialogImage}
+        open={imageInfoDialogElementId != null && imageInfoDialogImage != null}
+        onOpenChange={handleImageInfoDialogOpenChange}
+        onOptimizeImage={handleOptimizeImage}
+        isOptimizing={isOptimizingImage}
+      />
+      <ImportImageOptionsDialog
+        open={pendingImportItems.length > 0}
+        onOpenChange={handleImportDialogOpenChange}
+        items={pendingImportItems}
+        onKeepOriginal={handleImportKeepOriginal}
+        onOptimize={handleImportOptimize}
+        isOptimizing={isOptimizingImport}
       />
       <CanvasContextMenu
         position={contextMenu?.type === "canvas" ? { x: contextMenu.x, y: contextMenu.y } : null}
