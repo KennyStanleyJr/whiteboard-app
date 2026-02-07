@@ -44,6 +44,7 @@ This project follows principles from **NASA's Power of 10** (JPL) and **SWE-061*
 
 ```bash
 npm install
+npm run dev
 ```
 
 ## Scripts
