@@ -70,13 +70,12 @@ body {
   color: var(--color-foreground);
 }
 
-/* Viewport background layer; color set from App.tsx. Separate layer so transition works on iOS. */
+/* Viewport background layer; color set from App.tsx. Not animated. */
 #viewport-bg {
   position: fixed;
   inset: 0;
   z-index: -1;
   background-color: #f5f5f5;
-  transition: background-color var(--viewport-transition-duration) var(--viewport-transition-easing);
 }
 
 #root {
@@ -84,7 +83,7 @@ body {
 }
 
 :root {
-  /* Single timing for #viewport-bg and .app-overlay; both animate background-color so they stay in sync on iOS. */
+  /* Timing for .app-overlay opacity transition. #viewport-bg stays whiteboard color and is not animated. */
   --viewport-transition-duration: 200ms;
   --viewport-transition-easing: ease-in-out;
   --radius: 0.625rem;

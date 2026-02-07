@@ -1,5 +1,5 @@
 /* Stacking: .app-overlay z-100, .app-header z-110; whiteboard UI stays below. */
-/* Uses --viewport-transition-* from index.css. Overlay and #viewport-bg both animate background-color so they stay in sync on iOS. */
+/* .app-overlay-bg inside overlay is the management background; it animates in/out with the overlay (same element). */
 .app-overlay {
   position: fixed;
   inset: 0;
@@ -8,20 +8,17 @@
   clip-path: none;
   transition:
     opacity var(--viewport-transition-duration) var(--viewport-transition-easing),
-    background-color var(--viewport-transition-duration) var(--viewport-transition-easing),
     visibility 0s linear var(--viewport-transition-duration);
 }
 
 .app-overlay.visible {
   transition:
     opacity var(--viewport-transition-duration) var(--viewport-transition-easing),
-    background-color var(--viewport-transition-duration) var(--viewport-transition-easing),
     visibility 0s linear 0s;
 }
 
-/* Management page: use theme background and text so it responds to light/dark mode */
+/* Management page: theme text; background comes from .app-overlay-bg child */
 .dark .app-overlay {
-  background-color: var(--color-background);
   color: var(--color-foreground);
 }
 
