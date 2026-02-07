@@ -55,8 +55,8 @@ html {
   overflow: hidden;
   /* So the top safe-area / viewport bar on mobile uses theme background (set in App.tsx) */
   background-color: var(--color-background);
-  /* Match .app-overlay (300ms linear) so viewport and management overlay animate in sync */
-  transition: background-color 300ms linear;
+  /* Match .app-overlay (200ms ease-in-out) so viewport and management overlay animate in sync */
+  transition: background-color 200ms ease-in-out;
 }
 
 body {
