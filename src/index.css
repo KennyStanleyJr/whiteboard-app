@@ -53,6 +53,8 @@
 html {
   height: 100%;
   overflow: hidden;
+  /* So the top safe-area / viewport bar on mobile uses theme background (see .dark on html in App) */
+  background-color: var(--color-background);
 }
 
 body {

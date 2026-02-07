@@ -84,12 +84,12 @@ function App(): JSX.Element {
     saveCanvasPreference(key, value);
   };
 
-  // Sync theme-color meta for mobile browser chrome (address bar, status bar) with app theme.
+  // Sync document root with theme so the viewport (top bar on mobile, safe area) uses theme background.
   useEffect(() => {
-    const meta = document.querySelector('meta[name="theme-color"]');
-    if (!meta) return;
     const isDark = canvasPreferences.theme === "dark";
-    meta.setAttribute("content", isDark ? "#252525" : "#f5f5f5");
+    document.documentElement.classList.toggle("dark", isDark);
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.setAttribute("content", isDark ? "#252525" : "#f5f5f5");
   }, [canvasPreferences.theme]);
 
   const { data: whiteboardData } = useQuery({
