@@ -17,6 +17,7 @@ Infinite whiteboard app with **text**, **shapes** (rectangle, ellipse), and **im
 - **UI**: **React 18**
 - **Build**: **Vite 5**
 - **Styling**: **Tailwind CSS 4**
+- **PWA**: **vite-plugin-pwa** (offline support, installable app)
 - **State**: **TanStack React Query** (whiteboard state), `localStorage` (boards + per-board state)
 - **Components**: **Radix UI**, **Lucide** icons, **react-colorful**
 - **Lint**: **ESLint 9** (flat config, type-checked, max-warnings 0)
@@ -34,6 +35,10 @@ Future options: **Electron** or **Tauri** for Windows/Mac; **Capacitor** or **PW
 ## NASA Coding Guidelines
 
 This project follows principles from **NASA's Power of 10** (JPL) and **SWE-061**, adapted for TypeScript/React. See **[docs/NASA_CODING_GUIDELINES.md](docs/NASA_CODING_GUIDELINES.md)** for the full list and how we apply them (e.g. small functions, bounded logic, strict types, zero lint/compile warnings).
+
+## Requirements
+
+- **Node.js** `>=22` (see `package.json` engines). Use [nvm](https://github.com/nvm-sh/nvm) with the included `.nvmrc`: `nvm use`.
 
 ## Setup
 
@@ -58,10 +63,18 @@ npm install
 
 ```
 whiteboard-app/
+├── .nvmrc                    # Node version for nvm (22)
 ├── docs/
 │   └── NASA_CODING_GUIDELINES.md
-├── public/
-│   └── favicon.svg
+├── public/                   # Static assets (icons, favicon, robots.txt)
+│   ├── favicon.svg
+│   ├── favicon.ico
+│   ├── apple-touch-icon-180x180.png
+│   ├── pwa-64x64.png
+│   ├── pwa-192x192.png
+│   ├── pwa-512x512.png
+│   ├── maskable-icon-512x512.png
+│   └── robots.txt
 ├── src/
 │   ├── api/              # Boards and whiteboard state (localStorage)
 │   │   ├── boards.ts
@@ -96,6 +109,8 @@ whiteboard-app/
 ├── components.json
 └── eslint.config.js
 ```
+
+Icons and PWA assets in `public/` are used as-is; replace those files to change the app icon or PWA icons.
 
 ## License
 
