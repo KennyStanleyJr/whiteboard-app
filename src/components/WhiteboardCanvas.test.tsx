@@ -19,21 +19,24 @@ describe("WhiteboardCanvas", () => {
     expect(svg).toBeInTheDocument();
   });
 
-  it("renders the toolbar with an add-text button", () => {
+  it("renders the toolbar with Add element that reveals add-text in subtoolbar", () => {
     render(withQueryClient(<WhiteboardCanvas />));
-    const button = document.querySelector("button[aria-label='Add text']");
-    expect(button).toBeInTheDocument();
+    const addElementButton = screen.getByRole("button", {
+      name: /^Add element$/i,
+    });
+    expect(addElementButton).toBeInTheDocument();
+    fireEvent.click(addElementButton);
+    const addTextButton = screen.getByRole("menuitem", { name: /^Add text$/i });
+    expect(addTextButton).toBeInTheDocument();
   });
 
-  it("creates a text element when clicking the add-text button", () => {
+  it("creates a text element when choosing add-text from subtoolbar", () => {
     const { container } = render(withQueryClient(<WhiteboardCanvas />));
-    const button = container.querySelector<HTMLButtonElement>(
-      "button[aria-label='Add text']"
+    fireEvent.click(
+      screen.getByRole("button", { name: /^Add element$/i })
     );
-    expect(button).toBeInTheDocument();
-    if (!button) return;
-
-    fireEvent.click(button);
+    const addTextButton = screen.getByRole("menuitem", { name: /^Add text$/i });
+    fireEvent.click(addTextButton);
 
     const textDisplay = container.querySelector(".whiteboard-text-display");
     expect(textDisplay).toBeInTheDocument();
@@ -98,10 +101,10 @@ describe("WhiteboardCanvas", () => {
 
     it("does not trigger clipboard operations when editing text", async () => {
       const { container } = render(withQueryClient(<WhiteboardCanvas />));
-      
-      // Create element
-      const addTextBtn = screen.getByRole("button", { name: /add text/i });
-      fireEvent.click(addTextBtn);
+
+      // Create element via Add element subtoolbar
+      fireEvent.click(screen.getByRole("button", { name: /add element/i }));
+      fireEvent.click(screen.getByRole("menuitem", { name: /add text/i }));
 
       await waitFor(() => {
         const textDisplay = container.querySelector<HTMLDivElement>(".whiteboard-text-display");

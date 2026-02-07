@@ -14,14 +14,45 @@ describe("WhiteboardToolbar", () => {
     onAddImage: vi.fn(),
   };
 
-  it("renders all toolbar buttons", () => {
+  it("renders main toolbar with Undo, Redo, and Add element", () => {
     render(<WhiteboardToolbar {...defaultProps} />);
     expect(screen.getByRole("button", { name: /^Undo$/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^Redo$/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /^Add text$/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /^Add rectangle$/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /^Add ellipse$/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /^Add image$/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /^Add element$/i })
+    ).toBeInTheDocument();
+  });
+
+  it("opens subtoolbar with element options when Add element is clicked", () => {
+    render(<WhiteboardToolbar {...defaultProps} />);
+    const addElementBtn = screen.getByRole("button", { name: /^Add element$/i });
+    expect(addElementBtn).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(addElementBtn);
+    expect(addElementBtn).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByRole("menuitem", { name: /^Add text$/i })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: /^Add rectangle$/i })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: /^Add ellipse$/i })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: /^Add image$/i })).toBeInTheDocument();
+  });
+
+  it("closes subtoolbar when Add element is clicked again", () => {
+    render(<WhiteboardToolbar {...defaultProps} />);
+    const addElementBtn = screen.getByRole("button", { name: /^Add element$/i });
+    fireEvent.click(addElementBtn);
+    expect(addElementBtn).toHaveAttribute("aria-expanded", "true");
+    fireEvent.click(addElementBtn);
+    expect(addElementBtn).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("closes subtoolbar after choosing an option", () => {
+    const onAddText = vi.fn();
+    render(<WhiteboardToolbar {...defaultProps} onAddText={onAddText} />);
+    fireEvent.click(screen.getByRole("button", { name: /^Add element$/i }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /^Add text$/i }));
+    expect(onAddText).toHaveBeenCalledTimes(1);
+    expect(
+      screen.getByRole("button", { name: /^Add element$/i })
+    ).toHaveAttribute("aria-expanded", "false");
   });
 
   it("calls undo when Undo button is clicked", () => {
@@ -38,31 +69,35 @@ describe("WhiteboardToolbar", () => {
     expect(redo).toHaveBeenCalledTimes(1);
   });
 
-  it("calls onAddText when Add text button is clicked", () => {
+  it("calls onAddText when Add text is chosen from subtoolbar", () => {
     const onAddText = vi.fn();
     render(<WhiteboardToolbar {...defaultProps} onAddText={onAddText} />);
-    fireEvent.click(screen.getByRole("button", { name: /^Add text$/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^Add element$/i }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /^Add text$/i }));
     expect(onAddText).toHaveBeenCalledTimes(1);
   });
 
-  it("calls onAddRectangle when Add rectangle button is clicked", () => {
+  it("calls onAddRectangle when Add rectangle is chosen from subtoolbar", () => {
     const onAddRectangle = vi.fn();
     render(<WhiteboardToolbar {...defaultProps} onAddRectangle={onAddRectangle} />);
-    fireEvent.click(screen.getByRole("button", { name: /^Add rectangle$/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^Add element$/i }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /^Add rectangle$/i }));
     expect(onAddRectangle).toHaveBeenCalledTimes(1);
   });
 
-  it("calls onAddEllipse when Add ellipse button is clicked", () => {
+  it("calls onAddEllipse when Add ellipse is chosen from subtoolbar", () => {
     const onAddEllipse = vi.fn();
     render(<WhiteboardToolbar {...defaultProps} onAddEllipse={onAddEllipse} />);
-    fireEvent.click(screen.getByRole("button", { name: /^Add ellipse$/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^Add element$/i }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /^Add ellipse$/i }));
     expect(onAddEllipse).toHaveBeenCalledTimes(1);
   });
 
-  it("calls onAddImage when Add image button is clicked", () => {
+  it("calls onAddImage when Add image is chosen from subtoolbar", () => {
     const onAddImage = vi.fn();
     render(<WhiteboardToolbar {...defaultProps} onAddImage={onAddImage} />);
-    fireEvent.click(screen.getByRole("button", { name: /^Add image$/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^Add element$/i }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /^Add image$/i }));
     expect(onAddImage).toHaveBeenCalledTimes(1);
   });
 
