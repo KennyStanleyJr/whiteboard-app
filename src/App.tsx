@@ -45,7 +45,7 @@ import {
   saveCanvasPreference,
   type CanvasPreferences,
 } from "./lib/canvasPreferences";
-import { remapElementIdsForAppend } from "./utils/remapElementIds";
+import { remapElementIdsForAppend } from "./lib/remapElementIds";
 import "./App.css";
 
 const MANAGEMENT_GRID_DOT_CLASS =

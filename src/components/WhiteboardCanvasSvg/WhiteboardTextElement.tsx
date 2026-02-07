@@ -6,9 +6,9 @@ import {
   DEFAULT_UNMEASURED_TEXT_WIDTH,
   TEXT_EDIT_HEIGHT,
   TEXT_EDIT_WIDTH,
-} from "@/utils/elementBounds";
-import { safeSvgNumber } from "@/utils/safeSvgNumber";
-import { isHtmlContent, sanitizeHtml } from "@/utils/sanitizeHtml";
+} from "@/lib/elementBounds";
+import { safeSvgNumber } from "@/lib/safeSvgNumber";
+import { isHtmlContent, sanitizeHtml } from "@/lib/sanitizeHtml";
 import type { TextElement } from "@/types/whiteboard";
 import { verticalAlignToJustifyContent } from "./verticalAlign";
 

@@ -3,24 +3,26 @@ import { forwardRef, useCallback, useImperativeHandle, useLayoutEffect, useRef, 
 import { clientToViewBox, viewBoxToWorld } from "../../hooks/canvas/canvasCoords";
 import type { SelectionRect } from "../../hooks";
 import type { WhiteboardElement } from "../../types/whiteboard";
-import { type ElementBounds, sanitizeElementBounds } from "../../utils/elementBounds";
-import { safeSvgNumber } from "../../utils/safeSvgNumber";
-import type { ResizeHandleId } from "../../utils/resizeHandles";
+import { type ElementBounds, sanitizeElementBounds } from "../../lib/elementBounds";
+import { safeSvgNumber } from "../../lib/safeSvgNumber";
+import type { ResizeHandleId } from "../../lib/resizeHandles";
 import {
   innerContentIfSingleColorSpan,
   isHtmlContent,
   plainTextToHtml,
   sanitizeHtml,
-} from "../../utils/sanitizeHtml";
-import { applyFormatToContent, type FormatTag } from "../../utils/textFormat";
+} from "../../lib/sanitizeHtml";
+import { applyFormatToContent, type FormatTag } from "../../lib/textFormat";
 import type { GridStyle } from "../../lib/canvasPreferences";
 import { getContrastingGridColor } from "../../lib/contrastColor";
-import { DotGridPattern, PATTERN_ID } from "../DotGridPattern";
-import { LineGridPattern, LINE_PATTERN_ID } from "../LineGridPattern";
 import {
+  DotGridPattern,
+  LineGridPattern,
+  LINE_PATTERN_ID,
   NotebookGridPattern,
   NOTEBOOK_PATTERN_ID,
-} from "../NotebookGridPattern";
+  PATTERN_ID,
+} from "../grid";
 import { ElementSelectionOverlay } from "./ElementSelectionOverlay";
 import { WhiteboardImageElement } from "./WhiteboardImageElement";
 import { WhiteboardShapeElement } from "./WhiteboardShapeElement";

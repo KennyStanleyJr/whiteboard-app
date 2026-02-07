@@ -1,4 +1,4 @@
-import type { ElementBounds } from "@/utils/elementBounds";
+import type { ElementBounds } from "@/lib/elementBounds";
 
 export const TOOLBAR_OFFSET_PX = 8;
 

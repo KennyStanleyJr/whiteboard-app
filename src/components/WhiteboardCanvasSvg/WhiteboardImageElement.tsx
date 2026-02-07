@@ -1,6 +1,6 @@
 import { memo, useEffect, useRef } from "react";
 import type { ImageElement } from "@/types/whiteboard";
-import { safeSvgNumber } from "@/utils/safeSvgNumber";
+import { safeSvgNumber } from "@/lib/safeSvgNumber";
 
 export interface WhiteboardImageElementProps {
   element: ImageElement;

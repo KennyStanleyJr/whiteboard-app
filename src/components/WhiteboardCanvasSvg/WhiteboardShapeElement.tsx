@@ -1,6 +1,6 @@
 import { memo } from "react";
 import type { ShapeElement } from "@/types/whiteboard";
-import { safeSvgNumber } from "@/utils/safeSvgNumber";
+import { safeSvgNumber } from "@/lib/safeSvgNumber";
 
 const SHAPE_STROKE_WIDTH = 2;
 const DEFAULT_SHAPE_COLOR = "#000000";

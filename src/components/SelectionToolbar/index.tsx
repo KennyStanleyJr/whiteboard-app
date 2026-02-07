@@ -9,18 +9,18 @@ import {
 } from "react";
 import { flushSync } from "react-dom";
 import { worldToClient } from "@/hooks/canvas/canvasCoords";
-import type { ElementBounds } from "@/utils/elementBounds";
+import type { ElementBounds } from "@/lib/elementBounds";
 import {
   getElementBounds,
   sanitizeElementBounds,
-} from "@/utils/elementBounds";
-import { innerContentIfSingleColorSpan } from "@/utils/sanitizeHtml";
+} from "@/lib/elementBounds";
+import { innerContentIfSingleColorSpan } from "@/lib/sanitizeHtml";
 import {
   addFormatToContent,
   hasFormat,
   removeFormatFromContent,
   type FormatTag,
-} from "@/utils/textFormat";
+} from "@/lib/textFormat";
 import type {
   ImageCornerRadius,
   ImageElement,

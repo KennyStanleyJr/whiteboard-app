@@ -6,7 +6,7 @@ import type { TextElement } from "@/types/whiteboard";
 import {
   DEFAULT_UNMEASURED_TEXT_HEIGHT,
   DEFAULT_UNMEASURED_TEXT_WIDTH,
-} from "@/utils/elementBounds";
+} from "@/lib/elementBounds";
 
 const textEl: TextElement = {
   id: "t1",

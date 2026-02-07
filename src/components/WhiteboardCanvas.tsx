@@ -9,23 +9,23 @@ import {
   useSelectionBox,
   useWhiteboardQuery,
 } from "../hooks";
-import type { ElementBounds } from "../utils/elementBounds";
+import type { ElementBounds } from "../lib/elementBounds";
 import {
   elementAtPoint,
   getElementBounds,
   sanitizeElementBounds,
-} from "../utils/elementBounds";
+} from "../lib/elementBounds";
 import {
   resizeBoundsFromHandle,
   type ResizeHandleId,
-} from "../utils/resizeHandles";
+} from "../lib/resizeHandles";
 import type {
   ImageElement,
   ShapeType,
   WhiteboardElement,
 } from "../types/whiteboard";
-import type { FormatTag } from "../utils/textFormat";
-import { hasNoTextCharacters, plainTextToHtml } from "../utils/sanitizeHtml";
+import type { FormatTag } from "../lib/textFormat";
+import { hasNoTextCharacters, plainTextToHtml } from "../lib/sanitizeHtml";
 import { cn } from "@/lib/utils";
 import {
   SelectionToolbar,
@@ -37,7 +37,7 @@ import {
   imageSrcToFile,
   optimizeImage,
   OPTIMIZE_IMAGE_MAX_DIMENSION,
-} from "../utils/optimizeImage";
+} from "../lib/optimizeImage";
 import type { ImportImageOptionsItem } from "./SelectionToolbar/ImportImageOptionsDialog";
 import { ImageInfoDialog } from "./SelectionToolbar/ImageInfoDialog";
 import { ImportImageOptionsDialog } from "./SelectionToolbar/ImportImageOptionsDialog";

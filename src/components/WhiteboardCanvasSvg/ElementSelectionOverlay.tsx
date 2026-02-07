@@ -3,13 +3,13 @@ import {
   getElementBounds,
   sanitizeElementBounds,
   type ElementBounds,
-} from "@/utils/elementBounds";
-import { safeSvgNumber } from "@/utils/safeSvgNumber";
+} from "@/lib/elementBounds";
+import { safeSvgNumber } from "@/lib/safeSvgNumber";
 import {
   RESIZE_HANDLE_CURSORS,
   RESIZE_HANDLE_IDS,
   type ResizeHandleId,
-} from "@/utils/resizeHandles";
+} from "@/lib/resizeHandles";
 
 const SELECTION_BOX_PADDING_PX = 4;
 /** Bar length (along the edge) in pixels; kept constant on screen via zoom. */

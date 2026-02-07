@@ -4,7 +4,7 @@ import {
   elementAtPoint,
   elementsInRect,
   type ElementBounds,
-} from "../../utils/elementBounds";
+} from "../../lib/elementBounds";
 import type { WhiteboardElement } from "../../types/whiteboard";
 import type { SelectionRect } from "./useSelectionBox";
 import type { SetElementsOptions } from "../useUndoRedo";
