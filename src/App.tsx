@@ -53,7 +53,11 @@ const MANAGEMENT_GRID_DOT_CLASS =
 
 function App(): JSX.Element {
   const [portalContainerRef, portalContainer] = usePortalContainerRef();
-  const [view, setView] = useState<"canvas" | "manage">("canvas");
+  const [view, setView] = useState<"canvas" | "manage">(() =>
+    typeof window !== "undefined" && window.location.hash === "#/manage"
+      ? "manage"
+      : "canvas"
+  );
   // Initialize boards synchronously to ensure canvas can render immediately
   const initialBoards = getBoardsSync();
   const initialBoardId = getCurrentBoardIdSync();
