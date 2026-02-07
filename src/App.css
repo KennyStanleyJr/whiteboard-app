@@ -1,5 +1,5 @@
 /* Stacking: .app-overlay z-100, .app-header z-110; whiteboard UI stays below. */
-/* Uses --viewport-transition-* from index.css so overlay and #viewport-bg stay in sync on mobile */
+/* Uses --viewport-transition-* from index.css. Overlay and #viewport-bg both animate background-color so they stay in sync on iOS. */
 .app-overlay {
   position: fixed;
   inset: 0;
@@ -8,12 +8,14 @@
   clip-path: none;
   transition:
     opacity var(--viewport-transition-duration) var(--viewport-transition-easing),
+    background-color var(--viewport-transition-duration) var(--viewport-transition-easing),
     visibility 0s linear var(--viewport-transition-duration);
 }
 
 .app-overlay.visible {
   transition:
     opacity var(--viewport-transition-duration) var(--viewport-transition-easing),
+    background-color var(--viewport-transition-duration) var(--viewport-transition-easing),
     visibility 0s linear 0s;
 }
 

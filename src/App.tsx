@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useLayoutEffect, useState, useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Download, Plus, Upload, MoreVertical, Pencil, Trash2 } from "lucide-react";
 import JSZip from "jszip";
@@ -79,6 +79,8 @@ function App(): JSX.Element {
   const nameInputRef = useRef<HTMLInputElement>(null);
   const menuRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const renameInputRef = useRef<HTMLInputElement>(null);
+  const overlayRef = useRef<HTMLElement>(null);
+  const prevViewRef = useRef<"canvas" | "manage" | null>(null);
 
   const setCanvasPreference = <K extends keyof CanvasPreferences>(
     key: K,
@@ -107,21 +109,46 @@ function App(): JSX.Element {
       ? whiteboardData.gridStyle
       : "dotted";
 
-  // Viewport (top bar on mobile, safe area): match whiteboard background on canvas, theme background on management.
+  // Viewport (top bar on mobile, safe area): match whiteboard on canvas, theme on management.
+  // On open/close we animate overlay and viewport background-color together (same method as canvas) so they stay in sync on iOS.
   const MANAGEMENT_DARK_BG = "oklch(0.145 0 0)"; // must match .dark --color-background in index.css
   const MANAGEMENT_LIGHT_BG = "#f5f5f5";
-  useEffect(() => {
-    const viewportColor =
-      view === "manage"
-        ? canvasPreferences.theme === "dark"
-          ? MANAGEMENT_DARK_BG
-          : MANAGEMENT_LIGHT_BG
-        : boardBackgroundColor;
+  const VIEWPORT_TRANSITION_MS = 200; // must match --viewport-transition-duration in index.css
+  const managementColor =
+    canvasPreferences.theme === "dark" ? MANAGEMENT_DARK_BG : MANAGEMENT_LIGHT_BG;
+  useLayoutEffect(() => {
     const viewportBgEl = document.getElementById("viewport-bg");
-    if (viewportBgEl) viewportBgEl.style.backgroundColor = viewportColor;
     const meta = document.querySelector('meta[name="theme-color"]');
-    if (meta) meta.setAttribute("content", viewportColor);
-  }, [view, canvasPreferences.theme, boardBackgroundColor]);
+    const overlay = overlayRef.current;
+
+    if (view === "manage") {
+      const isOpeningFromCanvas = prevViewRef.current === "canvas";
+      if (isOpeningFromCanvas && overlay && viewportBgEl) {
+        // Same method as canvas: animate background-color on both so iOS keeps them in sync
+        overlay.style.opacity = "1";
+        overlay.style.backgroundColor = boardBackgroundColor;
+        viewportBgEl.style.backgroundColor = managementColor;
+        if (meta) meta.setAttribute("content", managementColor);
+        requestAnimationFrame(() => {
+          overlay.style.backgroundColor = managementColor;
+        });
+      } else {
+        if (viewportBgEl) viewportBgEl.style.backgroundColor = managementColor;
+        if (meta) meta.setAttribute("content", managementColor);
+        if (overlay) overlay.style.backgroundColor = managementColor;
+      }
+      prevViewRef.current = "manage";
+    } else {
+      if (viewportBgEl) viewportBgEl.style.backgroundColor = boardBackgroundColor;
+      if (meta) meta.setAttribute("content", boardBackgroundColor);
+      if (overlay) {
+        overlay.style.opacity = "";
+        overlay.style.backgroundColor = "";
+        overlay.style.pointerEvents = "";
+      }
+      prevViewRef.current = "canvas";
+    }
+  }, [view, canvasPreferences.theme, boardBackgroundColor, managementColor]);
 
   const updateCurrentBoardAppearance = (partial: {
     backgroundColor?: string;
@@ -222,7 +249,23 @@ function App(): JSX.Element {
   }, []);
 
   const toggleView = (): void => {
-    window.location.hash = view === "manage" ? "" : "#/manage";
+    if (view === "manage") {
+      const overlay = overlayRef.current;
+      const viewportBgEl = document.getElementById("viewport-bg");
+      if (overlay && viewportBgEl) {
+        overlay.style.pointerEvents = "none";
+        overlay.style.opacity = "0";
+        overlay.style.backgroundColor = boardBackgroundColor;
+        viewportBgEl.style.backgroundColor = boardBackgroundColor;
+        const meta = document.querySelector('meta[name="theme-color"]');
+        if (meta) meta.setAttribute("content", boardBackgroundColor);
+        setTimeout(() => {
+          window.location.hash = "";
+        }, VIEWPORT_TRANSITION_MS);
+        return;
+      }
+    }
+    window.location.hash = "#/manage";
   };
 
   const openBoard = async (id: string): Promise<void> => {
@@ -669,6 +712,7 @@ function App(): JSX.Element {
       </header>
       <WhiteboardCanvas key={currentBoardId} boardId={currentBoardId} />
       <main
+        ref={overlayRef}
         className={cn(
           "app-overlay flex flex-col justify-start items-center md:items-start px-5 md:px-20 pt-16 pb-6 box-border bg-background overflow-visible",
           "opacity-0 pointer-events-none invisible",
