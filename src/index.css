@@ -53,8 +53,10 @@
 html {
   height: 100%;
   overflow: hidden;
-  /* So the top safe-area / viewport bar on mobile uses theme background (see .dark on html in App) */
+  /* So the top safe-area / viewport bar on mobile uses theme background (see App viewport effect) */
   background-color: var(--color-background);
+  /* Match .app-overlay opacity transition (200ms ease-out) so viewport and management page animate in sync */
+  transition: background-color 200ms ease-out;
 }
 
 body {
