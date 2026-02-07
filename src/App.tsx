@@ -104,12 +104,14 @@ function App(): JSX.Element {
       : "dotted";
 
   // Viewport (top bar on mobile, safe area): match whiteboard background on canvas, theme background on management.
+  const MANAGEMENT_DARK_BG = "oklch(0.145 0 0)"; // must match .dark --color-background in index.css
+  const MANAGEMENT_LIGHT_BG = "#f5f5f5";
   useEffect(() => {
     const viewportColor =
       view === "manage"
         ? canvasPreferences.theme === "dark"
-          ? "#252525"
-          : "#f5f5f5"
+          ? MANAGEMENT_DARK_BG
+          : MANAGEMENT_LIGHT_BG
         : boardBackgroundColor;
     document.documentElement.style.backgroundColor = viewportColor;
     const meta = document.querySelector('meta[name="theme-color"]');
