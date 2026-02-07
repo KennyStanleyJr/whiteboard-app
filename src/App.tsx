@@ -117,7 +117,8 @@ function App(): JSX.Element {
           ? MANAGEMENT_DARK_BG
           : MANAGEMENT_LIGHT_BG
         : boardBackgroundColor;
-    document.documentElement.style.backgroundColor = viewportColor;
+    const viewportBgEl = document.getElementById("viewport-bg");
+    if (viewportBgEl) viewportBgEl.style.backgroundColor = viewportColor;
     const meta = document.querySelector('meta[name="theme-color"]');
     if (meta) meta.setAttribute("content", viewportColor);
   }, [view, canvasPreferences.theme, boardBackgroundColor]);
