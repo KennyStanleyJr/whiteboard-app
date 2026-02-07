@@ -84,14 +84,6 @@ function App(): JSX.Element {
     saveCanvasPreference(key, value);
   };
 
-  // Sync document root with theme so the viewport (top bar on mobile, safe area) uses theme background.
-  useEffect(() => {
-    const isDark = canvasPreferences.theme === "dark";
-    document.documentElement.classList.toggle("dark", isDark);
-    const meta = document.querySelector('meta[name="theme-color"]');
-    if (meta) meta.setAttribute("content", isDark ? "#252525" : "#f5f5f5");
-  }, [canvasPreferences.theme]);
-
   const { data: whiteboardData } = useQuery({
     queryKey: getWhiteboardQueryKey(currentBoardId),
     queryFn: () => getWhiteboard(currentBoardId),
@@ -110,6 +102,19 @@ function App(): JSX.Element {
     whiteboardData?.gridStyle === "grid-lined"
       ? whiteboardData.gridStyle
       : "dotted";
+
+  // Viewport (top bar on mobile, safe area): match whiteboard background on canvas, theme background on management.
+  useEffect(() => {
+    const viewportColor =
+      view === "manage"
+        ? canvasPreferences.theme === "dark"
+          ? "#252525"
+          : "#f5f5f5"
+        : boardBackgroundColor;
+    document.documentElement.style.backgroundColor = viewportColor;
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.setAttribute("content", viewportColor);
+  }, [view, canvasPreferences.theme, boardBackgroundColor]);
 
   const updateCurrentBoardAppearance = (partial: {
     backgroundColor?: string;
