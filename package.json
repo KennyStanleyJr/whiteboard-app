@@ -52,6 +52,11 @@
     "vitest": "^4.0.18"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=22"
+  },
+  "overrides": {
+    "sourcemap-codec": "npm:@jridgewell/sourcemap-codec@^1.4.15",
+    "source-map": "0.7.6",
+    "glob": "13.0.1"
   }
 }
