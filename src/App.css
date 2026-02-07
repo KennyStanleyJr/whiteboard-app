@@ -7,13 +7,13 @@
   overflow: visible;
   clip-path: none;
   transition:
-    opacity 400ms ease-out,
-    visibility 0s linear 400ms;
+    opacity 300ms ease-out,
+    visibility 0s linear 300ms;
 }
 
 .app-overlay.visible {
   transition:
-    opacity 400ms ease-out,
+    opacity 300ms ease-out,
     visibility 0s linear 0s;
 }
 
