@@ -163,7 +163,7 @@ describe("WhiteboardTextElement", () => {
         editingRefSetter={vi.fn()}
       />
     );
-    const div = container.querySelector(".whiteboard-text-display");
+    const div = container.querySelector(".whiteboard-text-display--fit");
     expect(div).toBeInTheDocument();
     expect(div).toHaveStyle({ justifyContent: "center" });
   });

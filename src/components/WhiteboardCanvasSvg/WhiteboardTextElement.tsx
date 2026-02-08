@@ -8,7 +8,9 @@ import {
   TEXT_EDIT_HEIGHT,
   TEXT_EDIT_WIDTH,
 } from "@/lib/elementBounds";
+import { needsForeignObjectTransformWorkaround } from "@/lib/browserUtils";
 import { safeSvgNumber } from "@/lib/safeSvgNumber";
+import { hasFormat } from "@/lib/textFormat";
 import { isHtmlContent, sanitizeHtml } from "@/lib/sanitizeHtml";
 import type { TextElement } from "@/types/whiteboard";
 import { verticalAlignToJustifyContent } from "./verticalAlign";
@@ -17,6 +19,10 @@ const MIN_FOREIGN_OBJECT_SIZE = 1;
 const FILL_REFERENCE_FONT_SIZE = 24;
 const MAX_FILL_EFFECTIVE_FONT_SIZE = 5000;
 const FILL_VERTICAL_NUDGE_PX = 0.25;
+/** Scale down when bold (text is ~8% wider). Percentage-based so it works at any font size. */
+const FILL_BOLD_SCALE = 0.92;
+/** Scale down when italic (text is ~3% wider). */
+const FILL_ITALIC_SCALE = 0.97;
 
 const SIZED_WRAPPER_STYLE: CSSProperties = {
   width: "100%",
@@ -29,6 +35,11 @@ function getTextContentProps(content: string) {
   return isHtmlContent(content)
     ? { dangerouslySetInnerHTML: { __html: sanitizeHtml(content) } }
     : { children: content };
+}
+
+/** Plain text for remeasure trigger; changes when add/remove text, not when only format (b/i/u) toggles. */
+function getStructuralContentKey(content: string): string {
+  return content.replace(/<[^>]+>/g, "").replace(/&nbsp;/g, " ");
 }
 
 export interface WhiteboardTextElementProps {
@@ -52,6 +63,10 @@ export interface WhiteboardTextElementProps {
   onFillFittedSize?: (elementId: string, width: number, height: number) => void;
   /** Returns last reported effective fontSize (so editor in fill mode can match display size). */
   getEffectiveFontSize?: (elementId: string) => number | undefined;
+  /** Pan/zoom for Safari foreignObject transform workaround (bug 23113). */
+  panX?: number;
+  panY?: number;
+  zoom?: number;
 }
 
 function WhiteboardTextElementInner({
@@ -70,7 +85,11 @@ function WhiteboardTextElementInner({
   onMaxFillBoxSize,
   onFillFittedSize,
   getEffectiveFontSize,
+  panX = 0,
+  panY = 0,
+  zoom = 1,
 }: WhiteboardTextElementProps): JSX.Element {
+  const needsWorkaround = needsForeignObjectTransformWorkaround();
   const hasExplicitSize =
     el.width !== undefined &&
     el.height !== undefined &&
@@ -109,14 +128,15 @@ function WhiteboardTextElementInner({
   const fillEditEditorRef = useRef<HTMLDivElement | null>(null);
   const [editorScale, setEditorScale] = useState(1);
 
+  const canMeasureFill = hasExplicitSize || measured !== undefined;
   const needMeasure =
-    hasExplicitSize &&
+    canMeasureFill &&
     fillEnabled &&
     !isEditing &&
     naturalSize === null;
 
   useLayoutEffect(() => {
-    if (!hasExplicitSize || !fillEnabled || isEditing) {
+    if (!canMeasureFill || !fillEnabled || isEditing) {
       if (measurePortalContainerRef.current != null) {
         measurePortalContainerRef.current.remove();
         measurePortalContainerRef.current = null;
@@ -140,16 +160,16 @@ function WhiteboardTextElementInner({
         setMeasureContainerReady(false);
       }
     };
-  }, [hasExplicitSize, fillEnabled, isEditing]);
+  }, [canMeasureFill, fillEnabled, isEditing]);
 
   useLayoutEffect(() => {
     if (
-      !hasExplicitSize ||
+      !canMeasureFill ||
       !fillEnabled ||
       isEditing ||
       fillMeasureRef.current == null
     ) {
-      if (!hasExplicitSize || !fillEnabled || isEditing) {
+      if (!canMeasureFill || !fillEnabled || isEditing) {
         setNaturalSize(null);
       }
       return;
@@ -163,7 +183,7 @@ function WhiteboardTextElementInner({
       setNaturalSize(null);
     }
   }, [
-    hasExplicitSize,
+    canMeasureFill,
     fillEnabled,
     isEditing,
     measureContainerReady,
@@ -173,14 +193,15 @@ function WhiteboardTextElementInner({
     foHeight,
   ]);
 
-  const prevContentRef = useRef<string>(el.content);
+  const prevStructuralKeyRef = useRef<string>(getStructuralContentKey(el.content));
   const prevFontSizeRef = useRef<number | undefined>(el.fontSize);
   useLayoutEffect(() => {
+    const structuralKey = getStructuralContentKey(el.content);
     if (
-      prevContentRef.current !== el.content ||
+      prevStructuralKeyRef.current !== structuralKey ||
       prevFontSizeRef.current !== el.fontSize
     ) {
-      prevContentRef.current = el.content;
+      prevStructuralKeyRef.current = structuralKey;
       prevFontSizeRef.current = el.fontSize;
       setNaturalSize(null);
     }
@@ -188,7 +209,7 @@ function WhiteboardTextElementInner({
 
   useLayoutEffect(() => {
     if (
-      !hasExplicitSize ||
+      !canMeasureFill ||
       !fillEnabled ||
       isEditing ||
       fillContainerRef.current == null
@@ -210,7 +231,7 @@ function WhiteboardTextElementInner({
     const ro = new ResizeObserver(onResize);
     ro.observe(containerEl);
     return () => ro.disconnect();
-  }, [hasExplicitSize, fillEnabled, isEditing]);
+  }, [canMeasureFill, fillEnabled, isEditing]);
 
   const updateEditorScale = useRef(() => {
     const container = fillEditContainerRef.current;
@@ -229,7 +250,7 @@ function WhiteboardTextElementInner({
   });
 
   useLayoutEffect(() => {
-    if (!isEditing || !fillEnabled || !hasExplicitSize) {
+    if (!isEditing || !fillEnabled || !canMeasureFill) {
       setEditorScale(1);
       return;
     }
@@ -243,15 +264,15 @@ function WhiteboardTextElementInner({
     ro.observe(container);
     ro.observe(editor);
     return () => ro.disconnect();
-  }, [isEditing, fillEnabled, hasExplicitSize]);
+  }, [isEditing, fillEnabled, canMeasureFill]);
 
-  /* In fill mode with explicit size, use element dimensions so scale updates when canvas resizes the box. */
+  /* In fill mode with size (explicit or measured), use dimensions so scale updates when canvas resizes the box. */
   const boxW =
-    hasExplicitSize && fillEnabled
+    canMeasureFill && fillEnabled
       ? foWidth
       : (containerSize?.width ?? foWidth);
   const boxH =
-    hasExplicitSize && fillEnabled
+    canMeasureFill && fillEnabled
       ? foHeight
       : (containerSize?.height ?? foHeight);
   const hasValidNaturalSize =
@@ -261,7 +282,7 @@ function WhiteboardTextElementInner({
   const fillScaleCap = MAX_FILL_EFFECTIVE_FONT_SIZE / FILL_REFERENCE_FONT_SIZE;
   const fillScale =
     fillEnabled &&
-    hasExplicitSize &&
+    canMeasureFill &&
     hasValidNaturalSize &&
     boxW > 0 &&
     boxH > 0
@@ -271,18 +292,25 @@ function WhiteboardTextElementInner({
           fillScaleCap
         )
       : null;
+  const fillFormatScale =
+    fillScale != null
+      ? (hasFormat(el.content, "b") ? FILL_BOLD_SCALE : 1) *
+        (hasFormat(el.content, "i") ? FILL_ITALIC_SCALE : 1)
+      : 1;
 
   useLayoutEffect(() => {
     if (fillScale != null && onEffectiveFontSize != null) {
-      const effective = Math.round(FILL_REFERENCE_FONT_SIZE * fillScale);
+      const effective = Math.round(
+        FILL_REFERENCE_FONT_SIZE * fillScale * fillFormatScale
+      );
       onEffectiveFontSize(el.id, effective);
     }
-  }, [el.id, fillScale, onEffectiveFontSize]);
+  }, [el.id, fillScale, fillFormatScale, onEffectiveFontSize]);
 
   useLayoutEffect(() => {
     if (
       fillEnabled &&
-      hasExplicitSize &&
+      canMeasureFill &&
       hasValidNaturalSize &&
       onTextAspectRatio != null
     ) {
@@ -291,7 +319,7 @@ function WhiteboardTextElementInner({
   }, [
     el.id,
     fillEnabled,
-    hasExplicitSize,
+    canMeasureFill,
     hasValidNaturalSize,
     naturalSize,
     onTextAspectRatio,
@@ -300,7 +328,7 @@ function WhiteboardTextElementInner({
   useLayoutEffect(() => {
     if (
       fillEnabled &&
-      hasExplicitSize &&
+      canMeasureFill &&
       hasValidNaturalSize &&
       onMaxFillBoxSize != null
     ) {
@@ -311,7 +339,7 @@ function WhiteboardTextElementInner({
   }, [
     el.id,
     fillEnabled,
-    hasExplicitSize,
+    canMeasureFill,
     hasValidNaturalSize,
     naturalSize,
     fillScaleCap,
@@ -334,7 +362,7 @@ function WhiteboardTextElementInner({
   const justifyContent = verticalAlignToJustifyContent(el.textVerticalAlign);
   const editorFontSize =
     fillEnabled &&
-    hasExplicitSize &&
+    canMeasureFill &&
     getEffectiveFontSize != null &&
     getEffectiveFontSize(el.id) != null
       ? getEffectiveFontSize(el.id)!
@@ -365,23 +393,9 @@ function WhiteboardTextElementInner({
       onFinishEdit();
   };
 
-  return (
-    <foreignObject
-      x={safeSvgNumber(el.x, 0)}
-      y={safeSvgNumber(el.y, 0)}
-      width={safeSvgNumber(foWidth, MIN_FOREIGN_OBJECT_SIZE)}
-      height={safeSvgNumber(foHeight, MIN_FOREIGN_OBJECT_SIZE)}
-      className="whiteboard-text-edit"
-      onDoubleClick={
-        isEditing
-          ? undefined
-          : (e) => {
-              e.stopPropagation();
-              onDoubleClick(el.id);
-            }
-      }
-    >
-      {isEditing ? hasExplicitSize && fillEnabled ? (
+  const content = (
+    <span key={isEditing ? "edit" : "display"} style={{ display: "contents" }}>
+      {isEditing ? canMeasureFill && fillEnabled ? (
         <div ref={fillEditContainerRef} style={SIZED_WRAPPER_STYLE}>
           <div
             style={{
@@ -427,7 +441,7 @@ function WhiteboardTextElementInner({
           onKeyDown={(e) => onEditKeyDown(e, el.id)}
           aria-label="Edit text"
         />
-      ) : hasExplicitSize && fillEnabled ? (
+      ) : canMeasureFill && fillEnabled ? (
         <>
           {/* Measure div is portaled to body so it never appears inside the text box. */}
           {needMeasure &&
@@ -468,7 +482,7 @@ function WhiteboardTextElementInner({
                   width: "max-content",
                   maxWidth: "none",
                   whiteSpace: textWhiteSpace,
-                  transform: `scale(${fillScale}) translateY(${FILL_VERTICAL_NUDGE_PX}px)`,
+                  transform: `scale(${fillScale * fillFormatScale}) translateY(${FILL_VERTICAL_NUDGE_PX}px)`,
                   transformOrigin: "0 0",
                 }}
                 {...contentProps}
@@ -524,6 +538,41 @@ function WhiteboardTextElementInner({
           {...contentProps}
         />
       )}
+    </span>
+  );
+
+  const wrappedContent = needsWorkaround ? (
+    <div
+      style={{
+        width: "100%",
+        height: "100%",
+        transform: `translate(${panX + el.x * zoom}px, ${panY + el.y * zoom}px) scale(${zoom})`,
+        transformOrigin: "0 0",
+      }}
+    >
+      {content}
+    </div>
+  ) : (
+    content
+  );
+
+  return (
+    <foreignObject
+      x={safeSvgNumber(el.x, 0)}
+      y={safeSvgNumber(el.y, 0)}
+      width={safeSvgNumber(foWidth, MIN_FOREIGN_OBJECT_SIZE)}
+      height={safeSvgNumber(foHeight, MIN_FOREIGN_OBJECT_SIZE)}
+      className="whiteboard-text-edit"
+      onDoubleClick={
+        isEditing
+          ? undefined
+          : (e) => {
+              e.stopPropagation();
+              onDoubleClick(el.id);
+            }
+      }
+    >
+      {wrappedContent}
     </foreignObject>
   );
 }

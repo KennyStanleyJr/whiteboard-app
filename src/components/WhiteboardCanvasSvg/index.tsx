@@ -356,6 +356,9 @@ export const WhiteboardCanvasSvg = forwardRef<
                 onMaxFillBoxSize={onMaxFillBoxSize}
                 onFillFittedSize={onFillFittedSize}
                 getEffectiveFontSize={getEffectiveFontSize}
+                panX={panX}
+                panY={panY}
+                zoom={zoom}
               />
             );
           }
