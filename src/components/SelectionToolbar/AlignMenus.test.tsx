@@ -18,6 +18,7 @@ describe("AlignMenus", () => {
     setVerticalAlignMenuOpen: vi.fn(),
     alignMenuRef: createRef(),
     verticalAlignMenuRef: createRef(),
+    alignDropdownRef: createRef(),
   };
 
   it("renders text alignment and vertical alignment buttons", () => {

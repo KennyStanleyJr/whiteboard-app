@@ -3,6 +3,7 @@ import {
   hexToLuminance,
   isCanvasBackgroundDark,
   getContrastingGridColor,
+  getContrastingTextColor,
 } from "./contrastColor";
 
 describe("hexToLuminance", () => {
@@ -67,5 +68,22 @@ describe("getContrastingGridColor", () => {
   it("returns dark grid color for non-hex background", () => {
     const color = getContrastingGridColor("transparent");
     expect(color).toBe("rgba(0, 0, 0, 0.2)");
+  });
+});
+
+describe("getContrastingTextColor", () => {
+  it("returns white for dark background", () => {
+    expect(getContrastingTextColor("#000000")).toBe("#ffffff");
+    expect(getContrastingTextColor("#1a1a1a")).toBe("#ffffff");
+  });
+
+  it("returns black for light background", () => {
+    expect(getContrastingTextColor("#ffffff")).toBe("#000000");
+    expect(getContrastingTextColor("#f0f0f0")).toBe("#000000");
+  });
+
+  it("returns black for non-hex background", () => {
+    expect(getContrastingTextColor("transparent")).toBe("#000000");
+    expect(getContrastingTextColor("rgb(0,0,0)")).toBe("#000000");
   });
 });

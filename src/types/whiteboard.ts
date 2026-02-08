@@ -26,6 +26,8 @@ export interface TextElement extends BaseElement {
   textAlign?: TextAlign;
   /** Vertical alignment of text within the box. */
   textVerticalAlign?: TextVerticalAlign;
+  /** When true (default), scale text to fit the text box size. When false, use fixed fontSize. */
+  fill?: boolean;
 }
 
 export interface ShapeElement extends BaseElement {

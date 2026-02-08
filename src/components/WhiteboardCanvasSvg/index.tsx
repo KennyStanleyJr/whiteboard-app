@@ -67,6 +67,16 @@ export interface WhiteboardCanvasSvgProps {
   backgroundColor?: string;
   /** Grid style: empty, dotted, or lined. */
   gridStyle?: GridStyle;
+  /** When a text element in fill mode reports its effective fontSize (for baking when fill is turned off). */
+  onEffectiveFontSize?: (elementId: string, effectiveFontSize: number) => void;
+  /** When a text element in fill mode reports its content aspect ratio (for locked resize). */
+  onTextAspectRatio?: (elementId: string, aspectRatio: number) => void;
+  /** When a text element in fill mode reports max box size (resize is capped to this). */
+  onMaxFillBoxSize?: (elementId: string, maxWidth: number, maxHeight: number) => void;
+  /** When in fill mode, report fitted box size (for baking on fill off). */
+  onFillFittedSize?: (elementId: string, width: number, height: number) => void;
+  /** Returns last reported effective fontSize for a text in fill mode (so editor can match display size). */
+  getEffectiveFontSize?: (elementId: string) => number | undefined;
 }
 
 export interface WhiteboardCanvasSvgHandle {
@@ -109,6 +119,11 @@ export const WhiteboardCanvasSvg = forwardRef<
     toolbarContainerRef,
     backgroundColor = "#ffffff",
     gridStyle = "dotted",
+    onEffectiveFontSize,
+    onTextAspectRatio,
+    onMaxFillBoxSize,
+    onFillFittedSize,
+    getEffectiveFontSize,
   } = props;
 
   const gridColor = getContrastingGridColor(backgroundColor);
@@ -240,8 +255,16 @@ export const WhiteboardCanvasSvg = forwardRef<
     const html = isHtmlContent(textEl.content)
       ? sanitizeHtml(textEl.content)
       : plainTextToHtml(textEl.content);
-    editingRef.current.innerHTML = html;
-    editingRef.current.focus();
+    const editor = editingRef.current;
+    editor.innerHTML = html;
+    editor.focus();
+    const sel = window.getSelection();
+    if (sel) {
+      sel.removeAllRanges();
+      const range = document.createRange();
+      range.selectNodeContents(editor);
+      sel.addRange(range);
+    }
   }, [editingElementId, elements]);
 
   const handleEditKeyDown = useCallback(
@@ -328,6 +351,11 @@ export const WhiteboardCanvasSvg = forwardRef<
                 onEditKeyDown={handleEditKeyDown}
                 editingRefSetter={setEditingRef}
                 toolbarContainerRef={toolbarContainerRef}
+                onEffectiveFontSize={onEffectiveFontSize}
+                onTextAspectRatio={onTextAspectRatio}
+                onMaxFillBoxSize={onMaxFillBoxSize}
+                onFillFittedSize={onFillFittedSize}
+                getEffectiveFontSize={getEffectiveFontSize}
               />
             );
           }

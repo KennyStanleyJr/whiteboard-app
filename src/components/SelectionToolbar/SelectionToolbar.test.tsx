@@ -31,6 +31,7 @@ const textEl: TextElement = {
   fontSize: 16,
   width: 100,
   height: 22,
+  fill: false, // so font size and alignment controls are enabled in tests
 };
 
 function createContainerRef(): React.RefObject<HTMLDivElement | null> {
@@ -712,6 +713,140 @@ describe("SelectionToolbar", () => {
     expect(isTextElement(next[1]!)).toBe(true);
     if (isTextElement(next[1]!)) {
       expect(next[1].content).toBe("Two");
+    }
+  });
+
+  it("calls setElements with selected elements first when Send to Back is clicked", () => {
+    const setElements = vi.fn();
+    const containerRef = createContainerRef();
+    const elA: TextElement = { ...textEl, id: "a", content: "A" };
+    const elB: TextElement = { ...textEl, id: "b", content: "B" };
+    const elements = [elA, elB];
+    render(
+      <SelectionToolbar
+        {...defaultProps}
+        containerRef={containerRef}
+        setElements={setElements}
+        selectedElementIds={["a"]}
+        elements={elements}
+        measuredBounds={{
+          a: { x: 0, y: 0, width: 50, height: 22 },
+          b: { x: 60, y: 0, width: 50, height: 22 },
+        }}
+      />
+    );
+    fireEvent.click(screen.getByRole("button", { name: /element actions/i }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /send to back/i }));
+    expect(setElements).toHaveBeenCalled();
+    const next = getNextElements(setElements, elements);
+    expect(next.map((e) => e.id)).toEqual(["a", "b"]);
+  });
+
+  it("calls setElements with selected elements last when Send to Front is clicked", () => {
+    const setElements = vi.fn();
+    const containerRef = createContainerRef();
+    const elA: TextElement = { ...textEl, id: "a", content: "A" };
+    const elB: TextElement = { ...textEl, id: "b", content: "B" };
+    const elements = [elA, elB];
+    render(
+      <SelectionToolbar
+        {...defaultProps}
+        containerRef={containerRef}
+        setElements={setElements}
+        selectedElementIds={["a"]}
+        elements={elements}
+        measuredBounds={{
+          a: { x: 0, y: 0, width: 50, height: 22 },
+          b: { x: 60, y: 0, width: 50, height: 22 },
+        }}
+      />
+    );
+    fireEvent.click(screen.getByRole("button", { name: /element actions/i }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /send to front/i }));
+    expect(setElements).toHaveBeenCalled();
+    const next = getNextElements(setElements, elements);
+    expect(next.map((e) => e.id)).toEqual(["b", "a"]);
+  });
+
+  it("toggles text fill on when Fill text to box is clicked for non-fill text", () => {
+    const setElements = vi.fn();
+    const containerRef = createContainerRef();
+    const noFill: TextElement = { ...textEl, id: "a", fill: false };
+    render(
+      <SelectionToolbar
+        {...defaultProps}
+        containerRef={containerRef}
+        setElements={setElements}
+        selectedElementIds={["a"]}
+        elements={[noFill]}
+        measuredBounds={{ a: { x: 0, y: 0, width: 100, height: 22 } }}
+      />
+    );
+    fireEvent.click(screen.getByRole("button", { name: /fill text to box$/i }));
+    expect(setElements).toHaveBeenCalled();
+    const next = getNextElements(setElements, [noFill]);
+    expect(next).toHaveLength(1);
+    expect(isTextElement(next[0]!)).toBe(true);
+    if (isTextElement(next[0]!)) {
+      expect(next[0].fill).toBe(true);
+    }
+  });
+
+  it("calls onFillModeEnabled when turning fill on for selected text", () => {
+    const setElements = vi.fn();
+    const onFillModeEnabled = vi.fn();
+    const containerRef = createContainerRef();
+    const noFill: TextElement = { ...textEl, id: "a", fill: false };
+    render(
+      <SelectionToolbar
+        {...defaultProps}
+        containerRef={containerRef}
+        setElements={setElements}
+        onFillModeEnabled={onFillModeEnabled}
+        selectedElementIds={["a"]}
+        elements={[noFill]}
+        measuredBounds={{ a: { x: 0, y: 0, width: 100, height: 22 } }}
+      />
+    );
+    fireEvent.click(screen.getByRole("button", { name: /fill text to box$/i }));
+    expect(onFillModeEnabled).toHaveBeenCalledWith(["a"]);
+  });
+
+  it("toggles text fill off and bakes fontSize and size when getEffectiveFontSize and getFillFittedSize provided", () => {
+    const setElements = vi.fn();
+    const containerRef = createContainerRef();
+    const fillEl: TextElement = {
+      ...textEl,
+      id: "a",
+      fill: true,
+      fontSize: 24,
+      width: 200,
+      height: 80,
+    };
+    const getEffectiveFontSize = vi.fn(() => 18);
+    const getFillFittedSize = vi.fn(() => ({ width: 120, height: 40 }));
+    render(
+      <SelectionToolbar
+        {...defaultProps}
+        containerRef={containerRef}
+        setElements={setElements}
+        getEffectiveFontSize={getEffectiveFontSize}
+        getFillFittedSize={getFillFittedSize}
+        selectedElementIds={["a"]}
+        elements={[fillEl]}
+        measuredBounds={{ a: { x: 0, y: 0, width: 200, height: 80 } }}
+      />
+    );
+    fireEvent.click(screen.getByRole("button", { name: /don't fill text to box/i }));
+    expect(setElements).toHaveBeenCalled();
+    const next = getNextElements(setElements, [fillEl]);
+    expect(next).toHaveLength(1);
+    expect(isTextElement(next[0]!)).toBe(true);
+    if (isTextElement(next[0]!)) {
+      expect(next[0].fill).toBe(false);
+      expect(next[0].fontSize).toBe(18);
+      expect(next[0].width).toBe(120);
+      expect(next[0].height).toBe(40);
     }
   });
 });

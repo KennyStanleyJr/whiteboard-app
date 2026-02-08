@@ -9,10 +9,10 @@ import type { WhiteboardElement } from "../types/whiteboard";
 export const TEXT_EDIT_WIDTH = 280;
 /** Height of text element box (slightly taller than font for descenders). */
 export const TEXT_EDIT_HEIGHT = 22;
-/** Initial foreignObject width when text has no size yet, so layout can measure content width. */
-export const DEFAULT_UNMEASURED_TEXT_WIDTH = 1200;
+/** Initial foreignObject width when text has no size yet; large so content can size to text length (measurement then uses actual width). */
+export const DEFAULT_UNMEASURED_TEXT_WIDTH = 20000;
 /** Initial foreignObject height when text has no size yet, so layout can measure content height. */
-export const DEFAULT_UNMEASURED_TEXT_HEIGHT = 800;
+export const DEFAULT_UNMEASURED_TEXT_HEIGHT = 10000;
 
 const MIN_BOUNDS_SIZE = 1;
 

@@ -5,6 +5,7 @@ import {
   useCanvasEventListeners,
   useCanvasSize,
   useElementSelection,
+  useFillModeTextState,
   usePanZoom,
   useSelectionBox,
   useWhiteboardQuery,
@@ -16,6 +17,7 @@ import {
   sanitizeElementBounds,
 } from "../lib/elementBounds";
 import {
+  clampBoundsToMax,
   resizeBoundsFromHandle,
   type ResizeHandleId,
 } from "../lib/resizeHandles";
@@ -25,6 +27,7 @@ import type {
   WhiteboardElement,
 } from "../types/whiteboard";
 import type { FormatTag } from "../lib/textFormat";
+import { getContrastingTextColor } from "../lib/contrastColor";
 import { hasNoTextCharacters, plainTextToHtml } from "../lib/sanitizeHtml";
 import { cn } from "@/lib/utils";
 import {
@@ -231,6 +234,22 @@ export function WhiteboardCanvas({ boardId }: WhiteboardCanvasProps = {}): JSX.E
   const toolbarContainerRef = useRef<HTMLDivElement | null>(null);
   const toolbarRef = useRef<SelectionToolbarHandle | null>(null);
   const lastBoardIdRef = useRef<string | undefined>(boardId);
+  const editingElementIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    editingElementIdRef.current = editingElementId;
+  }, [editingElementId]);
+
+  const fillModeText = useFillModeTextState(setElements);
+  const {
+    handleEffectiveFontSize,
+    getEffectiveFontSize,
+    handleTextAspectRatio,
+    handleMaxFillBoxSize,
+    handleFillFittedSize,
+    getFillFittedSize,
+    registerFillOnPendingFit,
+    getResizeConstraints,
+  } = fillModeText;
 
   // On board switch: clear measured bounds and canvas UI (editing, menus, dialogs)
   useEffect(() => {
@@ -291,31 +310,40 @@ export function WhiteboardCanvas({ boardId }: WhiteboardCanvasProps = {}): JSX.E
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  const addTextAt = useCallback((x: number, y: number) => {
-    const id = generateElementId();
-    const textElement: WhiteboardElement = {
-      id,
-      x,
-      y,
-      kind: "text",
-      content: "",
-      fontSize: 24,
+  /** Reference on-screen pixel size for new text when placed (used with zoom to get world-space fontSize). */
+  const DEFAULT_TEXT_SCREEN_PX = 36;
+
+  /** Default fontSize and textColor for new text at current zoom and background (toolbar, paste, drop). */
+  const getDefaultTextPlacementStyle = useCallback(() => {
+    const zoomSafe = Math.max(panZoom.zoom, 0.001);
+    return {
+      fontSize: Math.round(DEFAULT_TEXT_SCREEN_PX / zoomSafe),
+      textColor: getContrastingTextColor(backgroundColor),
     };
-    setElements((prev) => [...prev, textElement]);
-    dispatchCanvasUi({ type: "SET_EDITING", payload: id });
-  }, [setElements]);
+  }, [panZoom.zoom, backgroundColor]);
 
   const addTextAtWithContent = useCallback(
-    (x: number, y: number, plainText: string) => {
+    (
+      x: number,
+      y: number,
+      plainText: string,
+      fontSize?: number,
+      initialColor?: string
+    ) => {
       const id = generateElementId();
-      const content = plainTextToHtml(plainText.trim());
+      let content = plainTextToHtml(plainText.trim());
+      if (initialColor != null && /^#[0-9A-Fa-f]{6}$/.test(initialColor)) {
+        content = `<span style="color: ${initialColor}">${content}</span>`;
+      }
+      const size =
+        fontSize != null ? Math.round(fontSize) : DEFAULT_TEXT_SCREEN_PX;
       const textElement: WhiteboardElement = {
         id,
         x,
         y,
         kind: "text",
         content,
-        fontSize: 24,
+        fontSize: size,
       };
       setElements((prev) => [...prev, textElement]);
     },
@@ -349,8 +377,17 @@ export function WhiteboardCanvas({ boardId }: WhiteboardCanvasProps = {}): JSX.E
     const centerViewportY = size.height / 2;
     const x = (centerViewportX - panZoom.panX) / panZoom.zoom;
     const y = (centerViewportY - panZoom.panY) / panZoom.zoom;
-    addTextAt(x, y);
-  }, [addTextAt, panZoom.panX, panZoom.panY, panZoom.zoom, size.height, size.width]);
+    const { fontSize, textColor } = getDefaultTextPlacementStyle();
+    addTextAtWithContent(x, y, "Text", fontSize, textColor);
+  }, [
+    addTextAtWithContent,
+    getDefaultTextPlacementStyle,
+    panZoom.panX,
+    panZoom.panY,
+    panZoom.zoom,
+    size.height,
+    size.width,
+  ]);
 
   const centerWorld = useCallback(() => {
     const centerViewportX = size.width / 2;
@@ -447,8 +484,15 @@ export function WhiteboardCanvas({ boardId }: WhiteboardCanvasProps = {}): JSX.E
   }, [setElements]);
 
   const handleFinishEditElement = useCallback(() => {
+    const id = editingElementIdRef.current;
     dispatchCanvasUi({ type: "SET_EDITING", payload: null });
-  }, []);
+    if (id != null) {
+      const el = elements.find((e) => e.id === id);
+      if (el?.kind === "text" && el.fill !== false) {
+        registerFillOnPendingFit([id]);
+      }
+    }
+  }, [elements, registerFillOnPendingFit]);
 
   const handleFormatCommand = useCallback(
     (command: string, value?: string) => {
@@ -471,6 +515,10 @@ export function WhiteboardCanvas({ boardId }: WhiteboardCanvasProps = {}): JSX.E
     startBounds: ElementBounds;
     /** Whether we have pushed pre-resize state to undo history (once per resize). */
     historyPushed: boolean;
+    /** When set (e.g. text in fill mode), resize is locked to this aspect ratio. */
+    fixedAspectRatio?: number;
+    /** When set (text fill at max), box size is capped to this. */
+    maxFillBoxSize?: { width: number; height: number };
   } | null>(null);
 
   const contextMenuRef = useRef<HTMLDivElement>(null);
@@ -497,6 +545,10 @@ export function WhiteboardCanvas({ boardId }: WhiteboardCanvasProps = {}): JSX.E
         panZoom.zoom
       );
       if (world == null) return;
+      const constraints =
+        el.kind === "text" && el.fill !== false
+          ? getResizeConstraints(elementId)
+          : {};
       dispatchResize({ type: "START" });
       resizeStateRef.current = {
         handleId,
@@ -504,11 +556,14 @@ export function WhiteboardCanvas({ boardId }: WhiteboardCanvasProps = {}): JSX.E
         startWorld: world,
         startBounds,
         historyPushed: false,
+        fixedAspectRatio: constraints.fixedAspectRatio,
+        maxFillBoxSize: constraints.maxFillBoxSize,
       };
     },
     [
       elementSelection.selectedElementIds,
       elements,
+      getResizeConstraints,
       measuredBounds,
       panZoom.containerRef,
       panZoom.panX,
@@ -541,13 +596,17 @@ export function WhiteboardCanvas({ boardId }: WhiteboardCanvasProps = {}): JSX.E
           shiftKey: e.shiftKey,
           ctrlKey: e.ctrlKey || e.metaKey,
         };
-        const next = resizeBoundsFromHandle(
+        let next = resizeBoundsFromHandle(
           state.startBounds,
           state.handleId,
           dx,
           dy,
-          modifiers
+          modifiers,
+          state.fixedAspectRatio
         );
+        if (state.maxFillBoxSize != null) {
+          next = clampBoundsToMax(next, state.maxFillBoxSize, state.handleId);
+        }
         const moved =
           next.x !== state.startBounds.x ||
           next.y !== state.startBounds.y ||
@@ -780,7 +839,8 @@ export function WhiteboardCanvas({ boardId }: WhiteboardCanvasProps = {}): JSX.E
               });
             }
           } else if (textContent != null) {
-            addTextAtWithContent(baseX, nextY, textContent);
+            const { fontSize, textColor } = getDefaultTextPlacementStyle();
+            addTextAtWithContent(baseX, nextY, textContent, fontSize, textColor);
           }
           return;
         }
@@ -795,6 +855,7 @@ export function WhiteboardCanvas({ boardId }: WhiteboardCanvasProps = {}): JSX.E
     setElements,
     elementSelection,
     addTextAtWithContent,
+    getDefaultTextPlacementStyle,
   ]);
 
   const handleMoveUp = useCallback(() => {
@@ -933,14 +994,16 @@ export function WhiteboardCanvas({ boardId }: WhiteboardCanvasProps = {}): JSX.E
   }, [imageInfoDialogImage, setElements]);
 
   const flushPendingPasteText = useCallback(() => {
+    const { fontSize, textColor } = getDefaultTextPlacementStyle();
     dispatchImportPaste({
       type: "SET_PENDING_PASTE",
       payload: (text) => {
-        if (text != null) addTextAtWithContent(text.x, text.y, text.content);
+        if (text != null)
+          addTextAtWithContent(text.x, text.y, text.content, fontSize, textColor);
         return null;
       },
     });
-  }, [addTextAtWithContent]);
+  }, [addTextAtWithContent, getDefaultTextPlacementStyle]);
 
   const handleImportKeepOriginal = useCallback(() => {
     dispatchImportPaste({
@@ -1333,7 +1396,8 @@ export function WhiteboardCanvas({ boardId }: WhiteboardCanvasProps = {}): JSX.E
           return;
         }
         if (hasText && text != null) {
-          addTextAtWithContent(baseX, baseY, text);
+          const { fontSize, textColor } = getDefaultTextPlacementStyle();
+          addTextAtWithContent(baseX, baseY, text, fontSize, textColor);
         }
         return;
       }
@@ -1378,6 +1442,7 @@ export function WhiteboardCanvas({ boardId }: WhiteboardCanvasProps = {}): JSX.E
     addImageFromFile,
     setElements,
     elementSelection,
+    getDefaultTextPlacementStyle,
   ]);
 
   useEffect(() => {
@@ -1490,6 +1555,9 @@ export function WhiteboardCanvas({ boardId }: WhiteboardCanvasProps = {}): JSX.E
           onDuplicate={handleDuplicateSelected}
           onDelete={handleDeleteSelected}
           onGetImageInfo={selectedImageForInfo != null ? handleGetImageInfo : undefined}
+          getEffectiveFontSize={getEffectiveFontSize}
+          getFillFittedSize={getFillFittedSize}
+          onFillModeEnabled={registerFillOnPendingFit}
         />
       </div>
       <WhiteboardCanvasSvg
@@ -1520,6 +1588,11 @@ export function WhiteboardCanvas({ boardId }: WhiteboardCanvasProps = {}): JSX.E
         onResizeHandleMove={handleResizeHandleMove}
         onResizeHandleUp={handleResizeHandleUp}
         onImageNaturalDimensions={handleImageNaturalDimensions}
+        onEffectiveFontSize={handleEffectiveFontSize}
+        onTextAspectRatio={handleTextAspectRatio}
+        onMaxFillBoxSize={handleMaxFillBoxSize}
+        onFillFittedSize={handleFillFittedSize}
+        getEffectiveFontSize={getEffectiveFontSize}
         isResizing={isResizing}
         toolbarContainerRef={toolbarContainerRef}
         backgroundColor={backgroundColor}

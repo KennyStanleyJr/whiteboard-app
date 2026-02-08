@@ -41,3 +41,14 @@ export function getContrastingGridColor(backgroundColor: string): string {
   }
   return "rgba(0, 0, 0, 0.2)";
 }
+
+/**
+ * Solid text color that contrasts with the given background (hex).
+ * Dark background → #ffffff; light background → #000000.
+ */
+export function getContrastingTextColor(backgroundColor: string): string {
+  if (!backgroundColor.startsWith("#")) {
+    return "#000000";
+  }
+  return hexToLuminance(backgroundColor) < 0.4 ? "#ffffff" : "#000000";
+}

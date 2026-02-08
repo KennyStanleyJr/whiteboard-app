@@ -1,5 +1,6 @@
-import type { RefObject } from "react";
-import { memo } from "react";
+import type { CSSProperties, RefObject } from "react";
+import { memo, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   type ElementBounds,
   DEFAULT_UNMEASURED_TEXT_HEIGHT,
@@ -13,6 +14,22 @@ import type { TextElement } from "@/types/whiteboard";
 import { verticalAlignToJustifyContent } from "./verticalAlign";
 
 const MIN_FOREIGN_OBJECT_SIZE = 1;
+const FILL_REFERENCE_FONT_SIZE = 24;
+const MAX_FILL_EFFECTIVE_FONT_SIZE = 5000;
+const FILL_VERTICAL_NUDGE_PX = 0.25;
+
+const SIZED_WRAPPER_STYLE: CSSProperties = {
+  width: "100%",
+  height: "100%",
+  overflow: "hidden",
+  position: "relative",
+};
+
+function getTextContentProps(content: string) {
+  return isHtmlContent(content)
+    ? { dangerouslySetInnerHTML: { __html: sanitizeHtml(content) } }
+    : { children: content };
+}
 
 export interface WhiteboardTextElementProps {
   element: TextElement;
@@ -25,6 +42,16 @@ export interface WhiteboardTextElementProps {
   onEditKeyDown: (e: React.KeyboardEvent<HTMLDivElement>, id: string) => void;
   editingRefSetter: (el: HTMLDivElement | null) => void;
   toolbarContainerRef?: RefObject<HTMLElement | null>;
+  /** When in fill mode, report effective fontSize (base * scale) so toolbar can bake it when turning fill off. */
+  onEffectiveFontSize?: (elementId: string, effectiveFontSize: number) => void;
+  /** When in fill mode, report text content aspect ratio (width/height) for locked resize. */
+  onTextAspectRatio?: (elementId: string, aspectRatio: number) => void;
+  /** When in fill mode, report max box size (beyond which text is at max); resize is capped to this. */
+  onMaxFillBoxSize?: (elementId: string, maxWidth: number, maxHeight: number) => void;
+  /** When in fill mode, report box size that fits current content (for baking on fill off to avoid wrap/shift). */
+  onFillFittedSize?: (elementId: string, width: number, height: number) => void;
+  /** Returns last reported effective fontSize (so editor in fill mode can match display size). */
+  getEffectiveFontSize?: (elementId: string) => number | undefined;
 }
 
 function WhiteboardTextElementInner({
@@ -38,12 +65,18 @@ function WhiteboardTextElementInner({
   onEditKeyDown,
   editingRefSetter,
   toolbarContainerRef,
+  onEffectiveFontSize,
+  onTextAspectRatio,
+  onMaxFillBoxSize,
+  onFillFittedSize,
+  getEffectiveFontSize,
 }: WhiteboardTextElementProps): JSX.Element {
   const hasExplicitSize =
     el.width !== undefined &&
     el.height !== undefined &&
     el.width > 0 &&
     el.height > 0;
+  const fillEnabled = el.fill !== false;
   const measured = measuredBounds[el.id];
   const foWidth = hasExplicitSize
     ? Math.max(MIN_FOREIGN_OBJECT_SIZE, el.width!)
@@ -60,7 +93,253 @@ function WhiteboardTextElementInner({
         ? TEXT_EDIT_HEIGHT
         : DEFAULT_UNMEASURED_TEXT_HEIGHT;
 
+  const [naturalSize, setNaturalSize] = useState<{
+    width: number;
+    height: number;
+  } | null>(null);
+  const [containerSize, setContainerSize] = useState<{
+    width: number;
+    height: number;
+  } | null>(null);
+  const [measureContainerReady, setMeasureContainerReady] = useState(false);
+  const fillMeasureRef = useRef<HTMLDivElement | null>(null);
+  const fillContainerRef = useRef<HTMLDivElement | null>(null);
+  const measurePortalContainerRef = useRef<HTMLDivElement | null>(null);
+  const fillEditContainerRef = useRef<HTMLDivElement | null>(null);
+  const fillEditEditorRef = useRef<HTMLDivElement | null>(null);
+  const [editorScale, setEditorScale] = useState(1);
+
+  const needMeasure =
+    hasExplicitSize &&
+    fillEnabled &&
+    !isEditing &&
+    naturalSize === null;
+
+  useLayoutEffect(() => {
+    if (!hasExplicitSize || !fillEnabled || isEditing) {
+      if (measurePortalContainerRef.current != null) {
+        measurePortalContainerRef.current.remove();
+        measurePortalContainerRef.current = null;
+        setMeasureContainerReady(false);
+      }
+      setNaturalSize(null);
+      return;
+    }
+    if (measurePortalContainerRef.current != null) return;
+    const div = document.createElement("div");
+    div.setAttribute("aria-hidden", "true");
+    div.style.cssText =
+      "position:fixed;left:0;top:0;width:0;height:0;overflow:hidden;clip-path:inset(100%);pointer-events:none;visibility:hidden;";
+    document.body.appendChild(div);
+    measurePortalContainerRef.current = div;
+    setMeasureContainerReady(true);
+    return () => {
+      if (measurePortalContainerRef.current != null) {
+        measurePortalContainerRef.current.remove();
+        measurePortalContainerRef.current = null;
+        setMeasureContainerReady(false);
+      }
+    };
+  }, [hasExplicitSize, fillEnabled, isEditing]);
+
+  useLayoutEffect(() => {
+    if (
+      !hasExplicitSize ||
+      !fillEnabled ||
+      isEditing ||
+      fillMeasureRef.current == null
+    ) {
+      if (!hasExplicitSize || !fillEnabled || isEditing) {
+        setNaturalSize(null);
+      }
+      return;
+    }
+    const div = fillMeasureRef.current;
+    const w = div.scrollWidth;
+    const h = div.scrollHeight;
+    if (w > 0 && h > 0) {
+      setNaturalSize({ width: w, height: h });
+    } else {
+      setNaturalSize(null);
+    }
+  }, [
+    hasExplicitSize,
+    fillEnabled,
+    isEditing,
+    measureContainerReady,
+    el.content,
+    el.fontSize,
+    foWidth,
+    foHeight,
+  ]);
+
+  const prevContentRef = useRef<string>(el.content);
+  const prevFontSizeRef = useRef<number | undefined>(el.fontSize);
+  useLayoutEffect(() => {
+    if (
+      prevContentRef.current !== el.content ||
+      prevFontSizeRef.current !== el.fontSize
+    ) {
+      prevContentRef.current = el.content;
+      prevFontSizeRef.current = el.fontSize;
+      setNaturalSize(null);
+    }
+  }, [el.content, el.fontSize]);
+
+  useLayoutEffect(() => {
+    if (
+      !hasExplicitSize ||
+      !fillEnabled ||
+      isEditing ||
+      fillContainerRef.current == null
+    ) {
+      setContainerSize(null);
+      return;
+    }
+    const containerEl = fillContainerRef.current;
+    const onResize = (): void => {
+      const w = containerEl.clientWidth;
+      const h = containerEl.clientHeight;
+      if (w > 0 && h > 0) {
+        setContainerSize({ width: w, height: h });
+      } else {
+        setContainerSize(null);
+      }
+    };
+    onResize();
+    const ro = new ResizeObserver(onResize);
+    ro.observe(containerEl);
+    return () => ro.disconnect();
+  }, [hasExplicitSize, fillEnabled, isEditing]);
+
+  const updateEditorScale = useRef(() => {
+    const container = fillEditContainerRef.current;
+    const editor = fillEditEditorRef.current;
+    if (container == null || editor == null) return;
+    const cW = container.clientWidth;
+    const cH = container.clientHeight;
+    const eW = editor.scrollWidth;
+    const eH = editor.scrollHeight;
+    if (cW <= 0 || cH <= 0) return;
+    const scale =
+      eW > 0 && eH > 0
+        ? Math.min(1, cW / eW, cH / eH)
+        : 1;
+    setEditorScale(scale);
+  });
+
+  useLayoutEffect(() => {
+    if (!isEditing || !fillEnabled || !hasExplicitSize) {
+      setEditorScale(1);
+      return;
+    }
+    const container = fillEditContainerRef.current;
+    const editor = fillEditEditorRef.current;
+    if (container == null || editor == null) return;
+    updateEditorScale.current();
+    const ro = new ResizeObserver(() => {
+      updateEditorScale.current();
+    });
+    ro.observe(container);
+    ro.observe(editor);
+    return () => ro.disconnect();
+  }, [isEditing, fillEnabled, hasExplicitSize]);
+
+  /* In fill mode with explicit size, use element dimensions so scale updates when canvas resizes the box. */
+  const boxW =
+    hasExplicitSize && fillEnabled
+      ? foWidth
+      : (containerSize?.width ?? foWidth);
+  const boxH =
+    hasExplicitSize && fillEnabled
+      ? foHeight
+      : (containerSize?.height ?? foHeight);
+  const hasValidNaturalSize =
+    naturalSize != null &&
+    naturalSize.width > 0 &&
+    naturalSize.height > 0;
+  const fillScaleCap = MAX_FILL_EFFECTIVE_FONT_SIZE / FILL_REFERENCE_FONT_SIZE;
+  const fillScale =
+    fillEnabled &&
+    hasExplicitSize &&
+    hasValidNaturalSize &&
+    boxW > 0 &&
+    boxH > 0
+      ? Math.min(
+          boxW / naturalSize.width,
+          boxH / naturalSize.height,
+          fillScaleCap
+        )
+      : null;
+
+  useLayoutEffect(() => {
+    if (fillScale != null && onEffectiveFontSize != null) {
+      const effective = Math.round(FILL_REFERENCE_FONT_SIZE * fillScale);
+      onEffectiveFontSize(el.id, effective);
+    }
+  }, [el.id, fillScale, onEffectiveFontSize]);
+
+  useLayoutEffect(() => {
+    if (
+      fillEnabled &&
+      hasExplicitSize &&
+      hasValidNaturalSize &&
+      onTextAspectRatio != null
+    ) {
+      onTextAspectRatio(el.id, naturalSize.width / naturalSize.height);
+    }
+  }, [
+    el.id,
+    fillEnabled,
+    hasExplicitSize,
+    hasValidNaturalSize,
+    naturalSize,
+    onTextAspectRatio,
+  ]);
+
+  useLayoutEffect(() => {
+    if (
+      fillEnabled &&
+      hasExplicitSize &&
+      hasValidNaturalSize &&
+      onMaxFillBoxSize != null
+    ) {
+      const maxW = naturalSize.width * fillScaleCap;
+      const maxH = naturalSize.height * fillScaleCap;
+      onMaxFillBoxSize(el.id, maxW, maxH);
+    }
+  }, [
+    el.id,
+    fillEnabled,
+    hasExplicitSize,
+    hasValidNaturalSize,
+    naturalSize,
+    fillScaleCap,
+    onMaxFillBoxSize,
+  ]);
+
+  useLayoutEffect(() => {
+    if (
+      fillScale != null &&
+      hasValidNaturalSize &&
+      onFillFittedSize != null
+    ) {
+      // Report exact content size at fill scale so fill-off uses the same box (no wrap/shift).
+      const w = naturalSize.width * fillScale;
+      const h = naturalSize.height * fillScale;
+      onFillFittedSize(el.id, Math.ceil(w), Math.ceil(h));
+    }
+  }, [el.id, fillScale, hasValidNaturalSize, naturalSize, onFillFittedSize]);
+
   const justifyContent = verticalAlignToJustifyContent(el.textVerticalAlign);
+  const editorFontSize =
+    fillEnabled &&
+    hasExplicitSize &&
+    getEffectiveFontSize != null &&
+    getEffectiveFontSize(el.id) != null
+      ? getEffectiveFontSize(el.id)!
+      : el.fontSize ?? 24;
+  const textWhiteSpace = isHtmlContent(el.content) ? "normal" : "pre-wrap";
   const baseStyle = {
     display: "flex" as const,
     flexDirection: "column" as const,
@@ -70,6 +349,20 @@ function WhiteboardTextElementInner({
     lineHeight: 1.2,
     textAlign: (el.textAlign ?? "left") as "left" | "center" | "right",
     color: "#000000",
+  };
+  const editorStyle = {
+    ...baseStyle,
+    fontSize: `${editorFontSize}px`,
+    whiteSpace: textWhiteSpace,
+  };
+  const contentProps = getTextContentProps(el.content);
+
+  const handleEditBlur = (e: React.FocusEvent<HTMLDivElement>): void => {
+    const raw = e.currentTarget.innerHTML ?? "";
+    onUpdateContent(el.id, sanitizeHtml(raw));
+    const next = e.relatedTarget as Node | null;
+    if (next == null || !toolbarContainerRef?.current?.contains(next))
+      onFinishEdit();
   };
 
   return (
@@ -88,7 +381,39 @@ function WhiteboardTextElementInner({
             }
       }
     >
-      {isEditing ? (
+      {isEditing ? hasExplicitSize && fillEnabled ? (
+        <div ref={fillEditContainerRef} style={SIZED_WRAPPER_STYLE}>
+          <div
+            style={{
+              position: "absolute",
+              left: 0,
+              top: 0,
+              transform: `scale(${editorScale})`,
+              transformOrigin: "0 0",
+            }}
+          >
+            <div
+              ref={(r) => {
+                editingRefSetter(r);
+                setTextDivRef(el.id, r);
+                fillEditEditorRef.current = r;
+              }}
+              className="whiteboard-text-display"
+              contentEditable
+              suppressContentEditableWarning={true}
+              style={{
+                ...editorStyle,
+                padding: 2,
+                width: "max-content",
+                maxWidth: "none",
+              }}
+              onBlur={handleEditBlur}
+              onKeyDown={(e) => onEditKeyDown(e, el.id)}
+              aria-label="Edit text"
+            />
+          </div>
+        </div>
+      ) : (
         <div
           ref={(r) => {
             editingRefSetter(r);
@@ -97,61 +422,106 @@ function WhiteboardTextElementInner({
           className="whiteboard-text-display"
           contentEditable
           suppressContentEditableWarning={true}
-          style={{
-            ...baseStyle,
-            padding: 2,
-          }}
-          onBlur={(e) => {
-            const raw = e.currentTarget.innerHTML ?? "";
-            const content = sanitizeHtml(raw);
-            onUpdateContent(el.id, content);
-            const next = e.relatedTarget as Node | null;
-            if (
-              next == null ||
-              toolbarContainerRef?.current == null ||
-              !toolbarContainerRef.current.contains(next)
-            ) {
-              onFinishEdit();
-            }
-          }}
+          style={{ ...editorStyle, padding: 2 }}
+          onBlur={handleEditBlur}
           onKeyDown={(e) => onEditKeyDown(e, el.id)}
           aria-label="Edit text"
         />
+      ) : hasExplicitSize && fillEnabled ? (
+        <>
+          {/* Measure div is portaled to body so it never appears inside the text box. */}
+          {needMeasure &&
+            measureContainerReady &&
+            measurePortalContainerRef.current != null &&
+            createPortal(
+              <div
+                ref={fillMeasureRef}
+                className="whiteboard-text-display whiteboard-text-display--fit"
+                style={{
+                  ...baseStyle,
+                  fontSize: `${FILL_REFERENCE_FONT_SIZE}px`,
+                  width: "max-content",
+                  maxWidth: "none",
+                  whiteSpace: textWhiteSpace,
+                }}
+                {...contentProps}
+              />,
+              measurePortalContainerRef.current
+            )}
+          <div
+            ref={(r) => {
+              setTextDivRef(el.id, r);
+              fillContainerRef.current = r;
+            }}
+            className="whiteboard-text-display whiteboard-text-display--sized"
+            style={SIZED_WRAPPER_STYLE}
+          >
+            {fillScale != null ? (
+              <div
+                className="whiteboard-text-display whiteboard-text-display--fit"
+                style={{
+                  ...baseStyle,
+                  fontSize: `${FILL_REFERENCE_FONT_SIZE}px`,
+                  position: "absolute",
+                  left: 0,
+                  top: 0,
+                  width: "max-content",
+                  maxWidth: "none",
+                  whiteSpace: textWhiteSpace,
+                  transform: `scale(${fillScale}) translateY(${FILL_VERTICAL_NUDGE_PX}px)`,
+                  transformOrigin: "0 0",
+                }}
+                {...contentProps}
+              />
+            ) : (
+              <div
+                className="whiteboard-text-display whiteboard-text-display--fit"
+                style={{
+                  ...baseStyle,
+                  whiteSpace: textWhiteSpace,
+                  overflowWrap: "break-word",
+                  overflow: "hidden",
+                  width: "100%",
+                  height: "100%",
+                }}
+                {...contentProps}
+              />
+            )}
+          </div>
+        </>
       ) : hasExplicitSize ? (
         <div
           ref={(r) => setTextDivRef(el.id, r)}
           className="whiteboard-text-display whiteboard-text-display--sized"
-          style={{
-            ...baseStyle,
-            whiteSpace: isHtmlContent(el.content) ? "normal" : "pre-wrap",
-            wordBreak: "break-word",
-            overflow: "hidden",
-            width: "100%",
-            height: "100%",
-          }}
-          {...(isHtmlContent(el.content)
-            ? {
-                dangerouslySetInnerHTML: {
-                  __html: sanitizeHtml(el.content),
-                },
-              }
-            : { children: el.content })}
-        />
+          style={SIZED_WRAPPER_STYLE}
+        >
+          <div
+            className="whiteboard-text-display whiteboard-text-display--fit"
+            style={{
+              ...baseStyle,
+              position: "absolute",
+              left: 0,
+              top: 0,
+              whiteSpace: textWhiteSpace,
+              overflowWrap: "break-word",
+              overflow: "hidden",
+              width: "100%",
+              height: "100%",
+            }}
+            {...contentProps}
+          />
+        </div>
       ) : (
         <div
           ref={(r) => setTextDivRef(el.id, r)}
           className="whiteboard-text-display whiteboard-text-display--fit"
           style={{
             ...baseStyle,
-            whiteSpace: isHtmlContent(el.content) ? "normal" : "pre-wrap",
+            width: "max-content",
+            maxWidth: "100%",
+            whiteSpace: textWhiteSpace,
           }}
-          {...(isHtmlContent(el.content)
-            ? {
-                dangerouslySetInnerHTML: {
-                  __html: sanitizeHtml(el.content),
-                },
-              }
-            : { children: el.content })}
+          {...contentProps}
         />
       )}
     </foreignObject>

@@ -1,4 +1,5 @@
 import type { ElementBounds } from "@/lib/elementBounds";
+import type { WhiteboardElement } from "@/types/whiteboard";
 
 export const TOOLBAR_OFFSET_PX = 8;
 
@@ -6,10 +7,25 @@ export const TOOLBAR_OFFSET_PX = 8;
 export const FONT_SIZE_PRESETS = [8, 10, 12, 16, 20, 24, 32, 40, 48, 64, 96];
 
 export const MIN_FONT_SIZE = 1;
-export const MAX_FONT_SIZE = 999;
+export const MAX_FONT_SIZE = 5000;
 
 /** Throttle interval (ms) for applying color while dragging the picker. */
 export const COLOR_APPLY_THROTTLE_MS = 80;
+
+/** Reorder elements so selected ids are either first (back) or last (front). */
+export function reorderElementsBySelection(
+  prev: WhiteboardElement[],
+  selectedIds: string[],
+  putSelectedFirst: boolean
+): WhiteboardElement[] {
+  const ids = new Set(selectedIds);
+  const selected: WhiteboardElement[] = [];
+  const unselected: WhiteboardElement[] = [];
+  for (const el of prev) {
+    (ids.has(el.id) ? selected : unselected).push(el);
+  }
+  return putSelectedFirst ? [...selected, ...unselected] : [...unselected, ...selected];
+}
 
 export function unionBounds(
   bounds: ElementBounds[]

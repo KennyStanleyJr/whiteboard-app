@@ -13,3 +13,8 @@ export {
 } from "./useWhiteboard";
 export { useUndoRedo } from "./useUndoRedo";
 export { useSingleOpen } from "./useSingleOpen";
+export { useCloseOnOutsideClick } from "./useCloseOnOutsideClick";
+export {
+  useFillModeTextState,
+  type FillModeResizeConstraints,
+} from "./useFillModeTextState";

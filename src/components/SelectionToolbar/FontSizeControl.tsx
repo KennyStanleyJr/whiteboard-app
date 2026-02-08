@@ -21,6 +21,8 @@ export interface FontSizeControlProps {
   onFontSizeChange: (num: number) => void;
   onInputChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onInputBlur: (e: React.FocusEvent<HTMLInputElement>) => void;
+  /** When true, font size cannot be changed (e.g. text fill mode). */
+  disabled?: boolean;
 }
 
 export function FontSizeControl({
@@ -30,6 +32,7 @@ export function FontSizeControl({
   onFontSizeChange,
   onInputChange,
   onInputBlur,
+  disabled = false,
 }: FontSizeControlProps): JSX.Element {
   return (
     <div className="flex items-center">
@@ -39,8 +42,9 @@ export function FontSizeControl({
           variant="ghost"
           size="icon"
           className="h-7 w-6 min-w-0 shrink-0 rounded-l-md rounded-r-none border-0 text-muted-foreground hover:bg-muted/50 [&_svg]:size-3"
-          onClick={() => onFontSizeChange(displayFontSize - 1)}
+          onClick={() => !disabled && onFontSizeChange(displayFontSize - 1)}
           aria-label="Decrease font size"
+          disabled={disabled}
         >
           <Minus aria-hidden />
         </Button>
@@ -52,25 +56,29 @@ export function FontSizeControl({
           placeholder={singleFontSize ? undefined : "—"}
           onChange={onInputChange}
           onBlur={onInputBlur}
-          className="h-7 w-9 border-0 bg-transparent px-1 py-0 text-center text-base tabular-nums text-foreground shadow-none focus-visible:ring-0 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+          className="h-7 w-10 border-0 bg-transparent px-1 py-0 text-center text-base tabular-nums text-foreground shadow-none focus-visible:ring-0 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
           aria-label="Font size"
+          disabled={disabled}
         />
         <Button
           type="button"
           variant="ghost"
           size="icon"
           className="h-7 w-6 min-w-0 shrink-0 rounded-none border-0 text-muted-foreground hover:bg-muted/50 [&_svg]:size-3"
-          onClick={() => onFontSizeChange(displayFontSize + 1)}
+          onClick={() => !disabled && onFontSizeChange(displayFontSize + 1)}
           aria-label="Increase font size"
+          disabled={disabled}
         >
           <Plus aria-hidden />
         </Button>
         <Select
           value={presetValue}
           onValueChange={(v) => {
+            if (disabled) return;
             const num = Number(v);
             if (FONT_SIZE_PRESETS.includes(num)) onFontSizeChange(num);
           }}
+          disabled={disabled}
         >
           <SelectTrigger
             className="h-7 w-6 min-h-0 shrink-0 justify-center rounded-r-md rounded-l-none border-0 bg-transparent px-0 shadow-none focus:ring-0 [&_[data-slot=select-value]]:hidden [&_svg]:size-3.5 [&_svg]:shrink-0 [&_svg]:opacity-70"

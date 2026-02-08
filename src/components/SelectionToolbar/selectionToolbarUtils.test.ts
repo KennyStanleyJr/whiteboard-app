@@ -1,12 +1,18 @@
 import { describe, expect, it } from "vitest";
+import type { WhiteboardElement } from "@/types/whiteboard";
 import {
   FONT_SIZE_PRESETS,
   MAX_FONT_SIZE,
   MIN_FONT_SIZE,
   parseHexFromContent,
+  reorderElementsBySelection,
   TOOLBAR_OFFSET_PX,
   unionBounds,
 } from "./selectionToolbarUtils";
+
+function el(id: string): WhiteboardElement {
+  return { id, kind: "text", x: 0, y: 0, content: "", fontSize: 12 };
+}
 
 describe("selectionToolbarUtils", () => {
   describe("TOOLBAR_OFFSET_PX", () => {
@@ -34,8 +40,60 @@ describe("selectionToolbarUtils", () => {
   });
 
   describe("MAX_FONT_SIZE", () => {
-    it("is 999", () => {
-      expect(MAX_FONT_SIZE).toBe(999);
+    it("is 5000", () => {
+      expect(MAX_FONT_SIZE).toBe(5000);
+    });
+  });
+
+  describe("reorderElementsBySelection", () => {
+    it("puts selected first when putSelectedFirst is true", () => {
+      const prev = [el("1"), el("2"), el("3")];
+      expect(reorderElementsBySelection(prev, ["2", "3"], true)).toEqual([
+        el("2"),
+        el("3"),
+        el("1"),
+      ]);
+    });
+
+    it("puts selected last when putSelectedFirst is false", () => {
+      const prev = [el("1"), el("2"), el("3")];
+      expect(reorderElementsBySelection(prev, ["1", "2"], false)).toEqual([
+        el("3"),
+        el("1"),
+        el("2"),
+      ]);
+    });
+
+    it("preserves order when no selection", () => {
+      const prev = [el("1"), el("2")];
+      expect(reorderElementsBySelection(prev, [], true)).toEqual(prev);
+      expect(reorderElementsBySelection(prev, [], false)).toEqual(prev);
+    });
+
+    it("preserves order when all selected (back = selected first)", () => {
+      const prev = [el("1"), el("2")];
+      expect(reorderElementsBySelection(prev, ["1", "2"], true)).toEqual(prev);
+    });
+
+    it("preserves order when all selected (front = selected last)", () => {
+      const prev = [el("1"), el("2")];
+      expect(reorderElementsBySelection(prev, ["1", "2"], false)).toEqual(prev);
+    });
+
+    it("keeps relative order of selected and unselected groups", () => {
+      const prev = [el("a"), el("b"), el("c"), el("d")];
+      const back = reorderElementsBySelection(prev, ["c"], true);
+      expect(back.map((e) => e.id)).toEqual(["c", "a", "b", "d"]);
+      const front = reorderElementsBySelection(prev, ["b"], false);
+      expect(front.map((e) => e.id)).toEqual(["a", "c", "d", "b"]);
+    });
+
+    it("ignores selected ids not in prev", () => {
+      const prev = [el("1"), el("2")];
+      expect(reorderElementsBySelection(prev, ["2", "99"], true)).toEqual([
+        el("2"),
+        el("1"),
+      ]);
     });
   });
 

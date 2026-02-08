@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  clampBoundsToMax,
   resizeBoundsFromHandle,
   RESIZE_HANDLE_IDS,
   RESIZE_HANDLE_CURSORS,
@@ -85,6 +86,39 @@ describe("resizeBoundsFromHandle", () => {
     expect(resultBoth.width / resultBoth.height).toBeCloseTo(base.width / base.height);
     expect(resultBoth.x + resultBoth.width / 2).toBeCloseTo(centerX);
     expect(resultBoth.y + resultBoth.height / 2).toBeCloseTo(centerY);
+  });
+
+  it("fixedAspectRatio locks resize to given ratio (e.g. text fill mode)", () => {
+    const ratio = 3; // width/height = 3
+    const result = resizeBoundsFromHandle(base, "se", 60, 100, undefined, ratio);
+    expect(result.width / result.height).toBeCloseTo(ratio);
+  });
+});
+
+describe("clampBoundsToMax", () => {
+  const max = { width: 120, height: 80 };
+
+  it("returns bounds unchanged when within max", () => {
+    const bounds = { x: 10, y: 20, width: 100, height: 50 };
+    expect(clampBoundsToMax(bounds, max, "se")).toEqual(bounds);
+  });
+
+  it("scales down by min factor so result fits in max (se corner fixed)", () => {
+    const bounds = { x: 0, y: 0, width: 200, height: 100 };
+    const out = clampBoundsToMax(bounds, max, "se");
+    expect(out.width).toBe(120); // 200 * 0.6
+    expect(out.height).toBe(60); // 100 * 0.6 (scale = min(120/200, 80/100) = 0.6)
+    expect(out.x).toBe(0);
+    expect(out.y).toBe(0);
+  });
+
+  it("scales down and keeps nw corner fixed for nw handle", () => {
+    const bounds = { x: 50, y: 30, width: 200, height: 100 };
+    const out = clampBoundsToMax(bounds, max, "nw");
+    expect(out.width).toBe(120);
+    expect(out.height).toBe(60);
+    expect(out.x).toBe(50 + 200 - 120);
+    expect(out.y).toBe(30 + 100 - 60);
   });
 });
 

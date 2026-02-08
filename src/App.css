@@ -477,6 +477,11 @@
   border: none;
 }
 
+/* Zero margins so fill and non-fill modes align (no down/right shift from <p> etc.). */
+.whiteboard-text-display * {
+  margin: 0;
+}
+
 /* Underline always matches text color (color span wraps format tags so currentColor works). */
 .whiteboard-text-display u {
   text-decoration-color: currentColor;

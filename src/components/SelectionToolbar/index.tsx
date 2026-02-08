@@ -7,6 +7,7 @@ import {
   useReducer,
   useRef,
 } from "react";
+import { useCloseOnOutsideClick } from "@/hooks/useCloseOnOutsideClick";
 import { useSingleOpen } from "@/hooks/useSingleOpen";
 import { flushSync } from "react-dom";
 import { worldToClient } from "@/hooks/canvas/canvasCoords";
@@ -46,9 +47,38 @@ import {
   MAX_FONT_SIZE,
   MIN_FONT_SIZE,
   parseHexFromContent,
+  reorderElementsBySelection,
   TOOLBAR_OFFSET_PX,
   unionBounds,
 } from "./selectionToolbarUtils";
+
+function getToolbarDisplayPosition(
+  fallback: { left: number; top: number },
+  anchor: { centerX: number; topY: number } | null,
+  container: HTMLElement | null,
+  viewWidth: number,
+  viewHeight: number,
+  panX: number,
+  panY: number,
+  zoom: number,
+  toolbarHeight: number
+): { left: number; top: number } {
+  if (!anchor || !container || viewWidth <= 0 || viewHeight <= 0)
+    return fallback;
+  const client = worldToClient(
+    container,
+    anchor.centerX,
+    anchor.topY,
+    viewWidth,
+    viewHeight,
+    panX,
+    panY,
+    zoom
+  );
+  return client != null
+    ? { left: client.x, top: client.y - toolbarHeight - TOOLBAR_OFFSET_PX }
+    : fallback;
+}
 
 /** Which submenu is open; only one at a time (useSingleOpen). */
 export type ToolbarMenuId =
@@ -108,6 +138,12 @@ export interface SelectionToolbarProps {
   onDelete?: () => void;
   /** When provided and a single image is selected, "Get info" is shown in the element actions menu. */
   onGetImageInfo?: () => void;
+  /** For text in fill mode: returns the effective fontSize to bake when turning fill off. */
+  getEffectiveFontSize?: (elementId: string) => number | undefined;
+  /** For text in fill mode: returns fitted box size to bake when turning fill off (avoids wrap/shift). */
+  getFillFittedSize?: (elementId: string) => { width: number; height: number } | undefined;
+  /** When fill mode is turned on for text, register these ids so the box is shrunk to fitted size after first report. */
+  onFillModeEnabled?: (elementIds: string[]) => void;
 }
 
 export interface SelectionToolbarHandle {
@@ -136,6 +172,9 @@ export const SelectionToolbar = forwardRef<
     onFormatCommand,
     onCut,
     onCopy,
+    getEffectiveFontSize,
+    getFillFittedSize,
+    onFillModeEnabled,
     onDuplicate,
     onDelete,
     onGetImageInfo,
@@ -144,6 +183,8 @@ export const SelectionToolbar = forwardRef<
   const toolbarRef = useRef<HTMLDivElement | null>(null);
   const alignMenuRef = useRef<HTMLDivElement>(null);
   const verticalAlignMenuRef = useRef<HTMLDivElement>(null);
+  /** Ref for whichever align/vertical-align portaled dropdown is open (only one at a time). */
+  const alignDropdownRef = useRef<HTMLDivElement>(null);
   const colorPickerMenuRef = useRef<HTMLDivElement>(null);
   const cornerRadiusMenuRef = useRef<HTMLDivElement>(null);
   const elementActionsMenuRef = useRef<HTMLDivElement>(null);
@@ -218,9 +259,17 @@ export const SelectionToolbar = forwardRef<
   const fontSizeValues = selectedTextElements.map((el) => el.fontSize ?? 24);
   const singleFontSize =
     fontSizeValues.length > 0 && fontSizeValues.every((v) => v === fontSizeValues[0]);
-  const displayFontSize = firstText?.fontSize ?? 24;
+  const displayFontSize =
+    firstText && firstText.fill !== false && getEffectiveFontSize
+      ? getEffectiveFontSize(firstText.id) ?? firstText.fontSize ?? 24
+      : firstText?.fontSize ?? 24;
   const displayTextAlign = (firstText?.textAlign ?? "left") satisfies TextAlign;
   const displayVerticalAlign = (firstText?.textVerticalAlign ?? "top") satisfies TextVerticalAlign;
+  const displayTextFill = firstText?.fill !== false;
+  const textFillMixed =
+    hasText &&
+    selectedTextElements.some((el) => el.fill === true) &&
+    selectedTextElements.some((el) => el.fill === false);
   const displayBold =
     hasText && selectedTextElements.every((el) => hasFormat(el.content, "b"));
   const displayItalic =
@@ -587,6 +636,43 @@ export const SelectionToolbar = forwardRef<
     );
   };
 
+  const handleTextFillToggle = useCallback((): void => {
+    const next = textFillMixed ? true : !displayTextFill;
+    if (next) {
+      const textIds = selectedElementIds.filter((id) =>
+        elements.some((e) => e.id === id && e.kind === "text")
+      );
+      onFillModeEnabled?.(textIds);
+    }
+    setElements((prev) =>
+      prev.map((el) => {
+        if (el.kind !== "text" || !selectedElementIds.includes(el.id))
+          return el;
+        const updates: Partial<TextElement> = { fill: next };
+        if (!next) {
+          const effective = getEffectiveFontSize?.(el.id);
+          if (effective != null)
+            updates.fontSize = Math.max(1, Math.floor(effective));
+          const fitted = getFillFittedSize?.(el.id);
+          if (fitted != null) {
+            updates.width = Math.max(1, fitted.width);
+            updates.height = Math.max(1, fitted.height);
+          }
+        }
+        return { ...el, ...updates };
+      })
+    );
+  }, [
+    displayTextFill,
+    textFillMixed,
+    selectedElementIds,
+    elements,
+    setElements,
+    getEffectiveFontSize,
+    getFillFittedSize,
+    onFillModeEnabled,
+  ]);
+
   const handleDeleteSelected = (): void => {
     if (onDelete) {
       onDelete();
@@ -597,39 +683,16 @@ export const SelectionToolbar = forwardRef<
   };
 
   const handleSendToBack = (): void => {
-    const ids = new Set(selectedElementIds);
-    setElements((prev) => {
-      const selected: WhiteboardElement[] = [];
-      const unselected: WhiteboardElement[] = [];
-      for (const el of prev) {
-        if (ids.has(el.id)) {
-          selected.push(el);
-        } else {
-          unselected.push(el);
-        }
-      }
-      // Selected elements go to the beginning (back)
-      return [...selected, ...unselected];
-    });
+    setElements((prev) =>
+      reorderElementsBySelection(prev, selectedElementIds, true)
+    );
   };
 
   const handleSendToFront = (): void => {
-    const ids = new Set(selectedElementIds);
-    setElements((prev) => {
-      const selected: WhiteboardElement[] = [];
-      const unselected: WhiteboardElement[] = [];
-      for (const el of prev) {
-        if (ids.has(el.id)) {
-          selected.push(el);
-        } else {
-          unselected.push(el);
-        }
-      }
-      // Selected elements go to the end (front)
-      return [...unselected, ...selected];
-    });
+    setElements((prev) =>
+      reorderElementsBySelection(prev, selectedElementIds, false)
+    );
   };
-
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>): void => {
     const raw = e.target.value;
@@ -649,58 +712,16 @@ export const SelectionToolbar = forwardRef<
     if (!Number.isNaN(num)) applyFontSize(num);
   };
 
-  useEffect(() => {
-    if (!alignMenuOpen) return;
-    const close = (e: MouseEvent): void => {
-      const el = alignMenuRef.current;
-      if (el != null && !el.contains(e.target as Node)) menuActions.close();
-    };
-    document.addEventListener("mousedown", close, { capture: true });
-    return () => document.removeEventListener("mousedown", close, { capture: true });
-  }, [alignMenuOpen, menuActions]);
-
-  useEffect(() => {
-    if (!verticalAlignMenuOpen) return;
-    const close = (e: MouseEvent): void => {
-      const el = verticalAlignMenuRef.current;
-      if (el != null && !el.contains(e.target as Node))
-        menuActions.close();
-    };
-    document.addEventListener("mousedown", close, { capture: true });
-    return () => document.removeEventListener("mousedown", close, { capture: true });
-  }, [verticalAlignMenuOpen, menuActions]);
-
-  useEffect(() => {
-    if (!colorPickerOpen) return;
-    const close = (e: MouseEvent): void => {
-      const el = colorPickerMenuRef.current;
-      if (el != null && !el.contains(e.target as Node)) closeColorPicker();
-    };
-    document.addEventListener("mousedown", close, { capture: true });
-    return () => document.removeEventListener("mousedown", close, { capture: true });
-  }, [colorPickerOpen, closeColorPicker, menuActions]);
-
-  useEffect(() => {
-    if (!cornerRadiusMenuOpen) return;
-    const close = (e: MouseEvent): void => {
-      const el = cornerRadiusMenuRef.current;
-      if (el != null && !el.contains(e.target as Node))
-        menuActions.close();
-    };
-    document.addEventListener("mousedown", close, { capture: true });
-    return () => document.removeEventListener("mousedown", close, { capture: true });
-  }, [cornerRadiusMenuOpen, menuActions]);
-
-  useEffect(() => {
-    if (!elementActionsMenuOpen) return;
-    const close = (e: MouseEvent): void => {
-      const el = elementActionsMenuRef.current;
-      if (el != null && !el.contains(e.target as Node))
-        menuActions.close();
-    };
-    document.addEventListener("mousedown", close, { capture: true });
-    return () => document.removeEventListener("mousedown", close, { capture: true });
-  }, [elementActionsMenuOpen, menuActions]);
+  useCloseOnOutsideClick(
+    alignMenuOpen || verticalAlignMenuOpen,
+    menuActions.close,
+    alignMenuRef,
+    verticalAlignMenuRef,
+    alignDropdownRef
+  );
+  useCloseOnOutsideClick(colorPickerOpen, closeColorPicker, colorPickerMenuRef);
+  useCloseOnOutsideClick(cornerRadiusMenuOpen, menuActions.close, cornerRadiusMenuRef);
+  useCloseOnOutsideClick(elementActionsMenuOpen, menuActions.close, elementActionsMenuRef);
 
   const presetValue =
     singleFontSize && FONT_SIZE_PRESETS.includes(displayFontSize)
@@ -710,13 +731,25 @@ export const SelectionToolbar = forwardRef<
   if (selectedElementIds.length === 0) return null;
   if (position == null) return null;
 
+  const displayPosition = getToolbarDisplayPosition(
+    position,
+    worldAnchorRef.current,
+    containerRef.current,
+    viewWidth,
+    viewHeight,
+    panX,
+    panY,
+    zoom,
+    toolbarRef.current?.getBoundingClientRect().height ?? 48
+  );
+
   return (
     <div
       ref={toolbarRef}
-      className="selection-toolbar fixed z-50 flex items-stretch gap-1.5 rounded-md border px-2 py-1.5 shadow-md"
+      className="selection-toolbar fixed z-[5] flex w-max items-stretch gap-1.5 rounded-md border px-2 py-1.5 shadow-md"
       style={{
-        left: position.left,
-        top: position.top,
+        left: displayPosition.left,
+        top: displayPosition.top,
         transform: "translate(-50%, 0)",
       }}
       role="toolbar"
@@ -732,26 +765,60 @@ export const SelectionToolbar = forwardRef<
             onItalic={applyItalic}
             onUnderline={applyUnderline}
           />
-          <FontSizeControl
-            displayFontSize={displayFontSize}
-            singleFontSize={singleFontSize}
-            presetValue={presetValue}
-            onFontSizeChange={applyFontSize}
-            onInputChange={handleInputChange}
-            onInputBlur={handleInputBlur}
-          />
-          <AlignMenus
-            displayTextAlign={displayTextAlign}
-            displayVerticalAlign={displayVerticalAlign}
-            onTextAlign={applyTextAlign}
-            onVerticalAlign={applyVerticalAlign}
-            alignMenuOpen={alignMenuOpen}
-            verticalAlignMenuOpen={verticalAlignMenuOpen}
-            setAlignMenuOpen={setAlignMenuOpen}
-            setVerticalAlignMenuOpen={setVerticalAlignMenuOpen}
-            alignMenuRef={alignMenuRef}
-            verticalAlignMenuRef={verticalAlignMenuRef}
-          />
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className={cn(
+              "h-7 w-7 rounded [&_svg]:size-3.5",
+              displayTextFill && "bg-accent"
+            )}
+            onClick={handleTextFillToggle}
+            aria-label={
+              textFillMixed
+                ? "Fill text to box (on)"
+                : displayTextFill
+                  ? "Don't fill text to box"
+                  : "Fill text to box"
+            }
+            aria-pressed={displayTextFill}
+          >
+            <Maximize2 aria-hidden />
+          </Button>
+          <div
+            className={cn(
+              "grid shrink-0 transition-[grid-template-columns, margin] duration-200 ease-out",
+              displayTextFill ? "grid-cols-[0fr] -mr-1.5" : "grid-cols-[1fr]"
+            )}
+          >
+            <div className="min-w-0 overflow-hidden">
+              <div className="flex items-stretch gap-1.5">
+                <FontSizeControl
+                  displayFontSize={displayFontSize}
+                  singleFontSize={singleFontSize}
+                  presetValue={presetValue}
+                  onFontSizeChange={applyFontSize}
+                  onInputChange={handleInputChange}
+                  onInputBlur={handleInputBlur}
+                  disabled={displayTextFill}
+                />
+                <AlignMenus
+                displayTextAlign={displayTextAlign}
+                displayVerticalAlign={displayVerticalAlign}
+                onTextAlign={applyTextAlign}
+                onVerticalAlign={applyVerticalAlign}
+                alignMenuOpen={alignMenuOpen}
+                verticalAlignMenuOpen={verticalAlignMenuOpen}
+                setAlignMenuOpen={setAlignMenuOpen}
+                setVerticalAlignMenuOpen={setVerticalAlignMenuOpen}
+                alignMenuRef={alignMenuRef}
+                verticalAlignMenuRef={verticalAlignMenuRef}
+                alignDropdownRef={alignDropdownRef}
+                disabled={displayTextFill}
+              />
+              </div>
+            </div>
+          </div>
         </>
       )}
       {hasShape && (
