@@ -126,14 +126,10 @@ function stripFormatPreservingColor(content: string, tag: FormatTag): string {
     : inner;
 }
 
-function unwrapFormatPreservingColor(content: string, tag: FormatTag): string {
-  return stripFormatPreservingColor(content, tag);
-}
-
 /** Toggle format on whole content: wrap if missing, unwrap if present. */
 export function applyFormatToContent(content: string, tag: FormatTag): string {
   const has = hasFormat(content, tag);
-  return has ? unwrapFormatPreservingColor(content, tag) : wrapWithFormatPreservingColor(content, tag);
+  return has ? stripFormatPreservingColor(content, tag) : wrapWithFormatPreservingColor(content, tag);
 }
 
 /** Add format (wrap) if not already present; preserves color span. */
@@ -143,5 +139,5 @@ export function addFormatToContent(content: string, tag: FormatTag): string {
 
 /** Remove format (unwrap) if present; preserves color span. */
 export function removeFormatFromContent(content: string, tag: FormatTag): string {
-  return unwrapFormatPreservingColor(content, tag);
+  return stripFormatPreservingColor(content, tag);
 }
