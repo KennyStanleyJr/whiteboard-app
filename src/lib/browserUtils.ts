@@ -12,8 +12,20 @@ export function needsForeignObjectTransformWorkaround(): boolean {
 /**
  * Use HTML overlay for text instead of SVG foreignObject on Safari/iOS.
  * foreignObject breaks after pan/zoom on iOS; overlay avoids it entirely.
+ *
+ * Disabled: overlay had text display/editing issues. Using simplified
+ * foreignObject rendering instead (no RenderLayer-triggering CSS).
  */
 export function shouldUseSafariTextOverlay(): boolean {
+  return false;
+}
+
+/**
+ * Safari/WebKit: use simplified foreignObject rendering to avoid bug 23113.
+ * Avoids position, transform, overflow on inner content (which create RenderLayers
+ * and break parent transform inheritance). Simpler structure = text works with pan/zoom.
+ */
+export function shouldUseSimplifiedForeignObject(): boolean {
   if (typeof navigator === "undefined") return false;
   const ua = navigator.userAgent;
   const isIOS =

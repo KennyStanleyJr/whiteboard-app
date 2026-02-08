@@ -8,7 +8,10 @@ import {
   TEXT_EDIT_HEIGHT,
   TEXT_EDIT_WIDTH,
 } from "@/lib/elementBounds";
-import { needsForeignObjectTransformWorkaround } from "@/lib/browserUtils";
+import {
+  needsForeignObjectTransformWorkaround,
+  shouldUseSimplifiedForeignObject,
+} from "@/lib/browserUtils";
 import { safeSvgNumber } from "@/lib/safeSvgNumber";
 import { hasFormat } from "@/lib/textFormat";
 import { isHtmlContent, sanitizeHtml } from "@/lib/sanitizeHtml";
@@ -90,6 +93,7 @@ function WhiteboardTextElementInner({
   zoom = 1,
 }: WhiteboardTextElementProps): JSX.Element {
   const needsWorkaround = needsForeignObjectTransformWorkaround();
+  const useSimplified = shouldUseSimplifiedForeignObject();
   const foRef = useRef<SVGForeignObjectElement>(null);
   const safariWrapperRef = useRef<HTMLDivElement>(null);
   const hasExplicitSize =
@@ -416,7 +420,71 @@ function WhiteboardTextElementInner({
       onFinishEdit();
   };
 
-  const content = (
+  const simplifiedDisplayFontSize =
+    fillScale != null
+      ? FILL_REFERENCE_FONT_SIZE * fillScale * fillFormatScale
+      : (el.fontSize ?? 24);
+
+  const content = useSimplified ? (
+    <>
+      {needMeasure &&
+        measureContainerReady &&
+        measurePortalContainerRef.current != null &&
+        createPortal(
+          <div
+            ref={fillMeasureRef}
+            className="whiteboard-text-display whiteboard-text-display--fit"
+            style={{
+              ...baseStyle,
+              fontSize: `${FILL_REFERENCE_FONT_SIZE}px`,
+              width: "max-content",
+              maxWidth: "none",
+              whiteSpace: textWhiteSpace,
+            }}
+            {...contentProps}
+          />,
+          measurePortalContainerRef.current
+        )}
+      {isEditing ? (
+        <div
+          ref={(r) => {
+            editingRefSetter(r);
+            setTextDivRef(el.id, r);
+          }}
+          className="whiteboard-text-display"
+          contentEditable
+          suppressContentEditableWarning={true}
+          style={{
+            ...baseStyle,
+            fontSize: `${simplifiedDisplayFontSize}px`,
+            whiteSpace: textWhiteSpace,
+            padding: 2,
+            width: "100%",
+            height: "100%",
+            minHeight: "1em",
+          }}
+          onBlur={handleEditBlur}
+          onKeyDown={(e) => onEditKeyDown(e, el.id)}
+          aria-label="Edit text"
+        />
+      ) : (
+        <div
+          ref={(r) => setTextDivRef(el.id, r)}
+          className="whiteboard-text-display"
+          style={{
+            ...baseStyle,
+            fontSize: `${simplifiedDisplayFontSize}px`,
+            whiteSpace: textWhiteSpace,
+            width: "100%",
+            height: "100%",
+            overflowWrap: "break-word",
+            minHeight: "1em",
+          }}
+          {...contentProps}
+        />
+      )}
+    </>
+  ) : (
     <span key={isEditing ? "edit" : "display"} style={{ display: "contents" }}>
       {isEditing ? canMeasureFill && fillEnabled ? (
         <div ref={fillEditContainerRef} style={SIZED_WRAPPER_STYLE}>
