@@ -99,6 +99,15 @@ export function SafariTextOverlay({
     [setTextDivRef]
   );
 
+  const layoutAffectingKey = textElements
+    .map(
+      (e) =>
+        `${e.id}|${e.x}|${e.y}|${e.content}|${e.fontSize ?? 24}|${e.width ?? ""}|${e.height ?? ""}`
+    )
+    .sort()
+    .join(";;");
+  const lastReportedRef = useRef<string>("");
+
   useLayoutEffect(() => {
     const svgEl = svgRef.current;
     if (svgEl == null || width <= 0 || height <= 0 || !Number.isFinite(zoom) || zoom <= 0) return;
@@ -129,15 +138,20 @@ export function SafariTextOverlay({
         continue;
       }
     }
-    onMeasuredBoundsChange(next);
+    const sortedIds = Object.keys(next).sort();
+    const key = sortedIds.map((id) => `${id}:${JSON.stringify(next[id])}`).join("|");
+    if (key !== lastReportedRef.current) {
+      lastReportedRef.current = key;
+      onMeasuredBoundsChange(next);
+    }
   }, [
-    textElements,
-    svgRef,
+    layoutAffectingKey,
     panX,
     panY,
     zoom,
     width,
     height,
+    svgRef,
     onMeasuredBoundsChange,
   ]);
 
