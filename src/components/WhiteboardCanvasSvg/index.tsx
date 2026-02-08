@@ -23,7 +23,9 @@ import {
   NOTEBOOK_PATTERN_ID,
   PATTERN_ID,
 } from "../grid";
+import { shouldUseSafariTextOverlay } from "../../lib/browserUtils";
 import { ElementSelectionOverlay } from "./ElementSelectionOverlay";
+import { SafariTextOverlay } from "./SafariTextOverlay";
 import { WhiteboardImageElement } from "./WhiteboardImageElement";
 import { WhiteboardShapeElement } from "./WhiteboardShapeElement";
 import { WhiteboardTextElement } from "./WhiteboardTextElement";
@@ -293,7 +295,12 @@ export const WhiteboardCanvasSvg = forwardRef<
     editingRef.current = el;
   }, []);
 
-  return (
+  const useSafariOverlay = shouldUseSafariTextOverlay();
+  const textElements = elements.filter((e): e is import("../../types/whiteboard").TextElement =>
+    e.kind === "text"
+  );
+
+  const svgContent = (
     <svg
       ref={svgRef}
       className="whiteboard-canvas"
@@ -337,7 +344,7 @@ export const WhiteboardCanvasSvg = forwardRef<
           />
         )}
         {elements.map((el) => {
-          if (el.kind === "text") {
+          if (el.kind === "text" && !useSafariOverlay) {
             return (
               <WhiteboardTextElement
                 key={el.id}
@@ -401,4 +408,41 @@ export const WhiteboardCanvasSvg = forwardRef<
       )}
     </svg>
   );
+
+  if (useSafariOverlay) {
+    return (
+      <div
+        style={{
+          position: "relative",
+          flex: 1,
+          minHeight: 0,
+          display: "flex",
+          flexDirection: "column",
+        }}
+      >
+        {svgContent}
+        <SafariTextOverlay
+          svgRef={svgRef}
+          textElements={textElements}
+          editingElementId={editingElementId}
+          measuredBounds={measuredBounds}
+          panX={panX}
+          panY={panY}
+          zoom={zoom}
+          width={width}
+          height={height}
+          onDoubleClick={onElementDoubleClick}
+          onUpdateContent={onUpdateElementContent}
+          onFinishEdit={onFinishEditElement}
+          onEditKeyDown={handleEditKeyDown}
+          onMeasuredBoundsChange={onMeasuredBoundsChange}
+          setTextDivRef={setTextDivRef}
+          editingRefSetter={setEditingRef}
+          toolbarContainerRef={toolbarContainerRef}
+        />
+      </div>
+    );
+  }
+
+  return svgContent;
 });

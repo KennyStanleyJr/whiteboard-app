@@ -6,6 +6,14 @@
  * See: https://bugs.webkit.org/show_bug.cgi?id=23113
  */
 export function needsForeignObjectTransformWorkaround(): boolean {
+  return false;
+}
+
+/**
+ * Use HTML overlay for text instead of SVG foreignObject on Safari/iOS.
+ * foreignObject breaks after pan/zoom on iOS; overlay avoids it entirely.
+ */
+export function shouldUseSafariTextOverlay(): boolean {
   if (typeof navigator === "undefined") return false;
   const ua = navigator.userAgent;
   const isIOS =
