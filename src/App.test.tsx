@@ -106,7 +106,9 @@ describe("App", () => {
     });
 
     const managementMain = screen.getByRole("main", { hidden: true });
-    expect(managementMain).not.toHaveClass("visible");
+    await waitFor(() => {
+      expect(managementMain).not.toHaveClass("visible");
+    });
   });
 
   it("shows delete confirmation dialog when clicking delete", async () => {

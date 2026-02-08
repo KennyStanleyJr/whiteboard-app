@@ -38,7 +38,7 @@ This project follows principles from **NASA's Power of 10** (JPL) and **SWE-061*
 
 ## Requirements
 
-- **Node.js** `>=22` (see `package.json` engines). Use [nvm](https://github.com/nvm-sh/nvm) with the included `.nvmrc`: `nvm use`.
+- **Node.js** `>=24` (see `package.json` engines). Use [nvm](https://github.com/nvm-sh/nvm) with the included `.nvmrc`: `nvm use`.
 
 ## Setup
 
