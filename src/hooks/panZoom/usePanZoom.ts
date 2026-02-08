@@ -38,6 +38,8 @@ export interface UsePanZoomReturn extends PanZoomState {
   containerRef: React.RefObject<HTMLElement | null>;
   /** True when the last context menu should be suppressed (e.g. after right-drag pan). Caller clears after reading. */
   contextMenuSuppressedRef: React.MutableRefObject<boolean>;
+  /** True while two-finger touch pan/zoom is active. Use to suppress selection and marquee. */
+  touchPanningRef: React.MutableRefObject<boolean>;
 }
 
 function getInitialPanZoom(boardId?: string): PanZoomState {
@@ -95,6 +97,7 @@ export function usePanZoom(options: UsePanZoomOptions = {}): UsePanZoomReturn {
   const stateRef = useRef(panZoom);
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const interactingRef = useRef(false);
+  const touchPanningRef = useRef(false);
   const lastBoardIdRef = useRef<string>(currentBoardId);
   const persistBoardIdRef = useRef<string>(currentBoardId);
   stateRef.current = panZoom;
@@ -215,7 +218,7 @@ export function usePanZoom(options: UsePanZoomOptions = {}): UsePanZoomReturn {
     setZoom,
     setPanX,
     setPanY,
-    { minZoom, maxZoom, onGestureEnd: persistPanZoom, interactingRef }
+    { minZoom, maxZoom, onGestureEnd: persistPanZoom, interactingRef, touchPanningRef }
   );
   const pointer = useRightButtonPanHandlers(setPanX, setPanY, {
     onPanEnd: persistPanZoom,
@@ -240,5 +243,6 @@ export function usePanZoom(options: UsePanZoomOptions = {}): UsePanZoomReturn {
     onPointerLeave: pointer.onPointerLeave,
     containerRef,
     contextMenuSuppressedRef,
+    touchPanningRef,
   };
 }

@@ -274,7 +274,8 @@ export function WhiteboardCanvas({ boardId }: WhiteboardCanvasProps = {}): JSX.E
     panZoom.onPointerDown,
     panZoom.onPointerMove,
     panZoom.onPointerUp,
-    panZoom.onPointerLeave
+    panZoom.onPointerLeave,
+    panZoom.touchPanningRef
   );
 
   const elementSelection = useElementSelection(
@@ -302,7 +303,8 @@ export function WhiteboardCanvas({ boardId }: WhiteboardCanvasProps = {}): JSX.E
     },
     editingElementId,
     persistNow,
-    toolbarContainerRef
+    toolbarContainerRef,
+    panZoom.touchPanningRef
   );
 
   const DEFAULT_SHAPE_WIDTH = 180;

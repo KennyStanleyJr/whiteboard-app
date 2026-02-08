@@ -1,4 +1,4 @@
-import { useCallback, useReducer, useRef, RefObject } from "react";
+import { useCallback, useReducer, useRef, RefObject, MutableRefObject } from "react";
 import { clientToViewBox } from "../canvas/canvasCoords";
 
 export interface Point {
@@ -70,7 +70,8 @@ export function useSelectionBox(
   onPointerDown: (e: React.PointerEvent) => void,
   onPointerMove: (e: React.PointerEvent) => void,
   onPointerUp: (e: React.PointerEvent) => void,
-  onPointerLeave: (e: React.PointerEvent) => void
+  onPointerLeave: (e: React.PointerEvent) => void,
+  touchPanningRef?: MutableRefObject<boolean>
 ): {
   selectionRect: SelectionRect | null;
   handlePointerDown: (e: React.PointerEvent) => void;
@@ -91,7 +92,8 @@ export function useSelectionBox(
         const isMultiTouch = activeTouchPointersRef.current.size >= 2;
         if (isMultiTouch) dispatch({ type: "RESET" });
       }
-      if (e.button === 0) {
+      const isTouchPanning = touchPanningRef?.current === true;
+      if (e.button === 0 && !isTouchPanning) {
         const isMultiTouch = activeTouchPointersRef.current.size >= 2;
         if (!isMultiTouch) {
           const p = clientToViewBox(
@@ -109,15 +111,16 @@ export function useSelectionBox(
       }
       onPointerDown(e);
     },
-    [containerRef, viewBoxWidth, viewBoxHeight, onPointerDown]
+    [containerRef, viewBoxWidth, viewBoxHeight, onPointerDown, touchPanningRef]
   );
 
   const handlePointerMove = useCallback(
     (e: React.PointerEvent) => {
       const isMultiTouch = activeTouchPointersRef.current.size >= 2;
-      if (isMultiTouch && state.start !== null) {
+      const isTouchPanning = touchPanningRef?.current === true;
+      if ((isMultiTouch || isTouchPanning) && state.start !== null) {
         dispatch({ type: "RESET" });
-      } else if (state.start !== null && (e.buttons & 1) !== 0) {
+      } else if (state.start !== null && (e.buttons & 1) !== 0 && !isTouchPanning) {
         const p = clientToViewBox(
           containerRef.current,
           e.clientX,
@@ -129,7 +132,7 @@ export function useSelectionBox(
       }
       onPointerMove(e);
     },
-    [containerRef, viewBoxWidth, viewBoxHeight, onPointerMove, state.start]
+    [containerRef, viewBoxWidth, viewBoxHeight, onPointerMove, state.start, touchPanningRef]
   );
 
   const handlePointerUp = useCallback(

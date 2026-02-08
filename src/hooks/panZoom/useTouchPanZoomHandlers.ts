@@ -14,6 +14,8 @@ export interface TouchPanZoomOptions {
   maxZoom: number;
   onGestureEnd?: () => void;
   interactingRef?: React.MutableRefObject<boolean>;
+  /** Set true when two-finger pan/zoom active; used to suppress selection. */
+  touchPanningRef?: React.MutableRefObject<boolean>;
 }
 
 export function useTouchPanZoomHandlers(
@@ -28,7 +30,7 @@ export function useTouchPanZoomHandlers(
   handleTouchMove: (e: TouchEvent) => void;
   handleTouchEnd: (e: TouchEvent) => void;
 } {
-  const { minZoom, maxZoom, onGestureEnd, interactingRef } = options;
+  const { minZoom, maxZoom, onGestureEnd, interactingRef, touchPanningRef } = options;
   const touchGestureRef = useRef<TouchGestureState | null>(null);
 
   const handleTouchStart = useCallback(
@@ -38,6 +40,7 @@ export function useTouchPanZoomHandlers(
         return;
       }
       if (interactingRef) interactingRef.current = true;
+      if (touchPanningRef) touchPanningRef.current = true;
       const { cx, cy, dist } = touchCenterAndDistance(e.touches);
       const state = stateRef.current;
       if (!state) return;
@@ -50,7 +53,7 @@ export function useTouchPanZoomHandlers(
         state.zoom
       );
     },
-    [stateRef, interactingRef]
+    [stateRef, interactingRef, touchPanningRef]
   );
 
   const handleTouchMove = useCallback(
@@ -75,6 +78,12 @@ export function useTouchPanZoomHandlers(
       const g = touchGestureRef.current;
       if (g === null) return;
       if (e.touches.length >= 2) return;
+
+      // Fewer than 2 touches: two-finger pan is over. Reset touchPanningRef so
+      // marquee/selection work again even when one finger remains down.
+      // interactingRef stays true until all touches end (controls persist/save).
+      if (touchPanningRef) touchPanningRef.current = false;
+
       if (e.touches.length === 0) {
         if (interactingRef) interactingRef.current = false;
         if (isTwoFingerTap(g, Date.now() - g.startTime)) {
@@ -91,7 +100,7 @@ export function useTouchPanZoomHandlers(
         onGestureEnd?.();
       }
     },
-    [containerRef, interactingRef, onGestureEnd]
+    [containerRef, interactingRef, touchPanningRef, onGestureEnd]
   );
 
   return { handleTouchStart, handleTouchMove, handleTouchEnd };

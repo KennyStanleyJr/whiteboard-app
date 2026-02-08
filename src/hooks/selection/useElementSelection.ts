@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useReducer, useRef, RefObject } from "react";
+import { useCallback, useEffect, useReducer, useRef, RefObject, MutableRefObject } from "react";
 import { clientToWorld } from "../canvas/canvasCoords";
 import {
   elementAtPoint,
@@ -101,7 +101,8 @@ export function useElementSelection(
   },
   editingElementId: string | null,
   onDragEnd?: () => void,
-  toolbarContainerRef?: RefObject<HTMLElement | null>
+  toolbarContainerRef?: RefObject<HTMLElement | null>,
+  touchPanningRef?: MutableRefObject<boolean>
 ): {
   selectedElementIds: string[];
   setSelectedElementIds: React.Dispatch<React.SetStateAction<string[]>>;
@@ -162,7 +163,8 @@ export function useElementSelection(
         activeTouchPointersRef.current.add(e.pointerId);
       }
       const isMultiTouch = activeTouchPointersRef.current.size >= 2;
-      if (isMultiTouch) {
+      const isTouchPanning = touchPanningRef?.current === true;
+      if (isMultiTouch || isTouchPanning) {
         if (dragStateRef.current !== null) {
           dragStateRef.current = null;
           dispatch({ type: "DRAG_END" });
@@ -262,13 +264,15 @@ export function useElementSelection(
       selectionHandlers,
       panZoomHandlers,
       toolbarContainerRef,
+      touchPanningRef,
     ]
   );
 
   const handlePointerMove = useCallback(
     (e: React.PointerEvent) => {
       const isMultiTouch = activeTouchPointersRef.current.size >= 2;
-      if (isMultiTouch) {
+      const isTouchPanning = touchPanningRef?.current === true;
+      if (isMultiTouch || isTouchPanning) {
         if (dragStateRef.current !== null) {
           dragStateRef.current = null;
           dispatch({ type: "DRAG_END" });
@@ -323,6 +327,7 @@ export function useElementSelection(
       applyDragMove,
       selectionHandlers,
       panZoomHandlers,
+      touchPanningRef,
     ]
   );
 
