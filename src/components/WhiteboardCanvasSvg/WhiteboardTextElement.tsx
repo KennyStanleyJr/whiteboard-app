@@ -90,6 +90,8 @@ function WhiteboardTextElementInner({
   zoom = 1,
 }: WhiteboardTextElementProps): JSX.Element {
   const needsWorkaround = needsForeignObjectTransformWorkaround();
+  const foRef = useRef<SVGForeignObjectElement>(null);
+  const safariWrapperRef = useRef<HTMLDivElement>(null);
   const hasExplicitSize =
     el.width !== undefined &&
     el.height !== undefined &&
@@ -111,6 +113,27 @@ function WhiteboardTextElementInner({
       : isEditing
         ? TEXT_EDIT_HEIGHT
         : DEFAULT_UNMEASURED_TEXT_HEIGHT;
+
+  useLayoutEffect(() => {
+    if (!needsWorkaround) return;
+    const fo = foRef.current;
+    const wrapper = safariWrapperRef.current;
+    if (fo == null || wrapper == null) return;
+    const ctm = fo.getScreenCTM();
+    if (ctm == null) return;
+    wrapper.style.transform = `matrix(${ctm.a}, ${ctm.b}, ${ctm.c}, ${ctm.d}, ${ctm.e}, ${ctm.f})`;
+    wrapper.style.transformOrigin = "0 0";
+  }, [
+    needsWorkaround,
+    panX,
+    panY,
+    zoom,
+    el.x,
+    el.y,
+    el.id,
+    foWidth,
+    foHeight,
+  ]);
 
   const [naturalSize, setNaturalSize] = useState<{
     width: number;
@@ -543,11 +566,10 @@ function WhiteboardTextElementInner({
 
   const wrappedContent = needsWorkaround ? (
     <div
+      ref={safariWrapperRef}
       style={{
         width: "100%",
         height: "100%",
-        transform: `translate(${panX + el.x * zoom}px, ${panY + el.y * zoom}px) scale(${zoom})`,
-        transformOrigin: "0 0",
       }}
     >
       {content}
@@ -558,6 +580,7 @@ function WhiteboardTextElementInner({
 
   return (
     <foreignObject
+      ref={foRef}
       x={safeSvgNumber(el.x, 0)}
       y={safeSvgNumber(el.y, 0)}
       width={safeSvgNumber(foWidth, MIN_FOREIGN_OBJECT_SIZE)}
