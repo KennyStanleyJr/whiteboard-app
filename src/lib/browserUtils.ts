@@ -4,18 +4,12 @@
  * HTML inside SVG foreignObject doesn't inherit parent SVG transforms when
  * the content uses RenderLayers (position, transform, overflow).
  * See: https://bugs.webkit.org/show_bug.cgi?id=23113
+ *
+ * Disabled: the compensating CSS transform uses viewBox units as px, which
+ * maps incorrectly on mobile viewports and can push text off-screen or make
+ * it invisible. Until we use getScreenCTM() for accurate pixel placement,
+ * keep this off so text remains visible (panning will misalign text on Safari).
  */
 export function needsForeignObjectTransformWorkaround(): boolean {
-  if (typeof navigator === "undefined") return false;
-  const ua = navigator.userAgent;
-  const isIOS =
-    /iPad|iPhone|iPod/.test(ua) ||
-    (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
-  const isSafari =
-    ua.includes("Safari") &&
-    !ua.includes("Chrome") &&
-    !ua.includes("Chromium") &&
-    !ua.includes("CriOS") &&
-    !ua.includes("FxiOS");
-  return isIOS || isSafari;
+  return false;
 }
