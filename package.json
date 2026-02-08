@@ -54,7 +54,7 @@
     "vitest": "^4.0.18"
   },
   "engines": {
-    "node": "^24.0.0"
+    "node": ">=20"
   },
   "overrides": {
     "sourcemap-codec": "npm:@jridgewell/sourcemap-codec@^1.4.15",
