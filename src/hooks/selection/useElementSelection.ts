@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, RefObject } from "react";
+import { useCallback, useEffect, useReducer, useRef, RefObject } from "react";
 import { clientToWorld } from "../canvas/canvasCoords";
 import {
   elementAtPoint,
@@ -44,6 +44,40 @@ function viewBoxRectToWorld(
   };
 }
 
+/**
+ * Reducer: selection (selectedIds) and drag flag (isDragging).
+ * Drag details live in a ref; reducer only tracks which ids are selected and whether a drag is in progress.
+ */
+interface SelectionState {
+  selectedIds: string[];
+  isDragging: boolean;
+}
+
+type SelectionAction =
+  | { type: "SET_IDS"; payload: React.SetStateAction<string[]> }
+  | { type: "DRAG_START" }
+  | { type: "DRAG_END" };
+
+function selectionReducer(
+  state: SelectionState,
+  action: SelectionAction
+): SelectionState {
+  switch (action.type) {
+    case "SET_IDS": {
+      const payload = action.payload;
+      const next =
+        typeof payload === "function" ? payload(state.selectedIds) : payload;
+      return { ...state, selectedIds: next };
+    }
+    case "DRAG_START":
+      return { ...state, isDragging: true };
+    case "DRAG_END":
+      return { ...state, isDragging: false };
+    default:
+      return state;
+  }
+}
+
 export function useElementSelection(
   containerRef: RefObject<HTMLElement | null>,
   viewBoxWidth: number,
@@ -74,8 +108,11 @@ export function useElementSelection(
   isDragging: boolean;
   handlers: ElementSelectionHandlers;
 } {
-  const [selectedElementIds, setSelectedElementIds] = useState<string[]>([]);
-  const [isDragging, setIsDragging] = useState(false);
+  const [state, dispatch] = useReducer(selectionReducer, {
+    selectedIds: [],
+    isDragging: false,
+  });
+  const { selectedIds: selectedElementIds, isDragging } = state;
   const dragStateRef = useRef<DragState | null>(null);
   const marqueeModifiersRef = useRef<{ shiftKey: boolean; ctrlKey: boolean }>({
     shiftKey: false,
@@ -85,8 +122,18 @@ export function useElementSelection(
 
   useEffect(() => {
     const ids = new Set(elements.map((el) => el.id));
-    setSelectedElementIds((prev) => prev.filter((id) => ids.has(id)));
+    dispatch({
+      type: "SET_IDS",
+      payload: (prev) => prev.filter((id) => ids.has(id)),
+    });
   }, [elements]);
+
+  const setSelectedElementIds = useCallback(
+    (action: React.SetStateAction<string[]>) => {
+      dispatch({ type: "SET_IDS", payload: action });
+    },
+    []
+  );
 
   const applyDragMove = useCallback(
     (dx: number, dy: number) => {
@@ -118,7 +165,7 @@ export function useElementSelection(
       if (isMultiTouch) {
         if (dragStateRef.current !== null) {
           dragStateRef.current = null;
-          setIsDragging(false);
+          dispatch({ type: "DRAG_END" });
         }
         selectionHandlers.handlePointerDown(e);
         return;
@@ -127,7 +174,6 @@ export function useElementSelection(
         selectionHandlers.handlePointerDown(e);
         return;
       }
-      // Skip handling if event originated from toolbar
       if (toolbarContainerRef?.current?.contains(e.target as Node)) {
         return;
       }
@@ -142,7 +188,7 @@ export function useElementSelection(
         zoom
       );
       if (world === null) {
-        setSelectedElementIds([]);
+        dispatch({ type: "SET_IDS", payload: [] });
         selectionHandlers.handlePointerDown(e);
         return;
       }
@@ -170,7 +216,7 @@ export function useElementSelection(
             idsToMove = [hit.id];
           }
         }
-        setSelectedElementIds(idsToSelect);
+        dispatch({ type: "SET_IDS", payload: idsToSelect });
         if (hit.id === editingElementId) {
           return;
         }
@@ -187,12 +233,12 @@ export function useElementSelection(
           hasMoved: false,
           historyPushed: false,
         };
-        setIsDragging(true);
+        dispatch({ type: "DRAG_START" });
         (e.target as Element).setPointerCapture?.(e.pointerId);
         panZoomHandlers.onPointerDown(e);
       } else {
         if (!e.shiftKey && !(e.ctrlKey || e.metaKey)) {
-          setSelectedElementIds([]);
+          dispatch({ type: "SET_IDS", payload: [] });
         }
         marqueeModifiersRef.current = {
           shiftKey: e.shiftKey,
@@ -225,7 +271,7 @@ export function useElementSelection(
       if (isMultiTouch) {
         if (dragStateRef.current !== null) {
           dragStateRef.current = null;
-          setIsDragging(false);
+          dispatch({ type: "DRAG_END" });
         }
         selectionHandlers.handlePointerMove(e);
         return;
@@ -258,7 +304,6 @@ export function useElementSelection(
         panZoomHandlers.onPointerMove(e);
         return;
       }
-      // Update modifier keys when selection box is active
       if (drag === null && (e.buttons & 1) !== 0) {
         marqueeModifiersRef.current = {
           shiftKey: e.shiftKey,
@@ -294,7 +339,7 @@ export function useElementSelection(
           }
           const hadMoved = drag.hasMoved;
           dragStateRef.current = null;
-          setIsDragging(false);
+          dispatch({ type: "DRAG_END" });
           (e.target as Element).releasePointerCapture?.(e.pointerId);
           if (hadMoved) onDragEnd?.();
         } else if (selectionRect !== null) {
@@ -302,19 +347,16 @@ export function useElementSelection(
           const ids = elementsInRect(worldRect, elements, measuredBounds);
           const modifiers = marqueeModifiersRef.current;
           if (modifiers.ctrlKey) {
-            // Ctrl/Cmd: subtract from selection (remove elements in box)
             setSelectedElementIds((prev) => {
               const idsSet = new Set(ids);
               return prev.filter((id) => !idsSet.has(id));
             });
           } else if (modifiers.shiftKey) {
-            // Shift: add to selection (union)
             setSelectedElementIds((prev) => {
               const combined = new Set([...prev, ...ids]);
               return Array.from(combined);
             });
           } else {
-            // No modifier: replace selection
             setSelectedElementIds(ids);
           }
           marqueeModifiersRef.current = { shiftKey: false, ctrlKey: false };
@@ -335,6 +377,7 @@ export function useElementSelection(
       onDragEnd,
       panZoomHandlers,
       selectionHandlers,
+      setSelectedElementIds,
     ]
   );
 
@@ -344,7 +387,7 @@ export function useElementSelection(
         activeTouchPointersRef.current.delete(e.pointerId);
       }
       if ((e.buttons & 1) === 0) {
-        if (dragStateRef.current !== null) setIsDragging(false);
+        if (dragStateRef.current !== null) dispatch({ type: "DRAG_END" });
         dragStateRef.current = null;
       }
       selectionHandlers.handlePointerLeave(e);

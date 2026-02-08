@@ -1,4 +1,4 @@
-import { useCallback, useState, useRef, RefObject } from "react";
+import { useCallback, useReducer, useRef, RefObject } from "react";
 import { clientToViewBox } from "../canvas/canvasCoords";
 
 export interface Point {
@@ -29,6 +29,40 @@ function toSelectionRect(
   };
 }
 
+/**
+ * State machine: marquee selection. Idle (start/end null) or drawing (start set, end updates on move).
+ * RESET clears on pointer up/leave or when multi-touch is detected.
+ */
+interface SelectionBoxState {
+  start: Point | null;
+  end: Point | null;
+}
+
+type SelectionBoxAction =
+  | { type: "START"; payload: Point }
+  | { type: "MOVE_END"; payload: Point }
+  | { type: "RESET" };
+
+const INITIAL_SELECTION: SelectionBoxState = { start: null, end: null };
+
+function selectionBoxReducer(
+  state: SelectionBoxState,
+  action: SelectionBoxAction
+): SelectionBoxState {
+  switch (action.type) {
+    case "START":
+      return { start: action.payload, end: null };
+    case "MOVE_END":
+      return state.start !== null
+        ? { ...state, end: action.payload }
+        : state;
+    case "RESET":
+      return INITIAL_SELECTION;
+    default:
+      return state;
+  }
+}
+
 export function useSelectionBox(
   containerRef: RefObject<HTMLElement | null>,
   viewBoxWidth: number,
@@ -44,8 +78,10 @@ export function useSelectionBox(
   handlePointerUp: (e: React.PointerEvent) => void;
   handlePointerLeave: (e: React.PointerEvent) => void;
 } {
-  const [selectionStart, setSelectionStart] = useState<Point | null>(null);
-  const [selectionEnd, setSelectionEnd] = useState<Point | null>(null);
+  const [state, dispatch] = useReducer(
+    selectionBoxReducer,
+    INITIAL_SELECTION
+  );
   const activeTouchPointersRef = useRef<Set<number>>(new Set());
 
   const handlePointerDown = useCallback(
@@ -53,10 +89,7 @@ export function useSelectionBox(
       if (e.pointerType === "touch") {
         activeTouchPointersRef.current.add(e.pointerId);
         const isMultiTouch = activeTouchPointersRef.current.size >= 2;
-        if (isMultiTouch) {
-          setSelectionStart(null);
-          setSelectionEnd(null);
-        }
+        if (isMultiTouch) dispatch({ type: "RESET" });
       }
       if (e.button === 0) {
         const isMultiTouch = activeTouchPointersRef.current.size >= 2;
@@ -69,8 +102,7 @@ export function useSelectionBox(
             viewBoxHeight
           );
           if (p) {
-            setSelectionStart(p);
-            setSelectionEnd(null);
+            dispatch({ type: "START", payload: p });
           }
           (e.target as Element).setPointerCapture?.(e.pointerId);
         }
@@ -83,10 +115,9 @@ export function useSelectionBox(
   const handlePointerMove = useCallback(
     (e: React.PointerEvent) => {
       const isMultiTouch = activeTouchPointersRef.current.size >= 2;
-      if (isMultiTouch && selectionStart !== null) {
-        setSelectionStart(null);
-        setSelectionEnd(null);
-      } else if (selectionStart !== null && (e.buttons & 1) !== 0) {
+      if (isMultiTouch && state.start !== null) {
+        dispatch({ type: "RESET" });
+      } else if (state.start !== null && (e.buttons & 1) !== 0) {
         const p = clientToViewBox(
           containerRef.current,
           e.clientX,
@@ -94,11 +125,11 @@ export function useSelectionBox(
           viewBoxWidth,
           viewBoxHeight
         );
-        if (p) setSelectionEnd(p);
+        if (p) dispatch({ type: "MOVE_END", payload: p });
       }
       onPointerMove(e);
     },
-    [containerRef, viewBoxWidth, viewBoxHeight, onPointerMove, selectionStart]
+    [containerRef, viewBoxWidth, viewBoxHeight, onPointerMove, state.start]
   );
 
   const handlePointerUp = useCallback(
@@ -107,8 +138,7 @@ export function useSelectionBox(
         activeTouchPointersRef.current.delete(e.pointerId);
       }
       if (e.button === 0) {
-        setSelectionStart(null);
-        setSelectionEnd(null);
+        dispatch({ type: "RESET" });
         (e.target as Element).releasePointerCapture?.(e.pointerId);
       }
       onPointerUp(e);
@@ -122,15 +152,14 @@ export function useSelectionBox(
         activeTouchPointersRef.current.delete(e.pointerId);
       }
       if ((e.buttons & 1) === 0) {
-        setSelectionStart(null);
-        setSelectionEnd(null);
+        dispatch({ type: "RESET" });
       }
       onPointerLeave(e);
     },
     [onPointerLeave]
   );
 
-  const selectionRect = toSelectionRect(selectionStart, selectionEnd);
+  const selectionRect = toSelectionRect(state.start, state.end);
 
   return {
     selectionRect,

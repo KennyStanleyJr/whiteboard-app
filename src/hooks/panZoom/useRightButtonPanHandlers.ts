@@ -1,10 +1,26 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useReducer, useRef } from "react";
 
 export interface UseRightButtonPanHandlersOptions {
   onPanEnd?: () => void;
   interactingRef?: React.MutableRefObject<boolean>;
   /** Set to true when context menu should be suppressed (e.g. after panning). Caller clears after reading. */
   contextMenuSuppressedRef?: React.MutableRefObject<boolean>;
+}
+
+/** State machine: right-drag pan. Idle until button 2 down, then panning until button up/leave. */
+type PanningState = "idle" | "panning";
+
+type PanningAction = { type: "START" } | { type: "STOP" };
+
+function panningReducer(state: PanningState, action: PanningAction): PanningState {
+  switch (action.type) {
+    case "START":
+      return "panning";
+    case "STOP":
+      return "idle";
+    default:
+      return state;
+  }
 }
 
 export function useRightButtonPanHandlers(
@@ -20,7 +36,7 @@ export function useRightButtonPanHandlers(
   onPointerLeave: (e: React.PointerEvent) => void;
 } {
   const { onPanEnd, interactingRef, contextMenuSuppressedRef } = options;
-  const [isPanning, setIsPanning] = useState(false);
+  const [panningState, dispatch] = useReducer(panningReducer, "idle");
   const isPanningRef = useRef(false);
   const hasMovedRef = useRef(false);
   const lastPointer = useRef({ x: 0, y: 0 });
@@ -30,9 +46,11 @@ export function useRightButtonPanHandlers(
     const didMove = hasMovedRef.current;
     isPanningRef.current = false;
     hasMovedRef.current = false;
-    if (wasPanning && didMove && contextMenuSuppressedRef) contextMenuSuppressedRef.current = true;
+    if (wasPanning && didMove && contextMenuSuppressedRef) {
+      contextMenuSuppressedRef.current = true;
+    }
     if (interactingRef) interactingRef.current = false;
-    setIsPanning(false);
+    dispatch({ type: "STOP" });
     if (wasPanning) onPanEnd?.();
   }, [onPanEnd, interactingRef, contextMenuSuppressedRef]);
 
@@ -50,6 +68,7 @@ export function useRightButtonPanHandlers(
     (e: React.PointerEvent) => {
       if (e.button !== 2) return;
       isPanningRef.current = true;
+      dispatch({ type: "START" });
       if (interactingRef) interactingRef.current = true;
       lastPointer.current = { x: e.clientX, y: e.clientY };
       (e.target as Element).setPointerCapture?.(e.pointerId);
@@ -65,7 +84,6 @@ export function useRightButtonPanHandlers(
     setPanX((p) => p + dx);
     setPanY((p) => p + dy);
     hasMovedRef.current = true;
-    setIsPanning(true);
   }, [setPanX, setPanY]);
 
   const onPointerUp = useCallback((e: React.PointerEvent) => {
@@ -84,7 +102,7 @@ export function useRightButtonPanHandlers(
   );
 
   return {
-    isPanning,
+    isPanning: panningState === "panning",
     onContextMenu,
     onPointerDown,
     onPointerMove,

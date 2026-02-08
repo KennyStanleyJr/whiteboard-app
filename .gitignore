@@ -4,6 +4,8 @@ node_modules/
 # Build
 dist/
 dist-ssr/
+public/docs/
+docs/.vitepress/cache/
 *.local
 
 # Editor

@@ -12,3 +12,4 @@ export {
   getWhiteboardQueryKey,
 } from "./useWhiteboard";
 export { useUndoRedo } from "./useUndoRedo";
+export { useSingleOpen } from "./useSingleOpen";

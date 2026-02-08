@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useReducer, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Download, Plus, Upload, MoreVertical, Pencil, Trash2 } from "lucide-react";
 import JSZip from "jszip";
@@ -20,6 +20,7 @@ import {
   usePortalContainerRef,
 } from "./contexts/PortalContainerContext";
 import { ThemeProvider } from "./contexts/ThemeProvider";
+import { useSingleOpen } from "./hooks/useSingleOpen";
 import { getWhiteboardQueryKey } from "./hooks/useWhiteboard";
 import {
   getWhiteboard,
@@ -51,28 +52,131 @@ import "./App.css";
 const MANAGEMENT_GRID_DOT_CLASS =
   "h-3 w-3 rounded-[3px] border-2 border-muted-foreground";
 
+/**
+ * Reducer: board list and current board.
+ * Keeps boards (from API), currentBoardId, and boardName in sync for the management view.
+ */
+type BoardsState = { boards: Board[]; currentBoardId: string; boardName: string };
+type BoardsAction =
+  | { type: "SET_BOARDS"; payload: Board[] }
+  | { type: "SET_CURRENT_BOARD"; payload: string }
+  | { type: "SET_BOARD_NAME"; payload: string };
+
+function boardsReducer(state: BoardsState, action: BoardsAction): BoardsState {
+  switch (action.type) {
+    case "SET_BOARDS":
+      return { ...state, boards: action.payload };
+    case "SET_CURRENT_BOARD":
+      return { ...state, currentBoardId: action.payload };
+    case "SET_BOARD_NAME":
+      return { ...state, boardName: action.payload };
+    default:
+      return state;
+  }
+}
+
+/**
+ * Reducer: management view UI (rename inline, delete confirmation).
+ * Per-board ⋮ menu open state is useSingleOpen so only one board menu is open at a time.
+ */
+type AppUiState = {
+  renamingBoardId: string | null;
+  renameValue: string;
+  deleteDialogOpen: boolean;
+  boardToDelete: string | null;
+};
+type AppUiAction =
+  | { type: "START_RENAME"; payload: { boardId: string; currentName: string } }
+  | { type: "CANCEL_RENAME" }
+  | { type: "SET_RENAME_VALUE"; payload: string }
+  | { type: "CLEAR_RENAME" }
+  | { type: "OPEN_DELETE_DIALOG"; payload: string }
+  | { type: "CLOSE_DELETE_DIALOG" };
+
+function appUiReducer(state: AppUiState, action: AppUiAction): AppUiState {
+  switch (action.type) {
+    case "START_RENAME":
+      return {
+        ...state,
+        renamingBoardId: action.payload.boardId,
+        renameValue: action.payload.currentName,
+      };
+    case "CANCEL_RENAME":
+      return {
+        ...state,
+        renamingBoardId: null,
+        renameValue: "",
+      };
+    case "SET_RENAME_VALUE":
+      return { ...state, renameValue: action.payload };
+    case "CLEAR_RENAME":
+      return { ...state, renamingBoardId: null, renameValue: "" };
+    case "OPEN_DELETE_DIALOG":
+      return {
+        ...state,
+        boardToDelete: action.payload,
+        deleteDialogOpen: true,
+      };
+    case "CLOSE_DELETE_DIALOG":
+      return {
+        ...state,
+        deleteDialogOpen: false,
+        boardToDelete: null,
+      };
+    default:
+      return state;
+  }
+}
+
+const INITIAL_APP_UI: AppUiState = {
+  renamingBoardId: null,
+  renameValue: "",
+  deleteDialogOpen: false,
+  boardToDelete: null,
+};
+
+/** Reducer: app-wide canvas preferences (e.g. theme). Persisted via saveCanvasPreference. */
+type PrefsAction = { type: "SET"; payload: CanvasPreferences } | { type: "UPDATE"; payload: Partial<CanvasPreferences> };
+function prefsReducer(state: CanvasPreferences, action: PrefsAction): CanvasPreferences {
+  switch (action.type) {
+    case "SET":
+      return action.payload;
+    case "UPDATE":
+      return { ...state, ...action.payload };
+    default:
+      return state;
+  }
+}
+
 function App(): JSX.Element {
   const [portalContainerRef, portalContainer] = usePortalContainerRef();
+  /** View is driven by hash (#/manage = management); sync on hashchange. */
   const [view, setView] = useState<"canvas" | "manage">(() =>
     typeof window !== "undefined" && window.location.hash === "#/manage"
       ? "manage"
       : "canvas"
   );
-  // Initialize boards synchronously to ensure canvas can render immediately
+  // Sync init from storage so canvas can render immediately without waiting for API
   const initialBoards = getBoardsSync();
   const initialBoardId = getCurrentBoardIdSync();
   const initialBoard = initialBoards.find((b) => b.id === initialBoardId) ?? initialBoards[0];
-  const [boards, setBoards] = useState<Board[]>(initialBoards);
-  const [currentBoardId, setCurrentBoardIdState] = useState<string>(
-    initialBoard?.id ?? initialBoardId
-  );
-  const [boardName, setBoardName] = useState<string>(initialBoard?.name ?? "Whiteboard");
-  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
-  const [renamingBoardId, setRenamingBoardId] = useState<string | null>(null);
-  const [renameValue, setRenameValue] = useState<string>("");
-  const [deleteDialogOpen, setDeleteDialogOpen] = useState<boolean>(false);
-  const [boardToDelete, setBoardToDelete] = useState<string | null>(null);
-  const [canvasPreferences, setCanvasPreferences] = useState<CanvasPreferences>(
+  const [boardsState, dispatchBoards] = useReducer(boardsReducer, {
+    boards: initialBoards,
+    currentBoardId: initialBoard?.id ?? initialBoardId,
+    boardName: initialBoard?.name ?? "Whiteboard",
+  });
+  const { boards, currentBoardId, boardName } = boardsState;
+  const [openMenuId, boardMenuActions] = useSingleOpen<string>(null);
+  const [appUi, dispatchAppUi] = useReducer(appUiReducer, INITIAL_APP_UI);
+  const {
+    renamingBoardId,
+    renameValue,
+    deleteDialogOpen,
+    boardToDelete,
+  } = appUi;
+  const [canvasPreferences, dispatchPrefs] = useReducer(
+    prefsReducer,
+    undefined,
     loadCanvasPreferences
   );
   const queryClient = useQueryClient();
@@ -84,7 +188,7 @@ function App(): JSX.Element {
     key: K,
     value: CanvasPreferences[K]
   ): void => {
-    setCanvasPreferences((prev) => ({ ...prev, [key]: value }));
+    dispatchPrefs({ type: "UPDATE", payload: { [key]: value } });
     saveCanvasPreference(key, value);
   };
 
@@ -165,33 +269,33 @@ function App(): JSX.Element {
       if (validCurrentId !== currentId) {
         await setCurrentBoardId(validCurrentId);
       }
-      setBoards(loadedBoards);
-      setCurrentBoardIdState(validCurrentId);
+      dispatchBoards({ type: "SET_BOARDS", payload: loadedBoards });
+      dispatchBoards({ type: "SET_CURRENT_BOARD", payload: validCurrentId });
       const currentBoard = loadedBoards.find((b) => b.id === validCurrentId);
       if (currentBoard != null) {
-        setBoardName(currentBoard.name);
+        dispatchBoards({ type: "SET_BOARD_NAME", payload: currentBoard.name });
       } else {
-        setBoardName("Whiteboard");
+        dispatchBoards({ type: "SET_BOARD_NAME", payload: "Whiteboard" });
       }
     };
     void loadBoards();
   }, []);
 
-  // Update board name when current board changes
+  // Keep board name in sync when current board or board list changes
   useEffect(() => {
     const currentBoard = boards.find((b) => b.id === currentBoardId);
     if (currentBoard != null) {
-      setBoardName(currentBoard.name);
+      dispatchBoards({ type: "SET_BOARD_NAME", payload: currentBoard.name });
     }
   }, [boards, currentBoardId]);
 
-  // Close menus when clicking outside
+  // Close board menu when clicking outside
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent): void => {
       if (openMenuId != null) {
         const menuRef = menuRefs.current[openMenuId];
         if (menuRef != null && !menuRef.contains(e.target as Node)) {
-          setOpenMenuId(null);
+          boardMenuActions.close();
         }
       }
     };
@@ -202,7 +306,7 @@ function App(): JSX.Element {
         document.removeEventListener("mousedown", handleClickOutside);
       };
     }
-  }, [openMenuId]);
+  }, [openMenuId, boardMenuActions]);
 
   // Focus rename input when renaming starts
   useEffect(() => {
@@ -230,43 +334,39 @@ function App(): JSX.Element {
       document.activeElement.blur();
     }
     await setCurrentBoardId(id);
-    setCurrentBoardIdState(id);
+    dispatchBoards({ type: "SET_CURRENT_BOARD", payload: id });
     window.location.hash = "";
-    // Reload boards to get updated names
     const loadedBoards = await getBoards();
-    setBoards(loadedBoards);
+    dispatchBoards({ type: "SET_BOARDS", payload: loadedBoards });
   };
 
   const handleCreateBoard = async (): Promise<void> => {
     const newBoard = await addBoard("New Whiteboard");
-    // Initialize new board with empty state
     await setWhiteboard({ elements: [] }, newBoard.id);
     const loadedBoards = await getBoards();
-    setBoards(loadedBoards);
+    dispatchBoards({ type: "SET_BOARDS", payload: loadedBoards });
     await openBoard(newBoard.id);
   };
 
   const handleNameChange = (value: string): void => {
-    setBoardName(value);
+    dispatchBoards({ type: "SET_BOARD_NAME", payload: value });
   };
 
   const handleNameBlur = async (): Promise<void> => {
     const trimmed = boardName.trim();
     if (trimmed.length === 0) {
-      // Restore original name if empty
       const currentBoard = boards.find((b) => b.id === currentBoardId);
       if (currentBoard != null) {
-        setBoardName(currentBoard.name);
+        dispatchBoards({ type: "SET_BOARD_NAME", payload: currentBoard.name });
       }
       return;
     }
     if (trimmed !== boardName) {
-      setBoardName(trimmed);
+      dispatchBoards({ type: "SET_BOARD_NAME", payload: trimmed });
     }
     await updateBoardName(currentBoardId, trimmed);
-    // Reload boards to get updated names
     const loadedBoards = await getBoards();
-    setBoards(loadedBoards);
+    dispatchBoards({ type: "SET_BOARDS", payload: loadedBoards });
   };
 
   const handleNameKeyDown = (e: React.KeyboardEvent<HTMLInputElement>): void => {
@@ -275,7 +375,7 @@ function App(): JSX.Element {
     } else if (e.key === "Escape") {
       const currentBoard = boards.find((b) => b.id === currentBoardId);
       if (currentBoard != null) {
-        setBoardName(currentBoard.name);
+        dispatchBoards({ type: "SET_BOARD_NAME", payload: currentBoard.name });
       }
       e.currentTarget.blur();
     }
@@ -375,18 +475,19 @@ function App(): JSX.Element {
 
   const handleMenuToggle = (boardId: string, e: React.MouseEvent): void => {
     e.stopPropagation();
-    setOpenMenuId(openMenuId === boardId ? null : boardId);
+    boardMenuActions.toggle(boardId);
   };
 
   const handleRenameStart = (boardId: string, currentName: string): void => {
-    setRenamingBoardId(boardId);
-    setRenameValue(currentName);
-    setOpenMenuId(null);
+    boardMenuActions.close();
+    dispatchAppUi({
+      type: "START_RENAME",
+      payload: { boardId, currentName },
+    });
   };
 
   const handleRenameCancel = (): void => {
-    setRenamingBoardId(null);
-    setRenameValue("");
+    dispatchAppUi({ type: "CANCEL_RENAME" });
   };
 
   const handleRenameSubmit = async (boardId: string): Promise<void> => {
@@ -397,13 +498,11 @@ function App(): JSX.Element {
     }
     await updateBoardName(boardId, trimmed);
     const loadedBoards = await getBoards();
-    setBoards(loadedBoards);
-    // Update current board name if it's the renamed board
+    dispatchBoards({ type: "SET_BOARDS", payload: loadedBoards });
     if (boardId === currentBoardId) {
-      setBoardName(trimmed);
+      dispatchBoards({ type: "SET_BOARD_NAME", payload: trimmed });
     }
-    setRenamingBoardId(null);
-    setRenameValue("");
+    dispatchAppUi({ type: "CLEAR_RENAME" });
   };
 
   const handleRenameKeyDown = (
@@ -419,40 +518,33 @@ function App(): JSX.Element {
   };
 
   const handleDeleteClick = (boardId: string): void => {
-    setOpenMenuId(null);
-    setBoardToDelete(boardId);
-    setDeleteDialogOpen(true);
+    boardMenuActions.close();
+    dispatchAppUi({ type: "OPEN_DELETE_DIALOG", payload: boardId });
   };
 
   const handleDeleteConfirm = async (): Promise<void> => {
     if (boardToDelete == null) return;
-    
     const boardId = boardToDelete;
-    setDeleteDialogOpen(false);
+    dispatchAppUi({ type: "CLOSE_DELETE_DIALOG" });
     const wasCurrentBoard = boardId === currentBoardId;
     await deleteBoard(boardId);
-    // Invalidate React Query cache for the deleted board
     const deletedBoardQueryKey = getWhiteboardQueryKey(boardId);
     queryClient.removeQueries({ queryKey: deletedBoardQueryKey });
     const loadedBoards = await getBoards();
-    setBoards(loadedBoards);
-    // Update current board ID if deleted board was current
+    dispatchBoards({ type: "SET_BOARDS", payload: loadedBoards });
     const currentId = await getCurrentBoardId();
-    setCurrentBoardIdState(currentId);
+    dispatchBoards({ type: "SET_CURRENT_BOARD", payload: currentId });
     const currentBoard = loadedBoards.find((b) => b.id === currentId);
     if (currentBoard != null) {
-      setBoardName(currentBoard.name);
+      dispatchBoards({ type: "SET_BOARD_NAME", payload: currentBoard.name });
     }
-    // If we deleted the current board, persist the new current board (stay on management page)
     if (wasCurrentBoard && currentId !== boardId) {
       await setCurrentBoardId(currentId);
     }
-    setBoardToDelete(null);
   };
 
   const handleDeleteCancel = (): void => {
-    setDeleteDialogOpen(false);
-    setBoardToDelete(null);
+    dispatchAppUi({ type: "CLOSE_DELETE_DIALOG" });
   };
 
   /**
@@ -586,9 +678,8 @@ function App(): JSX.Element {
             }
           }
         }
-        // Reload boards and refresh view
         const loadedBoards = await getBoards();
-        setBoards(loadedBoards);
+        dispatchBoards({ type: "SET_BOARDS", payload: loadedBoards });
         // Only open the board if exactly one individual JSON file was uploaded (not ZIP, not multiple files)
         if (lastUploadedBoardId != null && !hasZipFile && uploadedJsonFileCount === 1) {
           await openBoard(lastUploadedBoardId);
@@ -731,7 +822,12 @@ function App(): JSX.Element {
                     ref={renameInputRef}
                     type="text"
                     value={renameValue}
-                    onChange={(e) => setRenameValue(e.target.value)}
+                    onChange={(e) =>
+                      dispatchAppUi({
+                        type: "SET_RENAME_VALUE",
+                        payload: e.target.value,
+                      })
+                    }
                     onBlur={() => void handleRenameSubmit(board.id)}
                     onKeyDown={(e) => handleRenameKeyDown(e, board.id)}
                     className="font-semibold text-base text-foreground break-words line-clamp-3 w-full min-w-0 text-center border-none bg-transparent shadow-none focus-visible:ring-0 px-0 h-auto"
@@ -783,7 +879,7 @@ function App(): JSX.Element {
                       onClick={(e) => {
                         e.stopPropagation();
                         handleDownloadBoard(board.id);
-                        setOpenMenuId(null);
+                        boardMenuActions.close();
                       }}
                       role="menuitem"
                       aria-label={`Download ${board.name}`}

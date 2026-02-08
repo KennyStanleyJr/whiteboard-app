@@ -1,12 +1,63 @@
 /// <reference types="vitest/config" />
 import path from "path";
+import fs from "fs";
+import type { IncomingMessage, ServerResponse } from "node:http";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
 import { defineConfig } from "vite";
 
+/** Redirect /docs to /docs/ so both work. */
+function redirectDocsMiddleware(req: IncomingMessage, res: ServerResponse, next: () => void): void {
+  const url = req.url?.split("?")[0] ?? "";
+  if (url === "/docs") {
+    res.writeHead(302, { Location: "/docs/" });
+    res.end();
+    return;
+  }
+  next();
+}
+
+/** In dev, serve built docs at /docs and /docs/ (production uses static dist/docs/). */
+function docsPlugin() {
+  return {
+    name: "docs-fallback",
+    configureServer(server: { middlewares: { use: (fn: (req: IncomingMessage, res: ServerResponse, next: () => void) => void) => void } }) {
+      server.middlewares.use(redirectDocsMiddleware);
+      server.middlewares.use((req: IncomingMessage, res: ServerResponse, next: () => void) => {
+        const url = req.url?.split("?")[0] ?? "";
+        if (url === "/docs/") {
+          const indexPath = path.resolve(process.cwd(), "public/docs/index.html");
+          if (fs.existsSync(indexPath)) {
+            res.setHeader("Content-Type", "text/html");
+            res.statusCode = 200;
+            res.end(fs.readFileSync(indexPath, "utf-8"));
+            return;
+          }
+        }
+        next();
+      });
+    },
+    configurePreviewServer(server: {
+      middlewares: {
+        use: (fn: (req: IncomingMessage, res: ServerResponse, next: () => void) => void) => void;
+        stack?: Array< { route: string; handle: (req: IncomingMessage, res: ServerResponse, next: () => void) => void } >;
+      };
+    }) {
+      // Run redirect before static file server so /docs is redirected to /docs/
+      const stack = (server.middlewares as { stack?: Array<{ route: string; handle: (req: IncomingMessage, res: ServerResponse, next: () => void) => void }> }).stack;
+      if (Array.isArray(stack)) {
+        stack.unshift({ route: "", handle: redirectDocsMiddleware });
+      } else {
+        server.middlewares.use(redirectDocsMiddleware);
+      }
+    },
+  };
+}
+
 export default defineConfig(({ mode }) => ({
   plugins: [
+    docsPlugin(),
     react(),
     VitePWA({
       registerType: "autoUpdate",

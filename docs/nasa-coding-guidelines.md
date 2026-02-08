@@ -38,7 +38,7 @@ This project follows principles derived from **NASA's Power of 10** (JPL Laborat
 
 ## SWE-061 Principles We Follow
 
-- **Code structure**: Clear project layout (e.g. `src/`, components, hooks, utils), consistent file and module organization.
+- **Code structure**: Clear project layout (e.g. `src/`, `api/`, `components/`, `hooks/`, `lib/`), consistent file and module organization.
 - **Error handling**: Explicit error handling and reporting; no silent failures in critical paths.
 - **Module size**: Keep modules and components focused; split when they grow too large.
 - **Naming**: Consistent naming for variables, functions, components, and files.

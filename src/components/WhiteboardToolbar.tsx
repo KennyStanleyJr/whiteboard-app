@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useReducer } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
@@ -10,6 +10,21 @@ import {
   Undo2,
   Redo2,
 } from "lucide-react";
+
+/** Add-menu state: closed or open. Single source of truth for the expand/collapse UI. */
+type AddMenuState = "closed" | "open";
+type AddMenuAction = { type: "TOGGLE" } | { type: "CLOSE" };
+
+function addMenuReducer(state: AddMenuState, action: AddMenuAction): AddMenuState {
+  switch (action.type) {
+    case "TOGGLE":
+      return state === "closed" ? "open" : "closed";
+    case "CLOSE":
+      return "closed";
+    default:
+      return state;
+  }
+}
 
 export interface WhiteboardToolbarProps {
   undo: () => void;
@@ -36,10 +51,12 @@ export function WhiteboardToolbar({
   onAddEllipse,
   onAddImage,
 }: WhiteboardToolbarProps): JSX.Element {
-  const [addMenuOpen, setAddMenuOpen] = useState(false);
+  const [addMenuState, dispatchAddMenu] = useReducer(addMenuReducer, "closed");
+  const addMenuOpen = addMenuState === "open";
 
+  /** Run the action (e.g. add text) and close the add menu. */
   const closeAnd = (fn: () => void) => (): void => {
-    setAddMenuOpen(false);
+    dispatchAddMenu({ type: "CLOSE" });
     fn();
   };
 
@@ -75,7 +92,7 @@ export function WhiteboardToolbar({
         variant="ghost"
         size="icon"
         className={BUTTON_CLASS}
-        onClick={() => setAddMenuOpen((open) => !open)}
+        onClick={() => dispatchAddMenu({ type: "TOGGLE" })}
         aria-label="Add element"
         aria-expanded={addMenuOpen}
         aria-haspopup="true"

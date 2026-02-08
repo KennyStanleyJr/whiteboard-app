@@ -1,4 +1,5 @@
-import { useRef, useState, useEffect, useLayoutEffect } from "react";
+import { useRef, useReducer, useEffect, useLayoutEffect } from "react";
+import { useSingleOpen } from "@/hooks/useSingleOpen";
 import { createPortal } from "react-dom";
 import { Menu, Download, Upload, Palette, Moon, Sun } from "lucide-react";
 import { HexColorPicker } from "react-colorful";
@@ -105,6 +106,42 @@ function GridIconLined({
   );
 }
 
+/** App menu UI: main menu open, upload-mode dialog, picker anchor. Picker open state is useSingleOpen. */
+type AppMenuState = {
+  menuOpen: boolean;
+  showUploadModeChoice: boolean;
+  pickerAnchor: { top: number; centerX: number } | null;
+};
+type AppMenuAction =
+  | { type: "TOGGLE_MENU" }
+  | { type: "CLOSE_MENU" }
+  | { type: "SHOW_UPLOAD_MODE_CHOICE" }
+  | { type: "HIDE_UPLOAD_MODE_CHOICE" }
+  | { type: "SET_PICKER_ANCHOR"; payload: { top: number; centerX: number } | null };
+
+function appMenuReducer(state: AppMenuState, action: AppMenuAction): AppMenuState {
+  switch (action.type) {
+    case "TOGGLE_MENU":
+      return { ...state, menuOpen: !state.menuOpen };
+    case "CLOSE_MENU":
+      return { ...state, menuOpen: false };
+    case "SHOW_UPLOAD_MODE_CHOICE":
+      return { ...state, showUploadModeChoice: true };
+    case "HIDE_UPLOAD_MODE_CHOICE":
+      return { ...state, showUploadModeChoice: false };
+    case "SET_PICKER_ANCHOR":
+      return { ...state, pickerAnchor: action.payload };
+    default:
+      return state;
+  }
+}
+
+const INITIAL_APP_MENU_STATE: AppMenuState = {
+  menuOpen: false,
+  showUploadModeChoice: false,
+  pickerAnchor: null,
+};
+
 export interface AppMenuProps {
   onUpload: (
     state: WhiteboardState,
@@ -139,13 +176,12 @@ export function AppMenu({
   canvasPreferences,
   onCanvasPreferenceChange,
 }: AppMenuProps): JSX.Element {
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [showUploadModeChoice, setShowUploadModeChoice] = useState(false);
-  const [openPicker, setOpenPicker] = useState<"background" | null>(null);
-  const [pickerAnchor, setPickerAnchor] = useState<{
-    top: number;
-    centerX: number;
-  } | null>(null);
+  const [openPicker, pickerActions] = useSingleOpen<"background">(null);
+  const [menuState, dispatch] = useReducer(
+    appMenuReducer,
+    INITIAL_APP_MENU_STATE
+  );
+  const { menuOpen, showUploadModeChoice, pickerAnchor } = menuState;
   const menuRef = useRef<HTMLDivElement>(null);
   const backgroundTriggerRef = useRef<HTMLDivElement>(null);
   const backgroundPopupRef = useRef<HTMLDivElement>(null);
@@ -154,13 +190,14 @@ export function AppMenu({
   const PICKER_SIZE = 128;
   const PICKER_GAP = 8;
 
+  // Close menu and picker when clicking outside
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent): void => {
       const target = e.target as Node;
       if (menuRef.current?.contains(target) === true) return;
       if (backgroundPopupRef.current?.contains(target) === true) return;
-      setMenuOpen(false);
-      setOpenPicker(null);
+      dispatch({ type: "CLOSE_MENU" });
+      pickerActions.close();
     };
 
     if (menuOpen) {
@@ -169,18 +206,22 @@ export function AppMenu({
         document.removeEventListener("mousedown", handleClickOutside);
       };
     }
-  }, [menuOpen]);
+  }, [menuOpen, pickerActions]);
 
+  // Position background color picker popover when open (anchor from trigger or center screen)
   useLayoutEffect(() => {
     if (openPicker !== "background") {
-      setPickerAnchor(null);
+      dispatch({ type: "SET_PICKER_ANCHOR", payload: null });
       return;
     }
     const el = backgroundTriggerRef.current;
     if (el == null) {
-      setPickerAnchor({
-        top: Math.max(0, (window.innerHeight - PICKER_SIZE) / 2),
-        centerX: window.innerWidth / 2,
+      dispatch({
+        type: "SET_PICKER_ANCHOR",
+        payload: {
+          top: Math.max(0, (window.innerHeight - PICKER_SIZE) / 2),
+          centerX: window.innerWidth / 2,
+        },
       });
       return;
     }
@@ -193,15 +234,19 @@ export function AppMenu({
         window.innerHeight - PICKER_SIZE - PICKER_GAP
       )
     );
-    setPickerAnchor({
-      top,
-      centerX: Math.max(
-        PICKER_SIZE / 2 + PICKER_GAP,
-        Math.min(centerX, window.innerWidth - PICKER_SIZE / 2 - PICKER_GAP)
-      ),
+    dispatch({
+      type: "SET_PICKER_ANCHOR",
+      payload: {
+        top,
+        centerX: Math.max(
+          PICKER_SIZE / 2 + PICKER_GAP,
+          Math.min(centerX, window.innerWidth - PICKER_SIZE / 2 - PICKER_GAP)
+        ),
+      },
     });
   }, [openPicker]);
 
+  // Close picker on outside click or Escape when background picker is open
   useEffect(() => {
     const handleClickOutsidePicker = (e: MouseEvent): void => {
       if (openPicker !== "background") return;
@@ -212,11 +257,11 @@ export function AppMenu({
       ) {
         return;
       }
-      setOpenPicker(null);
+      pickerActions.close();
     };
     const handleEscapePicker = (e: KeyboardEvent): void => {
       if (e.key === "Escape" && openPicker === "background") {
-        setOpenPicker(null);
+        pickerActions.close();
       }
     };
     if (openPicker === "background") {
@@ -227,13 +272,14 @@ export function AppMenu({
         document.removeEventListener("keydown", handleEscapePicker);
       };
     }
-  }, [openPicker]);
+  }, [openPicker, pickerActions]);
 
+  // Escape closes upload mode choice dialog and clears pending file
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent): void => {
       if (e.key !== "Escape") return;
       if (showUploadModeChoice) {
-        setShowUploadModeChoice(false);
+        dispatch({ type: "HIDE_UPLOAD_MODE_CHOICE" });
         pendingFileRef.current = null;
       }
     };
@@ -261,14 +307,16 @@ export function AppMenu({
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
-      setMenuOpen(false);
+      dispatch({ type: "CLOSE_MENU" });
+      pickerActions.close();
     } catch (err) {
       console.error("[AppMenu] Download failed", err);
     }
   };
 
   const openFileInput = (): void => {
-    setMenuOpen(false);
+    dispatch({ type: "CLOSE_MENU" });
+    pickerActions.close();
     const input = document.createElement("input");
     input.type = "file";
     input.accept = ".json";
@@ -276,7 +324,7 @@ export function AppMenu({
       const file = (e.target as HTMLInputElement).files?.[0];
       if (file == null) return;
       pendingFileRef.current = file;
-      setShowUploadModeChoice(true);
+      dispatch({ type: "SHOW_UPLOAD_MODE_CHOICE" });
     };
     input.click();
   };
@@ -339,10 +387,10 @@ export function AppMenu({
   const handleUploadModeAppend = (): void => {
     const file = pendingFileRef.current;
     if (file == null) {
-      setShowUploadModeChoice(false);
+      dispatch({ type: "HIDE_UPLOAD_MODE_CHOICE" });
       return;
     }
-    setShowUploadModeChoice(false);
+    dispatch({ type: "HIDE_UPLOAD_MODE_CHOICE" });
     pendingFileRef.current = null;
     readAndApplyFile(file, "append");
   };
@@ -350,16 +398,16 @@ export function AppMenu({
   const handleUploadModeReplace = (): void => {
     const file = pendingFileRef.current;
     if (file == null) {
-      setShowUploadModeChoice(false);
+      dispatch({ type: "HIDE_UPLOAD_MODE_CHOICE" });
       return;
     }
-    setShowUploadModeChoice(false);
+    dispatch({ type: "HIDE_UPLOAD_MODE_CHOICE" });
     pendingFileRef.current = null;
     readAndApplyFile(file, "replace");
   };
 
   const handleUploadModeChoiceCancel = (): void => {
-    setShowUploadModeChoice(false);
+    dispatch({ type: "HIDE_UPLOAD_MODE_CHOICE" });
     pendingFileRef.current = null;
   };
 
@@ -385,7 +433,7 @@ export function AppMenu({
         aria-label="Menu"
         aria-expanded={menuOpen}
         aria-haspopup="menu"
-        onClick={() => setMenuOpen((open) => !open)}
+        onClick={() => dispatch({ type: "TOGGLE_MENU" })}
         data-state={menuOpen ? "active" : undefined}
       >
         <Menu aria-hidden className="size-5" />
@@ -433,9 +481,7 @@ export function AppMenu({
               type="button"
               variant="ghost"
               className="h-9 w-full justify-start gap-2 px-3 text-sm"
-              onClick={() =>
-                setOpenPicker(openPicker === "background" ? null : "background")
-              }
+              onClick={() => pickerActions.toggle("background")}
               role="menuitem"
               aria-label="Background color"
               aria-expanded={openPicker === "background"}

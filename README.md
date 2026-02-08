@@ -34,7 +34,7 @@ Future options: **Electron** or **Tauri** for Windows/Mac; **Capacitor** or **PW
 
 ## NASA Coding Guidelines
 
-This project follows principles from **NASA's Power of 10** (JPL) and **SWE-061**, adapted for TypeScript/React. See **[docs/NASA_CODING_GUIDELINES.md](docs/NASA_CODING_GUIDELINES.md)** for the full list and how we apply them (e.g. small functions, bounded logic, strict types, zero lint/compile warnings).
+This project follows principles from **NASA's Power of 10** (JPL) and **SWE-061**, adapted for TypeScript/React. See **[docs/nasa-coding-guidelines.md](docs/nasa-coding-guidelines.md)** for the full list and how we apply them (e.g. small functions, bounded logic, strict types, zero lint/compile warnings).
 
 ## Requirements
 
@@ -59,14 +59,28 @@ npm run dev
 | `npm run test:run` | Run tests once |
 | `npm run test:ui` | Vitest UI |
 | `npm run ci` | Lint + test + build (CI pipeline) |
+| `npm run docs:build` | Build documentation into `public/docs` (runs automatically before `dev` and `build`) |
+| `npm run docs:dev` | Run docs dev server only (for editing docs with live reload) |
+| `npm run docs:preview` | Preview built documentation site standalone |
 
-## Project Structure
+## Documentation
+
+Project documentation (project structure, NASA coding guidelines, and overview) is built with **VitePress** and served at **`/docs`** in both dev and production. Open `/docs` or `/docs/` in the browser to view it.
+
+- **Dev**: `npm run dev` builds docs into `public/docs` and starts the app; open [http://localhost:5173/docs/](http://localhost:5173/docs/).
+- **Production**: `npm run build` includes the docs; deploy the `dist/` folder and `/docs/` will be available.
+- To edit docs with live reload, run `npm run docs:dev` in a separate terminal.
+
+## Project structure
 
 ```
 whiteboard-app/
 ├── .nvmrc                    # Node version for nvm (22)
-├── docs/
-│   └── NASA_CODING_GUIDELINES.md
+├── docs/                     # Documentation (VitePress site source)
+│   ├── .vitepress/           # VitePress config
+│   ├── nasa-coding-guidelines.md
+│   ├── project-structure.md
+│   └── index.md
 ├── public/                   # Static assets (icons, favicon, robots.txt)
 │   ├── favicon.svg
 │   ├── favicon.ico
@@ -86,18 +100,18 @@ whiteboard-app/
 │   │   ├── WhiteboardToolbar.tsx
 │   │   ├── WhiteboardCanvasSvg/  # SVG elements (text, shape, image)
 │   │   └── SelectionToolbar/
-│   ├── hooks/            # Pan/zoom, selection, undo/redo, canvas events
+│   ├── contexts/        # Theme, portal container
+│   ├── hooks/           # Pan/zoom, selection, undo/redo, canvas events
 │   │   ├── canvas/
 │   │   ├── panZoom/
 │   │   ├── selection/
+│   │   ├── useSingleOpen.ts
 │   │   ├── useUndoRedo.ts
 │   │   └── useWhiteboard.ts
-│   ├── lib/
-│   │   └── utils.ts
-│   ├── test/             # Test setup and utilities
+│   ├── lib/             # Shared helpers and config (bounds, sanitize, etc.)
+│   ├── test/            # Test setup and utilities
 │   ├── types/
 │   │   └── whiteboard.ts
-│   ├── utils/            # Bounds, resize handles, sanitize, text format
 │   ├── App.tsx
 │   ├── App.css
 │   ├── main.tsx

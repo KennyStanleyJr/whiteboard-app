@@ -21,7 +21,11 @@ export function PortalContainerProvider({
   );
 }
 
-/** Returns a callback ref and the element so portaled content can render inside the app root for theme. */
+/**
+ * Returns a callback ref and the current element.
+ * Use the ref on the node that should host portaled content (e.g. for theme/stacking).
+ * Container is null until the node is mounted and when it unmounts.
+ */
 export function usePortalContainerRef(): [
   (el: HTMLDivElement | null) => void,
   HTMLElement | null,

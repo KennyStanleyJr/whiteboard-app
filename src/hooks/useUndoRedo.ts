@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useReducer } from "react";
 import type { WhiteboardElement } from "@/types/whiteboard";
 
 /**
@@ -25,6 +25,121 @@ export interface UseUndoRedoOptions {
   onHistoryChange?: (state: HistoryState) => void;
 }
 
+function truncateHistory(
+  arr: WhiteboardElement[][]
+): WhiteboardElement[][] {
+  if (arr.length <= MAX_HISTORY_SIZE) return arr;
+  return arr.slice(-MAX_HISTORY_SIZE);
+}
+
+function copyElements(elements: WhiteboardElement[]): WhiteboardElement[] {
+  return elements.map((el) => ({ ...el }));
+}
+
+function areElementsEqual(
+  a: WhiteboardElement[],
+  b: WhiteboardElement[]
+): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i += 1) {
+    const elA = a[i];
+    const elB = b[i];
+    if (elA == null || elB == null) return false;
+    if (elA.id !== elB.id) return false;
+    if (JSON.stringify(elA) !== JSON.stringify(elB)) return false;
+  }
+  return true;
+}
+
+/** Reducer: history stack (past, present, future). SET_ELEMENTS handles skipHistory/pushToPast for drags. */
+type HistoryAction =
+  | {
+      type: "SET_ELEMENTS";
+      payload: {
+        action: React.SetStateAction<WhiteboardElement[]>;
+        options?: SetElementsOptions;
+      };
+    }
+  | { type: "UNDO" }
+  | { type: "REDO" }
+  | { type: "REPLACE_STATE"; payload: HistoryState };
+
+function historyReducer(
+  prev: HistoryState,
+  action: HistoryAction
+): HistoryState {
+  switch (action.type) {
+    case "SET_ELEMENTS": {
+      const { action: setStateAction, options } = action.payload;
+      const current = prev.present;
+      const next =
+        typeof setStateAction === "function"
+          ? setStateAction(current)
+          : setStateAction;
+      const skipHistory = options?.skipHistory === true;
+      const pushToPast = options?.pushToPast === true;
+
+      if (pushToPast) {
+        const pastCopy = [...prev.past, copyElements(current)];
+        return {
+          past: truncateHistory(pastCopy),
+          present: prev.present,
+          future: [],
+        };
+      }
+      if (skipHistory) {
+        if (areElementsEqual(current, next)) return prev;
+        return {
+          past: prev.past,
+          present: copyElements(next),
+          future: prev.future,
+        };
+      }
+      if (areElementsEqual(current, next)) return prev;
+      const nextCopy = copyElements(next);
+      const pastCopy = [...prev.past, copyElements(current)];
+      return {
+        past: truncateHistory(pastCopy),
+        present: nextCopy,
+        future: [],
+      };
+    }
+    case "UNDO": {
+      if (prev.past.length === 0) return prev;
+      const previous = prev.past[prev.past.length - 1];
+      if (previous == null) return prev;
+      return {
+        past: prev.past.slice(0, -1),
+        present: previous,
+        future: truncateHistory([
+          copyElements(prev.present),
+          ...prev.future,
+        ]),
+      };
+    }
+    case "REDO": {
+      if (prev.future.length === 0) return prev;
+      const next = prev.future[0];
+      if (next == null) return prev;
+      return {
+        past: truncateHistory([...prev.past, copyElements(prev.present)]),
+        present: next,
+        future: prev.future.slice(1),
+      };
+    }
+    case "REPLACE_STATE": {
+      const state = action.payload;
+      return {
+        past: truncateHistory(state.past),
+        present: copyElements(state.present),
+        future: state.future.slice(),
+      };
+    }
+    default:
+      return prev;
+  }
+}
+
 /**
  * Hook for managing undo/redo functionality for whiteboard elements.
  * Maintains a bounded history stack of element states.
@@ -49,153 +164,38 @@ export function useUndoRedo(
   canRedo: boolean;
 } {
   const { onHistoryChange } = options ?? {};
-  const [history, setHistory] = useState<HistoryState>(() => ({
+  const [history, dispatch] = useReducer(historyReducer, {
     past: [],
     present: initialElements,
     future: [],
-  }));
+  });
 
   useEffect(() => {
-    if (history.past.length === 0 && history.future.length === 0) return; // avoid overwriting stored history on mount
+    if (history.past.length === 0 && history.future.length === 0) return;
     onHistoryChange?.(history);
   }, [history, onHistoryChange]);
-
-  /**
-   * Truncate array to max size, keeping most recent entries.
-   */
-  const truncateHistory = useCallback(
-    (arr: WhiteboardElement[][]): WhiteboardElement[][] => {
-      if (arr.length <= MAX_HISTORY_SIZE) return arr;
-      return arr.slice(-MAX_HISTORY_SIZE);
-    },
-    []
-  );
-
-  /**
-   * Create a deep copy of elements array for history.
-   */
-  const copyElements = useCallback(
-    (elements: WhiteboardElement[]): WhiteboardElement[] => {
-      return elements.map((el) => ({ ...el }));
-    },
-    []
-  );
-
-  /**
-   * Check if two element arrays are equal (shallow comparison by id and properties).
-   */
-  const areElementsEqual = useCallback(
-    (a: WhiteboardElement[], b: WhiteboardElement[]): boolean => {
-      if (a.length !== b.length) return false;
-      for (let i = 0; i < a.length; i += 1) {
-        const elA = a[i];
-        const elB = b[i];
-        if (elA == null || elB == null) return false;
-        if (elA.id !== elB.id) return false;
-        if (JSON.stringify(elA) !== JSON.stringify(elB)) return false;
-      }
-      return true;
-    },
-    []
-  );
 
   const setElements = useCallback(
     (
       action: React.SetStateAction<WhiteboardElement[]>,
-      options?: SetElementsOptions
+      setOptions?: SetElementsOptions
     ) => {
-      const skipHistory = options?.skipHistory === true;
-      const pushToPast = options?.pushToPast === true;
-
-      setHistory((prev) => {
-        const current = prev.present;
-        const next =
-          typeof action === "function" ? action(current) : action;
-
-        if (pushToPast) {
-          const pastCopy = [...prev.past, copyElements(current)];
-          // Clear redo history when starting a new action (e.g., drag) after undo
-          // This ensures that if you undo and then start a new action, you can't redo
-          // the old timeline that was diverged from
-          return {
-            past: truncateHistory(pastCopy),
-            present: prev.present,
-            future: [],
-          };
-        }
-
-        if (skipHistory) {
-          if (areElementsEqual(current, next)) return prev;
-          return {
-            past: prev.past,
-            present: copyElements(next),
-            future: prev.future,
-          };
-        }
-
-        if (areElementsEqual(current, next)) return prev;
-
-        const nextCopy = copyElements(next);
-        const pastCopy = [...prev.past, copyElements(current)];
-
-        // Clear redo history when making a new change (standard undo/redo behavior:
-        // diverging from timeline by making a new change loses ability to redo)
-        return {
-          past: truncateHistory(pastCopy),
-          present: nextCopy,
-          future: [],
-        };
-      });
+      dispatch({ type: "SET_ELEMENTS", payload: { action, options: setOptions } });
     },
-    [areElementsEqual, copyElements, truncateHistory]
+    []
   );
 
   const undo = useCallback(() => {
-    setHistory((prev) => {
-      if (prev.past.length === 0) return prev;
-
-      const previous = prev.past[prev.past.length - 1];
-      if (previous == null) return prev;
-      
-      const newPast = prev.past.slice(0, -1);
-      const newFuture = [copyElements(prev.present), ...prev.future];
-
-      return {
-        past: newPast,
-        present: previous,
-        future: truncateHistory(newFuture),
-      };
-    });
-  }, [copyElements, truncateHistory]);
+    dispatch({ type: "UNDO" });
+  }, []);
 
   const redo = useCallback(() => {
-    setHistory((prev) => {
-      if (prev.future.length === 0) return prev;
+    dispatch({ type: "REDO" });
+  }, []);
 
-      const next = prev.future[0];
-      if (next == null) return prev;
-      
-      const newFuture = prev.future.slice(1);
-      const newPast = [...prev.past, copyElements(prev.present)];
-
-      return {
-        past: truncateHistory(newPast),
-        present: next,
-        future: newFuture,
-      };
-    });
-  }, [copyElements, truncateHistory]);
-
-  const replaceState = useCallback(
-    (state: HistoryState) => {
-      setHistory({
-        past: truncateHistory(state.past),
-        present: copyElements(state.present),
-        future: state.future.slice(),
-      });
-    },
-    [copyElements, truncateHistory]
-  );
+  const replaceState = useCallback((state: HistoryState) => {
+    dispatch({ type: "REPLACE_STATE", payload: state });
+  }, []);
 
   return {
     elements: history.present,

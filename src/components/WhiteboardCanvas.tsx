@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useRef } from "react";
 import type { WhiteboardCanvasSvgHandle } from "./WhiteboardCanvasSvg";
 import { clientToWorld } from "../hooks/canvas/canvasCoords";
 import {
@@ -55,6 +55,140 @@ const FORMAT_CMD_TO_TAG: Record<string, FormatTag> = {
   underline: "u",
 };
 
+/**
+ * Reducer: canvas UI (text editing, context menu, image info dialog).
+ * Only one of context menu / image info is shown at a time; opening one closes the other. RESET clears all when board changes.
+ */
+type CanvasUiState = {
+  editingElementId: string | null;
+  contextMenu: { x: number; y: number; type: "element" | "canvas" } | null;
+  imageInfoDialogElementId: string | null;
+};
+type CanvasUiAction =
+  | { type: "SET_EDITING"; payload: string | null }
+  | { type: "OPEN_CONTEXT_MENU"; payload: { x: number; y: number; type: "element" | "canvas" } }
+  | { type: "CLOSE_CONTEXT_MENU" }
+  | { type: "OPEN_IMAGE_INFO"; payload: string }
+  | { type: "CLOSE_IMAGE_INFO" }
+  | { type: "RESET" };
+
+function canvasUiReducer(state: CanvasUiState, action: CanvasUiAction): CanvasUiState {
+  switch (action.type) {
+    case "SET_EDITING":
+      return { ...state, editingElementId: action.payload };
+    case "OPEN_CONTEXT_MENU":
+      return { ...state, contextMenu: action.payload };
+    case "CLOSE_CONTEXT_MENU":
+      return { ...state, contextMenu: null };
+    case "OPEN_IMAGE_INFO":
+      return {
+        ...state,
+        imageInfoDialogElementId: action.payload,
+        contextMenu: null,
+      };
+    case "CLOSE_IMAGE_INFO":
+      return { ...state, imageInfoDialogElementId: null };
+    case "RESET":
+      return {
+        editingElementId: null,
+        contextMenu: null,
+        imageInfoDialogElementId: null,
+      };
+    default:
+      return state;
+  }
+}
+
+const INITIAL_CANVAS_UI: CanvasUiState = {
+  editingElementId: null,
+  contextMenu: null,
+  imageInfoDialogElementId: null,
+};
+
+/** Reducer: resize handle state machine. Only one element can be resized at a time. */
+type ResizeState = "idle" | "resizing";
+type ResizeAction = { type: "START" } | { type: "END" };
+function resizeReducer(state: ResizeState, action: ResizeAction): ResizeState {
+  switch (action.type) {
+    case "START": return "resizing";
+    case "END": return "idle";
+    default: return state;
+  }
+}
+
+/**
+ * Reducer: import/paste flow (pending images, optional paste text, optimizing flags).
+ * CLOSE_IMPORT_DIALOG clears pending items and stops optimizing; used when dialog closes.
+ */
+type PendingPasteText = { x: number; y: number; content: string };
+type ImportPasteState = {
+  pendingImportItems: ImportImageOptionsItem[];
+  pendingPasteText: PendingPasteText | null;
+  isOptimizingImage: boolean;
+  isOptimizingImport: boolean;
+};
+type ImportPasteAction =
+  | { type: "SET_PENDING_IMPORT"; payload: React.SetStateAction<ImportImageOptionsItem[]> }
+  | { type: "SET_PENDING_PASTE"; payload: React.SetStateAction<PendingPasteText | null> }
+  | { type: "SET_OPTIMIZING_IMAGE"; payload: boolean }
+  | { type: "SET_OPTIMIZING_IMPORT"; payload: boolean }
+  | { type: "CLOSE_IMPORT_DIALOG" };
+
+function importPasteReducer(state: ImportPasteState, action: ImportPasteAction): ImportPasteState {
+  switch (action.type) {
+    case "SET_PENDING_IMPORT": {
+      const next = typeof action.payload === "function"
+        ? action.payload(state.pendingImportItems)
+        : action.payload;
+      return { ...state, pendingImportItems: next };
+    }
+    case "SET_PENDING_PASTE": {
+      const next = typeof action.payload === "function"
+        ? action.payload(state.pendingPasteText)
+        : action.payload;
+      return { ...state, pendingPasteText: next };
+    }
+    case "SET_OPTIMIZING_IMAGE":
+      return { ...state, isOptimizingImage: action.payload };
+    case "SET_OPTIMIZING_IMPORT":
+      return { ...state, isOptimizingImport: action.payload };
+    case "CLOSE_IMPORT_DIALOG":
+      return {
+        ...state,
+        pendingImportItems: [],
+        pendingPasteText: null,
+        isOptimizingImport: false,
+      };
+    default:
+      return state;
+  }
+}
+
+const INITIAL_IMPORT_PASTE: ImportPasteState = {
+  pendingImportItems: [],
+  pendingPasteText: null,
+  isOptimizingImage: false,
+  isOptimizingImport: false,
+};
+
+/** Reducer: measured element bounds (from layout). MERGE adds/updates; RESET on board change. */
+type BoundsAction =
+  | { type: "MERGE"; payload: Record<string, ElementBounds> }
+  | { type: "RESET" };
+function measuredBoundsReducer(
+  state: Record<string, ElementBounds>,
+  action: BoundsAction
+): Record<string, ElementBounds> {
+  switch (action.type) {
+    case "MERGE":
+      return { ...state, ...action.payload };
+    case "RESET":
+      return {};
+    default:
+      return state;
+  }
+}
+
 export interface WhiteboardCanvasProps {
   boardId?: string;
 }
@@ -73,27 +207,43 @@ export function WhiteboardCanvas({ boardId }: WhiteboardCanvasProps = {}): JSX.E
     backgroundColor,
     gridStyle,
   } = useWhiteboardQuery(boardId);
-  const [editingElementId, setEditingElementId] = useState<string | null>(null);
-  const [measuredBounds, setMeasuredBounds] = useState<
-    Record<string, ElementBounds>
-  >({});
+  const [canvasUi, dispatchCanvasUi] = useReducer(
+    canvasUiReducer,
+    INITIAL_CANVAS_UI
+  );
+  const { editingElementId, contextMenu, imageInfoDialogElementId } = canvasUi;
+  const [measuredBounds, dispatchMeasuredBounds] = useReducer(
+    measuredBoundsReducer,
+    {}
+  );
+  const [resizeState, dispatchResize] = useReducer(resizeReducer, "idle");
+  const isResizing = resizeState === "resizing";
+  const [importPaste, dispatchImportPaste] = useReducer(
+    importPasteReducer,
+    INITIAL_IMPORT_PASTE
+  );
+  const {
+    pendingImportItems,
+    isOptimizingImage,
+    isOptimizingImport,
+  } = importPaste;
   const canvasSvgRef = useRef<WhiteboardCanvasSvgHandle | null>(null);
   const toolbarContainerRef = useRef<HTMLDivElement | null>(null);
   const toolbarRef = useRef<SelectionToolbarHandle | null>(null);
   const lastBoardIdRef = useRef<string | undefined>(boardId);
 
-  // Reset measuredBounds when boardId changes
+  // On board switch: clear measured bounds and canvas UI (editing, menus, dialogs)
   useEffect(() => {
     if (lastBoardIdRef.current !== boardId) {
       lastBoardIdRef.current = boardId;
-      setMeasuredBounds({});
-      setEditingElementId(null);
+      dispatchMeasuredBounds({ type: "RESET" });
+      dispatchCanvasUi({ type: "RESET" });
     }
   }, [boardId]);
 
   const handleMeasuredBoundsChange = useCallback(
     (next: Record<string, ElementBounds>) => {
-      setMeasuredBounds((prev) => ({ ...prev, ...next }));
+      dispatchMeasuredBounds({ type: "MERGE", payload: next });
     },
     []
   );
@@ -152,7 +302,7 @@ export function WhiteboardCanvas({ boardId }: WhiteboardCanvasProps = {}): JSX.E
       fontSize: 24,
     };
     setElements((prev) => [...prev, textElement]);
-    setEditingElementId(id);
+    dispatchCanvasUi({ type: "SET_EDITING", payload: id });
   }, [setElements]);
 
   const addTextAtWithContent = useCallback(
@@ -275,7 +425,10 @@ export function WhiteboardCanvas({ boardId }: WhiteboardCanvasProps = {}): JSX.E
       if (file == null || !file.type.startsWith("image/")) return;
       e.target.value = "";
       const { x, y } = centerWorld();
-      setPendingImportItems([{ file, worldX: x, worldY: y }]);
+      dispatchImportPaste({
+        type: "SET_PENDING_IMPORT",
+        payload: [{ file, worldX: x, worldY: y }],
+      });
     },
     [centerWorld]
   );
@@ -294,7 +447,7 @@ export function WhiteboardCanvas({ boardId }: WhiteboardCanvasProps = {}): JSX.E
   }, [setElements]);
 
   const handleFinishEditElement = useCallback(() => {
-    setEditingElementId(null);
+    dispatchCanvasUi({ type: "SET_EDITING", payload: null });
   }, []);
 
   const handleFormatCommand = useCallback(
@@ -311,7 +464,6 @@ export function WhiteboardCanvas({ boardId }: WhiteboardCanvasProps = {}): JSX.E
     []
   );
 
-  const [isResizing, setIsResizing] = useState(false);
   const resizeStateRef = useRef<{
     handleId: ResizeHandleId;
     elementId: string;
@@ -321,25 +473,7 @@ export function WhiteboardCanvas({ boardId }: WhiteboardCanvasProps = {}): JSX.E
     historyPushed: boolean;
   } | null>(null);
 
-  const [contextMenu, setContextMenu] = useState<{
-    x: number;
-    y: number;
-    type: "element" | "canvas";
-  } | null>(null);
   const contextMenuRef = useRef<HTMLDivElement>(null);
-  const [imageInfoDialogElementId, setImageInfoDialogElementId] = useState<
-    string | null
-  >(null);
-  const [isOptimizingImage, setIsOptimizingImage] = useState(false);
-  const [pendingImportItems, setPendingImportItems] = useState<
-    ImportImageOptionsItem[]
-  >([]);
-  const [, setPendingPasteText] = useState<{
-    x: number;
-    y: number;
-    content: string;
-  } | null>(null);
-  const [isOptimizingImport, setIsOptimizingImport] = useState(false);
   const importOptimizeBatchIdRef = useRef(0);
 
   const handleResizeHandleDown = useCallback(
@@ -363,7 +497,7 @@ export function WhiteboardCanvas({ boardId }: WhiteboardCanvasProps = {}): JSX.E
         panZoom.zoom
       );
       if (world == null) return;
-      setIsResizing(true);
+      dispatchResize({ type: "START" });
       resizeStateRef.current = {
         handleId,
         elementId,
@@ -462,7 +596,7 @@ export function WhiteboardCanvas({ boardId }: WhiteboardCanvasProps = {}): JSX.E
       } catch (err) {
         console.error("[WhiteboardCanvas] resize move error", err);
         resizeStateRef.current = null;
-        setIsResizing(false);
+        dispatchResize({ type: "END" });
       }
     },
     [
@@ -478,7 +612,7 @@ export function WhiteboardCanvas({ boardId }: WhiteboardCanvasProps = {}): JSX.E
 
   const clearResizeState = useCallback(() => {
     resizeStateRef.current = null;
-    setIsResizing(false);
+    dispatchResize({ type: "END" });
     persistNow();
   }, [persistNow]);
 
@@ -631,12 +765,18 @@ export function WhiteboardCanvas({ boardId }: WhiteboardCanvasProps = {}): JSX.E
                 worldY: nextY + i * PASTE_OFFSET_Y * 5,
               })
             );
-            setPendingImportItems(importItems);
+            dispatchImportPaste({
+              type: "SET_PENDING_IMPORT",
+              payload: importItems,
+            });
             if (textContent != null) {
-              setPendingPasteText({
-                x: baseX,
-                y: nextY + imageFiles.length * PASTE_OFFSET_Y * 5,
-                content: textContent,
+              dispatchImportPaste({
+                type: "SET_PENDING_PASTE",
+                payload: {
+                  x: baseX,
+                  y: nextY + imageFiles.length * PASTE_OFFSET_Y * 5,
+                  content: textContent,
+                },
               });
             }
           } else if (textContent != null) {
@@ -745,24 +885,23 @@ export function WhiteboardCanvas({ boardId }: WhiteboardCanvasProps = {}): JSX.E
       imageInfoDialogElementId != null &&
       imageInfoDialogImage == null
     ) {
-      setImageInfoDialogElementId(null);
+      dispatchCanvasUi({ type: "CLOSE_IMAGE_INFO" });
     }
   }, [imageInfoDialogElementId, imageInfoDialogImage]);
 
   const handleGetImageInfo = useCallback(() => {
     if (selectedImageForInfo == null) return;
-    setImageInfoDialogElementId(selectedImageForInfo.id);
-    setContextMenu(null);
+    dispatchCanvasUi({ type: "OPEN_IMAGE_INFO", payload: selectedImageForInfo.id });
   }, [selectedImageForInfo]);
 
   const handleImageInfoDialogOpenChange = useCallback((open: boolean) => {
-    if (!open) setImageInfoDialogElementId(null);
+    if (!open) dispatchCanvasUi({ type: "CLOSE_IMAGE_INFO" });
   }, []);
 
   const handleOptimizeImage = useCallback(() => {
     const img = imageInfoDialogImage;
     if (img == null) return;
-    setIsOptimizingImage(true);
+    dispatchImportPaste({ type: "SET_OPTIMIZING_IMAGE", payload: true });
     const w = img.naturalWidth ?? img.width;
     const h = img.naturalHeight ?? img.height;
     const maxDim = Math.max(w, h, 1);
@@ -788,61 +927,65 @@ export function WhiteboardCanvas({ boardId }: WhiteboardCanvasProps = {}): JSX.E
       .catch(() => {
         // e.g. revoked blob URL or invalid image; keep original
       })
-      .finally(() => setIsOptimizingImage(false));
+      .finally(() =>
+        dispatchImportPaste({ type: "SET_OPTIMIZING_IMAGE", payload: false })
+      );
   }, [imageInfoDialogImage, setElements]);
 
   const flushPendingPasteText = useCallback(() => {
-    setPendingPasteText((text) => {
-      if (text != null) addTextAtWithContent(text.x, text.y, text.content);
-      return null;
+    dispatchImportPaste({
+      type: "SET_PENDING_PASTE",
+      payload: (text) => {
+        if (text != null) addTextAtWithContent(text.x, text.y, text.content);
+        return null;
+      },
     });
   }, [addTextAtWithContent]);
 
   const handleImportKeepOriginal = useCallback(() => {
-    setPendingImportItems((items) => {
-      flushPendingPasteText();
-      for (const item of items) {
-        addImageFromFile(item.file, item.worldX, item.worldY);
-      }
-      return [];
+    dispatchImportPaste({
+      type: "SET_PENDING_IMPORT",
+      payload: (items) => {
+        flushPendingPasteText();
+        for (const item of items) {
+          addImageFromFile(item.file, item.worldX, item.worldY);
+        }
+        return [];
+      },
     });
   }, [addImageFromFile, flushPendingPasteText]);
 
   const handleImportOptimize = useCallback(() => {
-    setPendingImportItems((items) => {
-      if (items.length === 0) return items;
-      const batchId = (importOptimizeBatchIdRef.current += 1);
-      setIsOptimizingImport(true);
-      let completed = 0;
-      const done = (): void => {
-        completed += 1;
-        if (completed >= items.length) {
-          if (batchId === importOptimizeBatchIdRef.current) {
-            setPendingImportItems([]);
-            flushPendingPasteText();
-            setIsOptimizingImport(false);
-          }
+    const items = importPaste.pendingImportItems;
+    if (items.length === 0) return;
+    const batchId = (importOptimizeBatchIdRef.current += 1);
+    dispatchImportPaste({ type: "SET_OPTIMIZING_IMPORT", payload: true });
+    let completed = 0;
+    const done = (): void => {
+      completed += 1;
+      if (completed >= items.length) {
+        if (batchId === importOptimizeBatchIdRef.current) {
+          dispatchImportPaste({ type: "SET_PENDING_IMPORT", payload: [] });
+          flushPendingPasteText();
+          dispatchImportPaste({ type: "SET_OPTIMIZING_IMPORT", payload: false });
         }
-      };
-      for (const item of items) {
-        void optimizeImage(item.file, OPTIMIZE_IMAGE_MAX_DIMENSION)
-          .then(({ dataUrl, width, height }) => {
-            addImageAt(item.worldX, item.worldY, dataUrl, width, height);
-          })
-          .catch(() => {
-            addImageFromFile(item.file, item.worldX, item.worldY);
-          })
-          .finally(done);
       }
-      return items;
-    });
-  }, [addImageAt, addImageFromFile, flushPendingPasteText]);
+    };
+    for (const item of items) {
+      void optimizeImage(item.file, OPTIMIZE_IMAGE_MAX_DIMENSION)
+        .then(({ dataUrl, width, height }) => {
+          addImageAt(item.worldX, item.worldY, dataUrl, width, height);
+        })
+        .catch(() => {
+          addImageFromFile(item.file, item.worldX, item.worldY);
+        })
+        .finally(done);
+    }
+  }, [addImageAt, addImageFromFile, flushPendingPasteText, importPaste.pendingImportItems]);
 
   const handleImportDialogOpenChange = useCallback((open: boolean) => {
     if (!open) {
-      setPendingImportItems([]);
-      setPendingPasteText(null);
-      setIsOptimizingImport(false);
+      dispatchImportPaste({ type: "CLOSE_IMPORT_DIALOG" });
       importOptimizeBatchIdRef.current += 1;
     }
   }, []);
@@ -902,12 +1045,14 @@ export function WhiteboardCanvas({ boardId }: WhiteboardCanvasProps = {}): JSX.E
         elementSelection.selectedElementIds.includes(hit.id);
 
       e.preventDefault();
+      const menuPayload = { x: e.clientX, y: e.clientY, type: "element" as const };
+      const canvasPayload = { x: e.clientX, y: e.clientY, type: "canvas" as const };
       if (onSelectedElement) {
-        setContextMenu({ x: e.clientX, y: e.clientY, type: "element" });
+        dispatchCanvasUi({ type: "OPEN_CONTEXT_MENU", payload: menuPayload });
       } else {
         lastMousePositionRef.current = { clientX: e.clientX, clientY: e.clientY };
         if (clipboardRef.current.length > 0) {
-          setContextMenu({ x: e.clientX, y: e.clientY, type: "canvas" });
+          dispatchCanvasUi({ type: "OPEN_CONTEXT_MENU", payload: canvasPayload });
         } else {
           navigator.clipboard.read().then((items) => {
             let hasImage = false;
@@ -923,12 +1068,12 @@ export function WhiteboardCanvas({ boardId }: WhiteboardCanvasProps = {}): JSX.E
               }
             }
             if (hasImage) {
-              setContextMenu({ x: e.clientX, y: e.clientY, type: "canvas" });
+              dispatchCanvasUi({ type: "OPEN_CONTEXT_MENU", payload: canvasPayload });
               return;
             }
             void Promise.all(textChecks).then((results) => {
               if (results.some(Boolean)) {
-                setContextMenu({ x: e.clientX, y: e.clientY, type: "canvas" });
+                dispatchCanvasUi({ type: "OPEN_CONTEXT_MENU", payload: canvasPayload });
               }
             });
           }).catch(() => { /* clipboard read permission denied */ });
@@ -969,12 +1114,12 @@ export function WhiteboardCanvas({ boardId }: WhiteboardCanvasProps = {}): JSX.E
     const closeOnClick = (e: MouseEvent): void => {
       const el = contextMenuRef.current;
       if (el != null && !el.contains(e.target as Node)) {
-        setContextMenu(null);
+        dispatchCanvasUi({ type: "CLOSE_CONTEXT_MENU" });
       }
     };
     const closeOnEscape = (e: KeyboardEvent): void => {
       if (e.key === "Escape") {
-        setContextMenu(null);
+        dispatchCanvasUi({ type: "CLOSE_CONTEXT_MENU" });
       }
     };
     document.addEventListener("mousedown", closeOnClick, { capture: true });
@@ -1130,7 +1275,10 @@ export function WhiteboardCanvas({ boardId }: WhiteboardCanvasProps = {}): JSX.E
         panZoom.zoom
       );
       const { x, y } = world ?? centerWorld();
-      setPendingImportItems([{ file, worldX: x, worldY: y }]);
+      dispatchImportPaste({
+        type: "SET_PENDING_IMPORT",
+        payload: [{ file, worldX: x, worldY: y }],
+      });
     },
     [centerWorld, panZoom, size]
   );
@@ -1175,9 +1323,12 @@ export function WhiteboardCanvas({ boardId }: WhiteboardCanvasProps = {}): JSX.E
           nextY += PASTE_OFFSET_Y * 5;
         }
         if (importItems.length > 0) {
-          setPendingImportItems(importItems);
+          dispatchImportPaste({ type: "SET_PENDING_IMPORT", payload: importItems });
           if (hasText && text != null) {
-            setPendingPasteText({ x: baseX, y: nextY, content: text });
+            dispatchImportPaste({
+              type: "SET_PENDING_PASTE",
+              payload: { x: baseX, y: nextY, content: text },
+            });
           }
           return;
         }
@@ -1360,7 +1511,9 @@ export function WhiteboardCanvas({ boardId }: WhiteboardCanvasProps = {}): JSX.E
         isPanning={panZoom.isPanning}
         elements={elements}
         editingElementId={editingElementId}
-        onElementDoubleClick={setEditingElementId}
+        onElementDoubleClick={(id) =>
+          dispatchCanvasUi({ type: "SET_EDITING", payload: id })
+        }
         onUpdateElementContent={handleUpdateElementContent}
         onFinishEditElement={handleFinishEditElement}
         onResizeHandleDown={handleResizeHandleDown}
@@ -1382,7 +1535,7 @@ export function WhiteboardCanvas({ boardId }: WhiteboardCanvasProps = {}): JSX.E
         onSendToFront={handleSendToFront}
         onGetImageInfo={selectedImageForInfo != null ? handleGetImageInfo : undefined}
         position={contextMenu?.type === "element" ? { x: contextMenu.x, y: contextMenu.y } : null}
-        onClose={() => setContextMenu(null)}
+        onClose={() => dispatchCanvasUi({ type: "CLOSE_CONTEXT_MENU" })}
         menuRef={contextMenuRef}
       />
       <ImageInfoDialog
@@ -1402,7 +1555,7 @@ export function WhiteboardCanvas({ boardId }: WhiteboardCanvasProps = {}): JSX.E
       />
       <CanvasContextMenu
         position={contextMenu?.type === "canvas" ? { x: contextMenu.x, y: contextMenu.y } : null}
-        onClose={() => setContextMenu(null)}
+        onClose={() => dispatchCanvasUi({ type: "CLOSE_CONTEXT_MENU" })}
         onPaste={handlePaste}
         menuRef={contextMenuRef}
       />

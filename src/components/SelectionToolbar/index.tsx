@@ -4,9 +4,10 @@ import {
   useEffect,
   useImperativeHandle,
   useLayoutEffect,
+  useReducer,
   useRef,
-  useState,
 } from "react";
+import { useSingleOpen } from "@/hooks/useSingleOpen";
 import { flushSync } from "react-dom";
 import { worldToClient } from "@/hooks/canvas/canvasCoords";
 import type { ElementBounds } from "@/lib/elementBounds";
@@ -48,6 +49,39 @@ import {
   TOOLBAR_OFFSET_PX,
   unionBounds,
 } from "./selectionToolbarUtils";
+
+/** Which submenu is open; only one at a time (useSingleOpen). */
+export type ToolbarMenuId =
+  | "align"
+  | "verticalAlign"
+  | "colorPicker"
+  | "cornerRadius"
+  | "elementActions";
+
+/** Reducer: toolbar position and color picker value. Open menu state is in useSingleOpen. */
+type ToolbarState = {
+  position: { left: number; top: number } | null;
+  pickerColor: string;
+};
+type ToolbarAction =
+  | { type: "SET_POSITION"; payload: { left: number; top: number } | null }
+  | { type: "SET_PICKER_COLOR"; payload: string };
+
+function toolbarReducer(state: ToolbarState, action: ToolbarAction): ToolbarState {
+  switch (action.type) {
+    case "SET_POSITION":
+      return { ...state, position: action.payload };
+    case "SET_PICKER_COLOR":
+      return { ...state, pickerColor: action.payload };
+    default:
+      return state;
+  }
+}
+
+const INITIAL_TOOLBAR_STATE: ToolbarState = {
+  position: null,
+  pickerColor: "#000000",
+};
 
 export interface SelectionToolbarProps {
   containerRef: React.RefObject<HTMLDivElement | null>;
@@ -119,13 +153,37 @@ export const SelectionToolbar = forwardRef<
   const pendingHexRef = useRef<string | null>(null);
   const colorPickerElementIdsRef = useRef<Set<string>>(new Set());
 
-  const [position, setPosition] = useState<{ left: number; top: number } | null>(null);
-  const [alignMenuOpen, setAlignMenuOpen] = useState(false);
-  const [verticalAlignMenuOpen, setVerticalAlignMenuOpen] = useState(false);
-  const [colorPickerOpen, setColorPickerOpen] = useState(false);
-  const [cornerRadiusMenuOpen, setCornerRadiusMenuOpen] = useState(false);
-  const [elementActionsMenuOpen, setElementActionsMenuOpen] = useState(false);
-  const [pickerColor, setPickerColor] = useState("#000000");
+  const [openMenu, menuActions] = useSingleOpen<ToolbarMenuId>(null);
+  const [toolbarState, dispatchToolbar] = useReducer(
+    toolbarReducer,
+    INITIAL_TOOLBAR_STATE
+  );
+  const { position, pickerColor } = toolbarState;
+
+  const alignMenuOpen = openMenu === "align";
+  const verticalAlignMenuOpen = openMenu === "verticalAlign";
+  const colorPickerOpen = openMenu === "colorPicker";
+  const cornerRadiusMenuOpen = openMenu === "cornerRadius";
+  const elementActionsMenuOpen = openMenu === "elementActions";
+
+  /** Wrappers for child components that expect setOpen(boolean | (prev => boolean)). */
+  type SetMenuOpen = (open: boolean | ((prev: boolean) => boolean)) => void;
+  const setAlignMenuOpen: SetMenuOpen = useCallback((open) => {
+    const next = typeof open === "function" ? open(alignMenuOpen) : open;
+    menuActions.open(next ? "align" : null);
+  }, [alignMenuOpen, menuActions]);
+  const setVerticalAlignMenuOpen: SetMenuOpen = useCallback((open) => {
+    const next = typeof open === "function" ? open(verticalAlignMenuOpen) : open;
+    menuActions.open(next ? "verticalAlign" : null);
+  }, [verticalAlignMenuOpen, menuActions]);
+  const setCornerRadiusMenuOpen: SetMenuOpen = useCallback((open) => {
+    const next = typeof open === "function" ? open(cornerRadiusMenuOpen) : open;
+    menuActions.open(next ? "cornerRadius" : null);
+  }, [cornerRadiusMenuOpen, menuActions]);
+  const setElementActionsMenuOpen: SetMenuOpen = useCallback((open) => {
+    const next = typeof open === "function" ? open(elementActionsMenuOpen) : open;
+    menuActions.open(next ? "elementActions" : null);
+  }, [elementActionsMenuOpen, menuActions]);
   const worldAnchorRef = useRef<{ centerX: number; topY: number } | null>(null);
   const lastPositionRef = useRef<{ left: number; top: number } | null>(null);
 
@@ -296,10 +354,10 @@ export const SelectionToolbar = forwardRef<
       prevIds.some((id) => !currentSet.has(id)) ||
       currentIds.some((id) => !prevSet.has(id));
     if (idsChanged && colorPickerOpen) {
-      setColorPickerOpen(false);
+      menuActions.close();
     }
     prevSelectedIdsRef.current = currentIds;
-  }, [selectedElementIds, colorPickerOpen]);
+  }, [selectedElementIds, colorPickerOpen, menuActions]);
 
   useImperativeHandle(
     ref,
@@ -361,12 +419,12 @@ export const SelectionToolbar = forwardRef<
       pendingHexRef.current = null;
     }
     colorPickerElementIdsRef.current.clear();
-    setColorPickerOpen(false);
-  }, []);
+    menuActions.close();
+  }, [menuActions]);
 
   const onPickerColorChange = useCallback(
     (hex: string) => {
-      setPickerColor(hex);
+      dispatchToolbar({ type: "SET_PICKER_COLOR", payload: hex });
       applyColorThrottled(hex);
     },
     [applyColorThrottled]
@@ -380,7 +438,7 @@ export const SelectionToolbar = forwardRef<
       viewHeight <= 0
     ) {
       lastPositionRef.current = null;
-      setPosition(null);
+      dispatchToolbar({ type: "SET_POSITION", payload: null });
       return;
     }
     const boundsList: ElementBounds[] = [];
@@ -392,7 +450,7 @@ export const SelectionToolbar = forwardRef<
     const union = unionBounds(boundsList);
     if (union == null) {
       lastPositionRef.current = null;
-      setPosition(null);
+      dispatchToolbar({ type: "SET_POSITION", payload: null });
       return;
     }
     const centerX = union.x + union.width / 2;
@@ -410,7 +468,7 @@ export const SelectionToolbar = forwardRef<
     );
     if (client == null) {
       lastPositionRef.current = null;
-      setPosition(null);
+      dispatchToolbar({ type: "SET_POSITION", payload: null });
       return;
     }
     const toolbarEl = toolbarRef.current;
@@ -427,7 +485,7 @@ export const SelectionToolbar = forwardRef<
       Math.abs(lastPos.top - newPosition.top) > 0.5
     ) {
       lastPositionRef.current = newPosition;
-      setPosition(newPosition);
+      dispatchToolbar({ type: "SET_POSITION", payload: newPosition });
     }
   }, [
     selectedElementIds,
@@ -467,7 +525,10 @@ export const SelectionToolbar = forwardRef<
     const rect = toolbarRef.current.getBoundingClientRect();
     const top = client.y - rect.height - TOOLBAR_OFFSET_PX;
     if (Math.abs(top - position.top) > 0.5) {
-      setPosition((prev) => (prev != null ? { ...prev, top } : null));
+      dispatchToolbar({
+        type: "SET_POSITION",
+        payload: position != null ? { ...position, top } : null,
+      });
     }
   }, [
     position,
@@ -592,22 +653,22 @@ export const SelectionToolbar = forwardRef<
     if (!alignMenuOpen) return;
     const close = (e: MouseEvent): void => {
       const el = alignMenuRef.current;
-      if (el != null && !el.contains(e.target as Node)) setAlignMenuOpen(false);
+      if (el != null && !el.contains(e.target as Node)) menuActions.close();
     };
     document.addEventListener("mousedown", close, { capture: true });
     return () => document.removeEventListener("mousedown", close, { capture: true });
-  }, [alignMenuOpen]);
+  }, [alignMenuOpen, menuActions]);
 
   useEffect(() => {
     if (!verticalAlignMenuOpen) return;
     const close = (e: MouseEvent): void => {
       const el = verticalAlignMenuRef.current;
       if (el != null && !el.contains(e.target as Node))
-        setVerticalAlignMenuOpen(false);
+        menuActions.close();
     };
     document.addEventListener("mousedown", close, { capture: true });
     return () => document.removeEventListener("mousedown", close, { capture: true });
-  }, [verticalAlignMenuOpen]);
+  }, [verticalAlignMenuOpen, menuActions]);
 
   useEffect(() => {
     if (!colorPickerOpen) return;
@@ -617,29 +678,29 @@ export const SelectionToolbar = forwardRef<
     };
     document.addEventListener("mousedown", close, { capture: true });
     return () => document.removeEventListener("mousedown", close, { capture: true });
-  }, [colorPickerOpen, closeColorPicker]);
+  }, [colorPickerOpen, closeColorPicker, menuActions]);
 
   useEffect(() => {
     if (!cornerRadiusMenuOpen) return;
     const close = (e: MouseEvent): void => {
       const el = cornerRadiusMenuRef.current;
       if (el != null && !el.contains(e.target as Node))
-        setCornerRadiusMenuOpen(false);
+        menuActions.close();
     };
     document.addEventListener("mousedown", close, { capture: true });
     return () => document.removeEventListener("mousedown", close, { capture: true });
-  }, [cornerRadiusMenuOpen]);
+  }, [cornerRadiusMenuOpen, menuActions]);
 
   useEffect(() => {
     if (!elementActionsMenuOpen) return;
     const close = (e: MouseEvent): void => {
       const el = elementActionsMenuRef.current;
       if (el != null && !el.contains(e.target as Node))
-        setElementActionsMenuOpen(false);
+        menuActions.close();
     };
     document.addEventListener("mousedown", close, { capture: true });
     return () => document.removeEventListener("mousedown", close, { capture: true });
-  }, [elementActionsMenuOpen]);
+  }, [elementActionsMenuOpen, menuActions]);
 
   const presetValue =
     singleFontSize && FONT_SIZE_PRESETS.includes(displayFontSize)
@@ -754,11 +815,11 @@ export const SelectionToolbar = forwardRef<
             else {
               colorPickerElementIdsRef.current = new Set(selectedElementIds);
               if (firstShape != null)
-                setPickerColor(firstShape.color ?? "#000000");
+                dispatchToolbar({ type: "SET_PICKER_COLOR", payload: firstShape.color ?? "#000000" });
               else if (firstText?.content)
-                setPickerColor(parseHexFromContent(firstText.content));
-              else setPickerColor("#000000");
-              setColorPickerOpen(true);
+                dispatchToolbar({ type: "SET_PICKER_COLOR", payload: parseHexFromContent(firstText.content) });
+              else dispatchToolbar({ type: "SET_PICKER_COLOR", payload: "#000000" });
+              menuActions.open("colorPicker");
             }
           }}
           colorPickerMenuRef={colorPickerMenuRef}
