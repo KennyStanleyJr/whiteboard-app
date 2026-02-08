@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useReducer, useRef } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import type { WhiteboardCanvasSvgHandle } from "./WhiteboardCanvasSvg";
 import { clientToWorld } from "../hooks/canvas/canvasCoords";
 import {
@@ -221,6 +221,11 @@ export function WhiteboardCanvas({ boardId }: WhiteboardCanvasProps = {}): JSX.E
   );
   const [resizeState, dispatchResize] = useReducer(resizeReducer, "idle");
   const isResizing = resizeState === "resizing";
+  const liveResizeBoundsRef = useRef<{
+    elementId: string;
+    bounds: ElementBounds;
+  } | null>(null);
+  const [, setLiveResizeTick] = useState(0);
   const [importPaste, dispatchImportPaste] = useReducer(
     importPasteReducer,
     INITIAL_IMPORT_PASTE
@@ -533,8 +538,15 @@ export function WhiteboardCanvas({ boardId }: WhiteboardCanvasProps = {}): JSX.E
       if (elementId === undefined) return;
       const el = elements.find((x) => x.id === elementId);
       if (el == null) return;
-      const rawBounds =
-        measuredBounds[elementId] ?? getElementBounds(el, measuredBounds);
+      const hasExplicitSize =
+        el.kind === "text" &&
+        el.width != null &&
+        el.height != null &&
+        el.width > 0 &&
+        el.height > 0;
+      const rawBounds = hasExplicitSize
+        ? getElementBounds(el, measuredBounds)
+        : measuredBounds[elementId] ?? getElementBounds(el, measuredBounds);
       const startBounds = sanitizeElementBounds(rawBounds);
       const world = clientToWorld(
         panZoom.containerRef.current,
@@ -561,6 +573,8 @@ export function WhiteboardCanvas({ boardId }: WhiteboardCanvasProps = {}): JSX.E
         fixedAspectRatio: constraints.fixedAspectRatio,
         maxFillBoxSize: constraints.maxFillBoxSize,
       };
+      liveResizeBoundsRef.current = { elementId, bounds: startBounds };
+      setLiveResizeTick((t) => t + 1);
     },
     [
       elementSelection.selectedElementIds,
@@ -654,6 +668,8 @@ export function WhiteboardCanvas({ boardId }: WhiteboardCanvasProps = {}): JSX.E
           }),
         { skipHistory: true }
         );
+        liveResizeBoundsRef.current = { elementId: state.elementId, bounds: next };
+        setLiveResizeTick((t) => t + 1);
       } catch (err) {
         console.error("[WhiteboardCanvas] resize move error", err);
         resizeStateRef.current = null;
@@ -673,6 +689,8 @@ export function WhiteboardCanvas({ boardId }: WhiteboardCanvasProps = {}): JSX.E
 
   const clearResizeState = useCallback(() => {
     resizeStateRef.current = null;
+    liveResizeBoundsRef.current = null;
+    setLiveResizeTick((t) => t + 1);
     dispatchResize({ type: "END" });
     persistNow();
   }, [persistNow]);
@@ -1596,6 +1614,7 @@ export function WhiteboardCanvas({ boardId }: WhiteboardCanvasProps = {}): JSX.E
         onFillFittedSize={handleFillFittedSize}
         getEffectiveFontSize={getEffectiveFontSize}
         isResizing={isResizing}
+        liveResizeBounds={liveResizeBoundsRef.current}
         toolbarContainerRef={toolbarContainerRef}
         backgroundColor={backgroundColor}
         gridStyle={gridStyle}

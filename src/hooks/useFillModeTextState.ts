@@ -58,19 +58,30 @@ export function useFillModeTextState(
     for (const id of elementIds) set.add(id);
   }, []);
 
+  const EPSILON = 0.5;
+
   const handleFillFittedSize = useCallback(
     (elementId: string, width: number, height: number) => {
       if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0)
         return;
       fillFittedSizeByIdRef.current[elementId] = { width, height };
-      if (!pendingFillOnFitIdsRef.current.has(elementId)) return;
       pendingFillOnFitIdsRef.current.delete(elementId);
-      setElements((prev) =>
-        prev.map((el) => {
-          if (el.kind !== "text" || el.id !== elementId) return el;
-          return { ...el, width: Math.max(1, width), height: Math.max(1, height) };
-        })
-      );
+      const w = Math.max(1, width);
+      const h = Math.max(1, height);
+      requestAnimationFrame(() => {
+        setElements((prev) => {
+          const el = prev.find((e) => e.kind === "text" && e.id === elementId);
+          if (!el) return prev;
+          const ew = el.width ?? 0;
+          const eh = el.height ?? 0;
+          if (Math.abs(ew - w) < EPSILON && Math.abs(eh - h) < EPSILON) return prev;
+          return prev.map((e) =>
+            e.kind === "text" && e.id === elementId
+              ? { ...e, width: w, height: h }
+              : e
+          );
+        });
+      });
     },
     [setElements]
   );

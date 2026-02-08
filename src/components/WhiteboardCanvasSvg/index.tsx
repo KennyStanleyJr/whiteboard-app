@@ -3,7 +3,11 @@ import { forwardRef, useCallback, useImperativeHandle, useLayoutEffect, useRef, 
 import { clientToViewBox, viewBoxToWorld } from "../../hooks/canvas/canvasCoords";
 import type { SelectionRect } from "../../hooks";
 import type { WhiteboardElement } from "../../types/whiteboard";
-import { type ElementBounds, sanitizeElementBounds } from "../../lib/elementBounds";
+import {
+  type ElementBounds,
+  boundsEqualWithinEpsilon,
+  sanitizeElementBounds,
+} from "../../lib/elementBounds";
 import { safeSvgNumber } from "../../lib/safeSvgNumber";
 import type { ResizeHandleId } from "../../lib/resizeHandles";
 import {
@@ -23,9 +27,7 @@ import {
   NOTEBOOK_PATTERN_ID,
   PATTERN_ID,
 } from "../grid";
-import { shouldUseSafariTextOverlay } from "../../lib/browserUtils";
 import { ElementSelectionOverlay } from "./ElementSelectionOverlay";
-import { SafariTextOverlay } from "./SafariTextOverlay";
 import { WhiteboardImageElement } from "./WhiteboardImageElement";
 import { WhiteboardShapeElement } from "./WhiteboardShapeElement";
 import { WhiteboardTextElement } from "./WhiteboardTextElement";
@@ -63,6 +65,8 @@ export interface WhiteboardCanvasSvgProps {
   ) => void;
   /** When true, skip measurement-driven updates that could conflict with user resize. */
   isResizing?: boolean;
+  /** Live bounds during resize; overrides element/measured bounds so selection box tracks resize. */
+  liveResizeBounds?: { elementId: string; bounds: ElementBounds } | null;
   /** If focus moves into this container (e.g. toolbar), do not end editing on blur. */
   toolbarContainerRef?: RefObject<HTMLElement | null>;
   /** Canvas background fill color. */
@@ -118,6 +122,7 @@ export const WhiteboardCanvasSvg = forwardRef<
     onResizeHandleUp,
     onImageNaturalDimensions,
     isResizing = false,
+    liveResizeBounds,
     toolbarContainerRef,
     backgroundColor = "#ffffff",
     gridStyle = "dotted",
@@ -164,7 +169,7 @@ export const WhiteboardCanvasSvg = forwardRef<
   );
 
   useLayoutEffect(() => {
-    let next: Record<string, ElementBounds> = {};
+    const next: Record<string, ElementBounds> = {};
     try {
       const svgEl = svgRef.current;
       if (
@@ -175,10 +180,17 @@ export const WhiteboardCanvasSvg = forwardRef<
         zoom <= 0
       )
         return;
-      next = {};
       for (const [id, div] of textDivRefs.current) {
       try {
         if (div == null) continue;
+        const el = elements.find((e) => e.id === id);
+        const hasExplicitSize =
+          el?.kind === "text" &&
+          el.width != null &&
+          el.height != null &&
+          el.width > 0 &&
+          el.height > 0;
+        if (hasExplicitSize) continue;
         const rect = div.getBoundingClientRect();
         if (rect.width <= 0 || rect.height <= 0) continue;
         const topLeft = clientToViewBox(
@@ -232,12 +244,24 @@ export const WhiteboardCanvasSvg = forwardRef<
         continue;
       }
     }
-      onMeasuredBoundsChange(next);
+      if (Object.keys(next).length > 0) {
+        const changed: Record<string, ElementBounds> = {};
+        for (const [id, b] of Object.entries(next)) {
+          const existing = measuredBounds[id];
+          if (existing == null || !boundsEqualWithinEpsilon(b, existing)) {
+            changed[id] = b;
+          }
+        }
+        if (Object.keys(changed).length > 0) {
+          onMeasuredBoundsChange(changed);
+        }
+      }
     } catch (err) {
       console.error("[WhiteboardCanvasSvg] measurement effect error", err);
     }
   }, [
     elements,
+    measuredBounds,
     panX,
     panY,
     zoom,
@@ -295,12 +319,7 @@ export const WhiteboardCanvasSvg = forwardRef<
     editingRef.current = el;
   }, []);
 
-  const useSafariOverlay = shouldUseSafariTextOverlay();
-  const textElements = elements.filter((e): e is import("../../types/whiteboard").TextElement =>
-    e.kind === "text"
-  );
-
-  const svgContent = (
+  return (
     <svg
       ref={svgRef}
       className="whiteboard-canvas"
@@ -344,12 +363,13 @@ export const WhiteboardCanvasSvg = forwardRef<
           />
         )}
         {elements.map((el) => {
-          if (el.kind === "text" && !useSafariOverlay) {
+          if (el.kind === "text") {
             return (
               <WhiteboardTextElement
                 key={el.id}
                 element={el}
                 isEditing={el.id === editingElementId}
+                isResizing={isResizing}
                 measuredBounds={measuredBounds}
                 onDoubleClick={onElementDoubleClick}
                 setTextDivRef={setTextDivRef}
@@ -363,9 +383,6 @@ export const WhiteboardCanvasSvg = forwardRef<
                 onMaxFillBoxSize={onMaxFillBoxSize}
                 onFillFittedSize={onFillFittedSize}
                 getEffectiveFontSize={getEffectiveFontSize}
-                panX={panX}
-                panY={panY}
-                zoom={zoom}
               />
             );
           }
@@ -387,6 +404,7 @@ export const WhiteboardCanvasSvg = forwardRef<
           selectedElementIds={selectedElementIds}
           elements={elements}
           measuredBounds={measuredBounds}
+          liveResizeBounds={liveResizeBounds}
           zoom={zoom}
           onResizeHandleDown={onResizeHandleDown}
           onResizeHandleMove={onResizeHandleMove}
@@ -408,41 +426,4 @@ export const WhiteboardCanvasSvg = forwardRef<
       )}
     </svg>
   );
-
-  if (useSafariOverlay) {
-    return (
-      <div
-        style={{
-          position: "relative",
-          flex: 1,
-          minHeight: 0,
-          display: "flex",
-          flexDirection: "column",
-        }}
-      >
-        {svgContent}
-        <SafariTextOverlay
-          svgRef={svgRef}
-          textElements={textElements}
-          editingElementId={editingElementId}
-          measuredBounds={measuredBounds}
-          panX={panX}
-          panY={panY}
-          zoom={zoom}
-          width={width}
-          height={height}
-          onDoubleClick={onElementDoubleClick}
-          onUpdateContent={onUpdateElementContent}
-          onFinishEdit={onFinishEditElement}
-          onEditKeyDown={handleEditKeyDown}
-          onMeasuredBoundsChange={onMeasuredBoundsChange}
-          setTextDivRef={setTextDivRef}
-          editingRefSetter={setEditingRef}
-          toolbarContainerRef={toolbarContainerRef}
-        />
-      </div>
-    );
-  }
-
-  return svgContent;
 });

@@ -21,6 +21,8 @@ export interface ElementSelectionOverlayProps {
   selectedElementIds: string[];
   elements: WhiteboardElement[];
   measuredBounds: Record<string, ElementBounds>;
+  /** Live bounds during resize; overrides element/measured bounds for the element being resized. */
+  liveResizeBounds?: { elementId: string; bounds: ElementBounds } | null;
   /** Current zoom; used so selection stroke and handle size stay constant on screen. */
   zoom: number;
   onResizeHandleDown?: (handleId: ResizeHandleId, e: React.PointerEvent) => void;
@@ -206,6 +208,7 @@ export function ElementSelectionOverlay({
   selectedElementIds,
   elements,
   measuredBounds,
+  liveResizeBounds,
   zoom,
   onResizeHandleDown,
   onResizeHandleMove,
@@ -234,9 +237,12 @@ export function ElementSelectionOverlay({
         el.width > 0 &&
         el.height > 0) ||
       (el.kind === "image" && el.width > 0 && el.height > 0);
-    const rawBounds = hasExplicitSize
-      ? getElementBounds(el, measuredBounds)
-      : measuredBounds[id] ?? getElementBounds(el, measuredBounds);
+    const rawBounds =
+      liveResizeBounds?.elementId === id
+        ? liveResizeBounds.bounds
+        : hasExplicitSize
+          ? getElementBounds(el, measuredBounds)
+          : measuredBounds[id] ?? getElementBounds(el, measuredBounds);
     const b = sanitizeElementBounds(rawBounds);
     const sx = safeSvgNumber(b.x - paddingWorld, 0);
     const sy = safeSvgNumber(b.y - paddingWorld, 0);

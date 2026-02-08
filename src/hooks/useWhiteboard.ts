@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, type SetStateAction } from "react";
-import { useQueryClient } from "@tanstack/react-query";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { WhiteboardElement } from "@/types/whiteboard";
 import {
   getWhiteboard,
@@ -71,6 +70,7 @@ export function useWhiteboardQuery(boardId?: string): {
   const pendingElementsRef = useRef<WhiteboardElement[]>(undoRedo.elements);
   const persistTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const skipPersistRef = useRef(false);
+  const skippedCacheWriteRef = useRef(false);
   const isExternalUpdateRef = useRef(false);
   const lastBoardIdRef = useRef<string>(currentBoardId);
   const persistBoardIdRef = useRef<string>(currentBoardId);
@@ -105,6 +105,16 @@ export function useWhiteboardQuery(boardId?: string): {
     const undoRedoStr = JSON.stringify(undoRedo.elements);
     const lastSyncedStr = lastSyncedRef.current;
     if (undoRedoStr !== lastSyncedStr) {
+      if (skipPersistRef.current) {
+        skipPersistRef.current = false;
+        skippedCacheWriteRef.current = true;
+        if (persistTimeoutRef.current != null) {
+          clearTimeout(persistTimeoutRef.current);
+          persistTimeoutRef.current = null;
+        }
+        return;
+      }
+      lastSyncedRef.current = undoRedoStr;
       const current = queryClient.getQueryData<WhiteboardState>(queryKey);
       const newState: WhiteboardState = {
         elements: undoRedo.elements,
@@ -113,16 +123,7 @@ export function useWhiteboardQuery(boardId?: string): {
         gridStyle: current?.gridStyle,
       };
       queryClient.setQueryData(queryKey, newState);
-      lastSyncedRef.current = undoRedoStr;
       cacheJustWrittenByUsRef.current = true;
-      if (skipPersistRef.current) {
-        skipPersistRef.current = false;
-        if (persistTimeoutRef.current != null) {
-          clearTimeout(persistTimeoutRef.current);
-          persistTimeoutRef.current = null;
-        }
-        return;
-      }
       if (persistTimeoutRef.current != null) {
         clearTimeout(persistTimeoutRef.current);
       }
@@ -160,6 +161,10 @@ export function useWhiteboardQuery(boardId?: string): {
   useEffect(() => {
     if (cacheJustWrittenByUsRef.current) {
       cacheJustWrittenByUsRef.current = false;
+      return;
+    }
+    if (skippedCacheWriteRef.current) {
+      skippedCacheWriteRef.current = false;
       return;
     }
     if (lastBoardIdRef.current !== currentBoardId) {

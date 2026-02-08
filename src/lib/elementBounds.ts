@@ -23,9 +23,24 @@ export interface ElementBounds {
   height: number;
 }
 
+const MEASUREMENT_EPSILON = 0.5;
+
 function finiteNum(value: number, fallback: number): number {
   const n = Number(value);
   return Number.isFinite(n) ? n : fallback;
+}
+
+/**
+ * True if two bounds are equal within MEASUREMENT_EPSILON.
+ * Used to avoid measurement update loops (skipping redundant dispatches).
+ */
+export function boundsEqualWithinEpsilon(a: ElementBounds, b: ElementBounds): boolean {
+  return (
+    Math.abs(a.x - b.x) < MEASUREMENT_EPSILON &&
+    Math.abs(a.y - b.y) < MEASUREMENT_EPSILON &&
+    Math.abs(a.width - b.width) < MEASUREMENT_EPSILON &&
+    Math.abs(a.height - b.height) < MEASUREMENT_EPSILON
+  );
 }
 
 /**

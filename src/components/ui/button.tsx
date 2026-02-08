@@ -1,6 +1,5 @@
 import * as React from "react"
 import { cva, type VariantProps } from "class-variance-authority"
-import { Slot } from "radix-ui"
 
 import { cn } from "@/lib/utils"
 
@@ -48,10 +47,22 @@ function Button({
   VariantProps<typeof buttonVariants> & {
     asChild?: boolean
   }) {
-  const Comp = asChild ? Slot.Root : "button"
-
+  if (asChild && React.isValidElement(props.children)) {
+    const child = props.children as React.ReactElement<React.HTMLAttributes<HTMLElement>>
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars -- exclude children from restProps when cloning
+    const { children: _slotChildren, ...restProps } = props
+    const mergedProps = {
+      ...child.props,
+      ...restProps,
+      className: cn(buttonVariants({ variant, size, className }), child.props.className),
+      "data-slot": "button",
+      "data-variant": variant,
+      "data-size": size,
+    }
+    return React.cloneElement(child, mergedProps as Partial<React.HTMLAttributes<HTMLElement>>)
+  }
   return (
-    <Comp
+    <button
       data-slot="button"
       data-variant={variant}
       data-size={size}

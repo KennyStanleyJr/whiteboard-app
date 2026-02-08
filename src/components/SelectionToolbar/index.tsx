@@ -259,10 +259,11 @@ export const SelectionToolbar = forwardRef<
   const fontSizeValues = selectedTextElements.map((el) => el.fontSize ?? 24);
   const singleFontSize =
     fontSizeValues.length > 0 && fontSizeValues.every((v) => v === fontSizeValues[0]);
-  const displayFontSize =
+  const rawDisplayFontSize =
     firstText && firstText.fill !== false && getEffectiveFontSize
       ? getEffectiveFontSize(firstText.id) ?? firstText.fontSize ?? 24
       : firstText?.fontSize ?? 24;
+  const displayFontSize = Math.round(rawDisplayFontSize);
   const displayTextAlign = (firstText?.textAlign ?? "left") satisfies TextAlign;
   const displayVerticalAlign = (firstText?.textVerticalAlign ?? "top") satisfies TextVerticalAlign;
   const displayTextFill = firstText?.fill !== false;
@@ -548,47 +549,6 @@ export const SelectionToolbar = forwardRef<
     containerRef,
   ]);
 
-  useLayoutEffect(() => {
-    if (
-      position == null ||
-      containerRef.current == null ||
-      toolbarRef.current == null ||
-      worldAnchorRef.current == null ||
-      viewWidth <= 0 ||
-      viewHeight <= 0
-    ) {
-      return;
-    }
-    const { centerX, topY } = worldAnchorRef.current;
-    const client = worldToClient(
-      containerRef.current,
-      centerX,
-      topY,
-      viewWidth,
-      viewHeight,
-      panX,
-      panY,
-      zoom
-    );
-    if (client == null) return;
-    const rect = toolbarRef.current.getBoundingClientRect();
-    const top = client.y - rect.height - TOOLBAR_OFFSET_PX;
-    if (Math.abs(top - position.top) > 0.5) {
-      dispatchToolbar({
-        type: "SET_POSITION",
-        payload: position != null ? { ...position, top } : null,
-      });
-    }
-  }, [
-    position,
-    panX,
-    panY,
-    zoom,
-    viewWidth,
-    viewHeight,
-    containerRef,
-  ]);
-
   const applyFontSize = (num: number): void => {
     const clamped = Math.round(
       Math.max(MIN_FONT_SIZE, Math.min(MAX_FONT_SIZE, num))
@@ -598,14 +558,27 @@ export const SelectionToolbar = forwardRef<
         if (el.kind !== "text" || !selectedElementIds.includes(el.id))
           return el;
         const next = { ...el, fontSize: clamped };
-        // If no explicit size yet, fix size to current bounds so text wraps
-        // in the same box instead of extending past the selection box.
         const hasExplicitSize =
           el.width !== undefined &&
           el.height !== undefined &&
           el.width > 0 &&
           el.height > 0;
-        if (!hasExplicitSize) {
+        if (hasExplicitSize && el.fill !== false && getEffectiveFontSize && getFillFittedSize) {
+          const effective = getEffectiveFontSize(el.id);
+          const fitted = getFillFittedSize(el.id);
+          if (
+            effective != null &&
+            effective > 0 &&
+            fitted != null &&
+            fitted.width > 0 &&
+            fitted.height > 0
+          ) {
+            const exactW = (fitted.width * clamped) / effective;
+            const exactH = (fitted.height * clamped) / effective;
+            next.width = Math.max(1, exactW);
+            next.height = Math.max(1, exactH);
+          }
+        } else if (!hasExplicitSize) {
           const raw = measuredBounds[el.id] ?? getElementBounds(el);
           const b = sanitizeElementBounds(raw);
           next.width = b.width;
@@ -765,12 +738,22 @@ export const SelectionToolbar = forwardRef<
             onItalic={applyItalic}
             onUnderline={applyUnderline}
           />
+          <div className="min-w-0 shrink-0">
+            <FontSizeControl
+              displayFontSize={displayFontSize}
+              singleFontSize={singleFontSize}
+              presetValue={presetValue}
+              onFontSizeChange={applyFontSize}
+              onInputChange={handleInputChange}
+              onInputBlur={handleInputBlur}
+            />
+          </div>
           <Button
             type="button"
             variant="ghost"
             size="icon"
             className={cn(
-              "h-7 w-7 rounded [&_svg]:size-3.5",
+              "h-7 w-7 shrink-0 rounded [&_svg]:size-3.5",
               displayTextFill && "bg-accent"
             )}
             onClick={handleTextFillToggle}
@@ -787,35 +770,25 @@ export const SelectionToolbar = forwardRef<
           </Button>
           <div
             className={cn(
-              "grid shrink-0 transition-[grid-template-columns, margin] duration-200 ease-out",
+              "grid shrink-0 items-stretch transition-[grid-template-columns,margin] duration-200 ease-out",
               displayTextFill ? "grid-cols-[0fr] -mr-1.5" : "grid-cols-[1fr]"
             )}
           >
             <div className="min-w-0 overflow-hidden">
-              <div className="flex items-stretch gap-1.5">
-                <FontSizeControl
-                  displayFontSize={displayFontSize}
-                  singleFontSize={singleFontSize}
-                  presetValue={presetValue}
-                  onFontSizeChange={applyFontSize}
-                  onInputChange={handleInputChange}
-                  onInputBlur={handleInputBlur}
-                  disabled={displayTextFill}
-                />
+              <div className="flex items-center gap-1.5">
                 <AlignMenus
-                displayTextAlign={displayTextAlign}
-                displayVerticalAlign={displayVerticalAlign}
-                onTextAlign={applyTextAlign}
-                onVerticalAlign={applyVerticalAlign}
-                alignMenuOpen={alignMenuOpen}
-                verticalAlignMenuOpen={verticalAlignMenuOpen}
-                setAlignMenuOpen={setAlignMenuOpen}
-                setVerticalAlignMenuOpen={setVerticalAlignMenuOpen}
-                alignMenuRef={alignMenuRef}
-                verticalAlignMenuRef={verticalAlignMenuRef}
-                alignDropdownRef={alignDropdownRef}
-                disabled={displayTextFill}
-              />
+                  displayTextAlign={displayTextAlign}
+                  displayVerticalAlign={displayVerticalAlign}
+                  onTextAlign={applyTextAlign}
+                  onVerticalAlign={applyVerticalAlign}
+                  alignMenuOpen={alignMenuOpen}
+                  verticalAlignMenuOpen={verticalAlignMenuOpen}
+                  setAlignMenuOpen={setAlignMenuOpen}
+                  setVerticalAlignMenuOpen={setVerticalAlignMenuOpen}
+                  alignMenuRef={alignMenuRef}
+                  verticalAlignMenuRef={verticalAlignMenuRef}
+                  alignDropdownRef={alignDropdownRef}
+                />
               </div>
             </div>
           </div>

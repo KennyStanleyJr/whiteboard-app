@@ -264,7 +264,7 @@ describe("useElementSelection", () => {
     expect(onPointerUp).toHaveBeenCalled();
   });
 
-  it("uses pushToPast on first drag move and skipHistory for subsequent moves", () => {
+  it("uses pushToPast on first drag move and skipHistory for subsequent moves", async () => {
     const containerRef = createContainer();
     const setElements = vi.fn<
       (
@@ -315,6 +315,10 @@ describe("useElementSelection", () => {
       } as unknown as React.PointerEvent);
     });
 
+    await act(async () => {
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    });
+
     expect(setElements).toHaveBeenCalledTimes(2);
     const firstCall = setElements.mock.calls[0];
     const secondCall = setElements.mock.calls[1];
@@ -329,6 +333,10 @@ describe("useElementSelection", () => {
         pointerId: 1,
         buttons: 1,
       } as unknown as React.PointerEvent);
+    });
+
+    await act(async () => {
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
     });
 
     expect(setElements).toHaveBeenCalledTimes(3);

@@ -136,7 +136,10 @@ export function useElementSelection(
     []
   );
 
-  const applyDragMove = useCallback(
+  const pendingDragRef = useRef<{ dx: number; dy: number } | null>(null);
+  const rafIdRef = useRef<number | null>(null);
+
+  const applyDragMoveImmediate = useCallback(
     (dx: number, dy: number) => {
       const drag = dragStateRef.current;
       if (drag == null) return;
@@ -155,6 +158,35 @@ export function useElementSelection(
       );
     },
     [setElements]
+  );
+
+  const flushPendingDrag = useCallback(() => {
+    if (rafIdRef.current != null) {
+      cancelAnimationFrame(rafIdRef.current);
+      rafIdRef.current = null;
+    }
+    const pending = pendingDragRef.current;
+    pendingDragRef.current = null;
+    if (pending != null) {
+      applyDragMoveImmediate(pending.dx, pending.dy);
+    }
+  }, [applyDragMoveImmediate]);
+
+  const applyDragMove = useCallback(
+    (dx: number, dy: number) => {
+      pendingDragRef.current = { dx, dy };
+      if (rafIdRef.current == null) {
+        rafIdRef.current = requestAnimationFrame(() => {
+          rafIdRef.current = null;
+          const p = pendingDragRef.current;
+          pendingDragRef.current = null;
+          if (p != null) {
+            applyDragMoveImmediate(p.dx, p.dy);
+          }
+        });
+      }
+    },
+    [applyDragMoveImmediate]
   );
 
   const handlePointerDown = useCallback(
@@ -338,6 +370,7 @@ export function useElementSelection(
       }
       if (e.button === 0) {
         if (dragStateRef.current !== null) {
+          flushPendingDrag();
           const drag = dragStateRef.current;
           if (!drag.hasMoved && drag.clickElementId !== null) {
             setSelectedElementIds([drag.clickElementId]);
@@ -380,6 +413,7 @@ export function useElementSelection(
       measuredBounds,
       selectionRect,
       onDragEnd,
+      flushPendingDrag,
       panZoomHandlers,
       selectionHandlers,
       setSelectedElementIds,
@@ -392,12 +426,15 @@ export function useElementSelection(
         activeTouchPointersRef.current.delete(e.pointerId);
       }
       if ((e.buttons & 1) === 0) {
-        if (dragStateRef.current !== null) dispatch({ type: "DRAG_END" });
+        if (dragStateRef.current !== null) {
+          flushPendingDrag();
+          dispatch({ type: "DRAG_END" });
+        }
         dragStateRef.current = null;
       }
       selectionHandlers.handlePointerLeave(e);
     },
-    [selectionHandlers]
+    [flushPendingDrag, selectionHandlers]
   );
 
   return {

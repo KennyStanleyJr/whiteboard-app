@@ -3,8 +3,8 @@ import type { WhiteboardElement } from "@/types/whiteboard";
 
 export const TOOLBAR_OFFSET_PX = 8;
 
-/** Preset font sizes in the dropdown (px); wider range, fewer close values. */
-export const FONT_SIZE_PRESETS = [8, 10, 12, 16, 20, 24, 32, 40, 48, 64, 96];
+/** Preset font sizes in the dropdown (px); 8 to 1000, same count as before. */
+export const FONT_SIZE_PRESETS = [8, 12, 20, 24, 40, 72, 120, 200, 400, 700, 1000];
 
 export const MIN_FONT_SIZE = 1;
 export const MAX_FONT_SIZE = 5000;
