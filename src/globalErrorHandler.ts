@@ -81,6 +81,7 @@ export function installGlobalErrorHandlers(): void {
 	}
 
 	startDomWatchdog()
+	startWebGLContextWatchdog()
 }
 
 const WATCHDOG_INTERVAL_MS = 2000
@@ -113,4 +114,43 @@ function startDomWatchdog(): void {
 			}
 		}, WATCHDOG_INTERVAL_MS)
 	}, WATCHDOG_DELAY_MS)
+}
+
+const canvasesWithListeners = new WeakSet<HTMLCanvasElement>()
+
+/**
+ * When a WebGL (or 2D) context is lost, the canvas goes blank with no JS error.
+ * Attach context-lost listeners to all canvases (including ones tldraw adds
+ * later) and show overlay so the user can reload.
+ */
+function startWebGLContextWatchdog(): void {
+	function attachToCanvas(canvas: HTMLCanvasElement): void {
+		if (canvasesWithListeners.has(canvas)) return
+		canvasesWithListeners.add(canvas)
+		canvas.addEventListener(
+			'webglcontextlost',
+			(event: Event) => {
+				event.preventDefault()
+				showOverlay(
+					'Display problem',
+					'The canvas lost its graphics context (often due to too many WebGL contexts or GPU memory). Reload the page to recover.',
+				)
+			},
+			{ capture: true },
+		)
+	}
+
+	function scanCanvases(): void {
+		if (document.getElementById(OVERLAY_ID)) return
+		const canvases = document.querySelectorAll('canvas')
+		for (let i = 0; i < canvases.length; i++) {
+			const el = canvases[i]
+			if (el instanceof HTMLCanvasElement) attachToCanvas(el)
+		}
+	}
+
+	window.setTimeout(() => {
+		scanCanvases()
+		window.setInterval(scanCanvases, 3000)
+	}, 2000)
 }
