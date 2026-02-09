@@ -1,10 +1,10 @@
 # Whiteboard App
 
-Infinite whiteboard app powered by the **[tldraw](https://tldraw.dev)** SDK. One codebase for web (and later desktop/mobile via Electron, Tauri, or PWA).
+Infinite whiteboard app powered by **[Excalidraw](https://excalidraw.com)** (MIT licensed). One codebase for web (and later desktop/mobile via Electron, Tauri, or PWA).
 
 ## Tech Stack
 
-- **tldraw** – Infinite canvas, shapes, drawing, and collaboration primitives
+- **Excalidraw** – Infinite canvas, shapes, drawing (MIT open source)
 - **React 19** + **TypeScript** (strict)
 - **Vite 7**
 - **vite-plugin-pwa** – Offline support, installable PWA (manifest + service worker)
@@ -42,7 +42,7 @@ whiteboard-app/
 ├── docs/                     # Documentation (VitePress) – optional
 ├── public/                   # Static assets
 ├── src/
-│   ├── App.tsx               # Tldraw full-screen editor
+│   ├── App.tsx               # Excalidraw full-screen editor
 │   ├── main.tsx
 │   ├── index.css
 │   └── vite-env.d.ts

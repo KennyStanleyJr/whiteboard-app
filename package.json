@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "Infinite whiteboard app powered by tldraw SDK.",
+  "description": "Infinite whiteboard app powered by Excalidraw (MIT).",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
@@ -13,7 +13,7 @@
   "dependencies": {
     "react": "^19.2.1",
     "react-dom": "^19.2.1",
-    "tldraw": "^4.3.1"
+    "@excalidraw/excalidraw": "^0.18.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.15.0",

@@ -30,16 +30,17 @@ export default defineConfig({
 			workbox: {
 				cleanupOutdatedCaches: true,
 				globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+				maximumFileSizeToCacheInBytes: 5 * 1024 * 1024, // Excalidraw chunk ~4.4 MB
 			},
 		}),
 	],
 	build: {
-		chunkSizeWarningLimit: 1600, // tldraw SDK is a single large chunk
+		chunkSizeWarningLimit: 1600, // Excalidraw is a single large chunk
 		rollupOptions: {
 			output: {
 				manualChunks(id: string): string | undefined {
 					if (!id.includes('node_modules')) return undefined
-					if (id.includes('tldraw')) return 'tldraw'
+					if (id.includes('excalidraw')) return 'excalidraw'
 					if (id.includes('react-dom') || id.includes('react/')) return 'react'
 					return undefined
 				},

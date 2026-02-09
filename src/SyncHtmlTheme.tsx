@@ -1,18 +1,18 @@
-import { useIsDarkMode } from 'tldraw'
 import { useEffect } from 'react'
 
-/** Background colors matching tldraw's .tl-theme__light and .tl-theme__dark */
+/** Background colors matching Excalidraw light/dark themes */
 const LIGHT_BG = 'hsl(210, 20%, 98%)'
 const DARK_BG = 'hsl(240, 5%, 6.5%)'
 
+export type Theme = 'light' | 'dark'
+
 /**
  * Syncs the document root background and theme-color meta tag to the app's
- * light/dark mode. Must be rendered inside Tldraw so useIsDarkMode() is available.
+ * light/dark mode. Pass the current theme from the canvas component.
  */
-export function SyncHtmlTheme() {
-	const isDarkMode = useIsDarkMode()
-
+export function SyncHtmlTheme({ theme }: { theme: Theme }) {
 	useEffect(() => {
+		const isDarkMode = theme === 'dark'
 		const root = document.documentElement
 		root.style.backgroundColor = isDarkMode ? DARK_BG : LIGHT_BG
 
@@ -27,7 +27,7 @@ export function SyncHtmlTheme() {
 				meta.setAttribute('content', LIGHT_BG)
 			}
 		}
-	}, [isDarkMode])
+	}, [theme])
 
 	return null
 }
