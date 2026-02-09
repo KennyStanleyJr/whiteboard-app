@@ -5,6 +5,34 @@
  * crashes.
  */
 const OVERLAY_ID = 'global-error-overlay'
+const RELOAD_HATCH_ID = 'reload-escape-hatch'
+
+function injectReloadEscapeHatch(): void {
+	if (document.getElementById(RELOAD_HATCH_ID)) return
+	const a = document.createElement('a')
+	a.id = RELOAD_HATCH_ID
+	a.href = window.location.href
+	a.textContent = 'Reload'
+	a.style.cssText = [
+		'position:fixed',
+		'bottom:12px',
+		'right:12px',
+		'zIndex:2147483646',
+		'padding:8px 14px',
+		'fontSize:13px',
+		'fontFamily:Inter,sans-serif',
+		'backgroundColor:#1a1a1a',
+		'color:#fff',
+		'textDecoration:none',
+		'borderRadius:8px',
+		'boxShadow:0 2px 8px rgba(0,0,0,0.2)',
+	].join(';')
+	a.onclick = (e) => {
+		e.preventDefault()
+		window.location.reload()
+	}
+	document.body.appendChild(a)
+}
 
 function showOverlay(title: string, message: string): void {
 	if (document.getElementById(OVERLAY_ID)) return
@@ -57,6 +85,8 @@ function showOverlay(title: string, message: string): void {
 }
 
 export function installGlobalErrorHandlers(): void {
+	injectReloadEscapeHatch()
+
 	window.onerror = (msg, _source, _lineno, _colno, error) => {
 		const message =
 			error instanceof Error
