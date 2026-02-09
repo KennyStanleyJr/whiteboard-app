@@ -7,6 +7,7 @@ export default defineConfig({
 		react(),
 		VitePWA({
 			registerType: 'autoUpdate',
+			devOptions: { enabled: false },
 			manifest: {
 				name: 'Whiteboard',
 				short_name: 'Whiteboard',
