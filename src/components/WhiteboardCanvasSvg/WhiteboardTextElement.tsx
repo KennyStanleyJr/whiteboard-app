@@ -234,14 +234,16 @@ function WhiteboardTextElementInner({
     naturalSize.width > 0 &&
     naturalSize.height > 0;
   const fillScaleCap = MAX_FILL_EFFECTIVE_FONT_SIZE / FILL_REFERENCE_FONT_SIZE;
-  /* Height-based scale so text size stays constant when format (bold/etc.) widens content; box grows via onFillFittedSize. */
+  /* Height-based scale. Use (naturalHeight + nudge) as divisor so when we report fittedH = (h+nudge)*fillScale
+     and the parent sets el.height to that, boxH = (h+nudge)*fillScale and fillScale = boxH/(h+nudge) stays stable (no feedback loop). */
+  const fillDenom = naturalSize != null ? naturalSize.height + FILL_VERTICAL_NUDGE_PX : 0;
   const fillScale =
     fillEnabled &&
     hasExplicitSize &&
     hasValidNaturalSize &&
     boxH > 0 &&
-    naturalSize.height > 0
-      ? Math.min(boxH / naturalSize.height, fillScaleCap)
+    fillDenom > 0
+      ? Math.min(boxH / fillDenom, fillScaleCap)
       : null;
 
   useLayoutEffect(() => {
@@ -265,7 +267,9 @@ function WhiteboardTextElementInner({
         setNaturalSize({ width: w, height: h });
       } else if (onFillFittedSize != null && fillScale != null) {
         const fittedW = w * fillScale;
-        const fittedH = h * fillScale;
+        /* Include scaled vertical nudge in height so container doesn't clip (display uses paddingTop: nudge * fillScale). */
+        const fittedH =
+          h * fillScale + FILL_VERTICAL_NUDGE_PX * fillScale;
         if (fittedW > 0 && fittedH > 0) {
           onFillFittedSize(el.id, fittedW, fittedH);
         }
@@ -392,7 +396,7 @@ function WhiteboardTextElementInner({
               position: "absolute",
               left: 0,
               top: 0,
-              transform: `scale(${editorScale}) translateZ(0)`,
+              transform: `scale(${editorScale})`,
               transformOrigin: "0 0",
             }}
           >
@@ -465,15 +469,16 @@ function WhiteboardTextElementInner({
                 className="whiteboard-text-display whiteboard-text-display--fit"
                 style={{
                   ...baseStyle,
-                  fontSize: `${FILL_REFERENCE_FONT_SIZE}px`,
+                  fontSize: `${FILL_REFERENCE_FONT_SIZE * fillScale}px`,
+                  lineHeight: 1.2,
                   position: "absolute",
                   left: 0,
                   top: 0,
+                  /* Scale nudge with fill so alignment matches previous transform: translateY(0.25px) in scaled space. */
+                  paddingTop: FILL_VERTICAL_NUDGE_PX * fillScale,
                   width: "max-content",
                   maxWidth: "none",
                   whiteSpace: textWhiteSpace,
-                  transform: `scale(${fillScale}) translateY(${FILL_VERTICAL_NUDGE_PX}px) translateZ(0)`,
-                  transformOrigin: "0 0",
                 }}
                 {...contentProps}
               />
