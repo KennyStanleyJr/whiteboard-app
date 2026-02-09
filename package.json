@@ -11,7 +11,7 @@
     "lint": "eslint . --report-unused-disable-directives --max-warnings 0"
   },
   "dependencies": {
-    "@excalidraw/excalidraw": "^0.18.0-3a5ef40",
+    "@excalidraw/excalidraw": "0.18.0-3a5ef40",
     "react": "^19.2.1",
     "react-dom": "^19.2.1"
   },
