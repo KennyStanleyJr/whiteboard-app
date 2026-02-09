@@ -2,7 +2,7 @@ import type { RefObject } from "react";
 import { forwardRef, useCallback, useImperativeHandle, useLayoutEffect, useRef, useEffect } from "react";
 import { clientToViewBox, viewBoxToWorld } from "../../hooks/canvas/canvasCoords";
 import type { SelectionRect } from "../../hooks";
-import type { TextElement, WhiteboardElement } from "../../types/whiteboard";
+import type { WhiteboardElement } from "../../types/whiteboard";
 import {
   type ElementBounds,
   boundsEqualWithinEpsilon,
@@ -359,57 +359,65 @@ export const WhiteboardCanvasSvg = forwardRef<
             }
           />
         )}
-        {elements.map((el) => {
-          if (el.kind === "shape") {
-            return <WhiteboardShapeElement key={el.id} element={el} />;
-          }
-          if (el.kind === "image") {
-            return (
-              <WhiteboardImageElement
-                key={el.id}
-                element={el}
-                onNaturalDimensions={onImageNaturalDimensions}
-              />
-            );
-          }
-          return null;
-        })}
-        <ElementSelectionOverlay
-          selectedElementIds={selectedElementIds}
-          elements={elements}
-          measuredBounds={measuredBounds}
-          liveResizeBounds={liveResizeBounds}
-          zoom={zoom}
-          onResizeHandleDown={onResizeHandleDown}
-          onResizeHandleMove={onResizeHandleMove}
-          onResizeHandleUp={onResizeHandleUp}
-        />
       </g>
-      {/* Text in viewBox space so position stays correct with pan/zoom. */}
-      {elements
-        .filter((el): el is TextElement => el.kind === "text")
-        .map((el) => (
-          <WhiteboardTextElement
-            key={el.id}
-            element={el}
-            isEditing={el.id === editingElementId}
-            isResizing={isResizing}
-            measuredBounds={measuredBounds}
-            onDoubleClick={onElementDoubleClick}
-            setTextDivRef={setTextDivRef}
-            onUpdateContent={onUpdateElementContent}
-            onFinishEdit={onFinishEditElement}
-            onEditKeyDown={handleEditKeyDown}
-            editingRefSetter={setEditingRef}
-            toolbarContainerRef={toolbarContainerRef}
-            onEffectiveFontSize={onEffectiveFontSize}
-            onTextAspectRatio={onTextAspectRatio}
-            onMaxFillBoxSize={onMaxFillBoxSize}
-            onFillFittedSize={onFillFittedSize}
-            getEffectiveFontSize={getEffectiveFontSize}
-            viewBoxTransform={{ panX, panY, zoom }}
-          />
-        ))}
+      {/* Single pass in viewBox space so DOM order = array order (Send to Back/Front, Ctrl+[/] work). */}
+      {elements.map((el) => {
+        if (el.kind === "shape") {
+          return (
+            <WhiteboardShapeElement
+              key={el.id}
+              element={el}
+              viewBoxTransform={{ panX, panY, zoom }}
+            />
+          );
+        }
+        if (el.kind === "image") {
+          return (
+            <WhiteboardImageElement
+              key={el.id}
+              element={el}
+              onNaturalDimensions={onImageNaturalDimensions}
+              viewBoxTransform={{ panX, panY, zoom }}
+            />
+          );
+        }
+        if (el.kind === "text") {
+          return (
+            <WhiteboardTextElement
+              key={el.id}
+              element={el}
+              isEditing={el.id === editingElementId}
+              isResizing={isResizing}
+              measuredBounds={measuredBounds}
+              onDoubleClick={onElementDoubleClick}
+              setTextDivRef={setTextDivRef}
+              onUpdateContent={onUpdateElementContent}
+              onFinishEdit={onFinishEditElement}
+              onEditKeyDown={handleEditKeyDown}
+              editingRefSetter={setEditingRef}
+              toolbarContainerRef={toolbarContainerRef}
+              onEffectiveFontSize={onEffectiveFontSize}
+              onTextAspectRatio={onTextAspectRatio}
+              onMaxFillBoxSize={onMaxFillBoxSize}
+              onFillFittedSize={onFillFittedSize}
+              getEffectiveFontSize={getEffectiveFontSize}
+              viewBoxTransform={{ panX, panY, zoom }}
+            />
+          );
+        }
+        return null;
+      })}
+      <ElementSelectionOverlay
+        selectedElementIds={selectedElementIds}
+        elements={elements}
+        measuredBounds={measuredBounds}
+        liveResizeBounds={liveResizeBounds}
+        zoom={zoom}
+        viewBoxTransform={{ panX, panY, zoom }}
+        onResizeHandleDown={onResizeHandleDown}
+        onResizeHandleMove={onResizeHandleMove}
+        onResizeHandleUp={onResizeHandleUp}
+      />
       {selectionRect !== null && (
         <rect
           className="selection-box"

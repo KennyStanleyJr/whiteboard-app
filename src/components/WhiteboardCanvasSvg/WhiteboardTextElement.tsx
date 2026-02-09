@@ -1,6 +1,7 @@
 import type { CSSProperties, RefObject } from "react";
 import { memo, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { clampZoom } from "@/hooks/canvas/canvasCoords";
 import {
   type ElementBounds,
   DEFAULT_UNMEASURED_TEXT_HEIGHT,
@@ -61,6 +62,64 @@ export interface WhiteboardTextElementProps {
   isResizing?: boolean;
   /** Pan/zoom for viewBox-space positioning (text layer outside transformed group). */
   viewBoxTransform: { panX: number; panY: number; zoom: number };
+}
+
+function textElementPropsEqual(
+  a: WhiteboardTextElementProps,
+  b: WhiteboardTextElementProps
+): boolean {
+  const elA = a.element;
+  const elB = b.element;
+  if (
+    elA.id !== elB.id ||
+    elA.x !== elB.x ||
+    elA.y !== elB.y ||
+    elA.content !== elB.content ||
+    elA.fill !== elB.fill ||
+    elA.fontSize !== elB.fontSize ||
+    elA.textAlign !== elB.textAlign ||
+    elA.textVerticalAlign !== elB.textVerticalAlign ||
+    elA.width !== elB.width ||
+    elA.height !== elB.height
+  ) {
+    return false;
+  }
+  const vtA = a.viewBoxTransform;
+  const vtB = b.viewBoxTransform;
+  if (
+    vtA.panX !== vtB.panX ||
+    vtA.panY !== vtB.panY ||
+    vtA.zoom !== vtB.zoom
+  ) {
+    return false;
+  }
+  if (a.isEditing !== b.isEditing || a.isResizing !== b.isResizing) return false;
+  if (a.toolbarContainerRef !== b.toolbarContainerRef) return false;
+  if (
+    a.onDoubleClick !== b.onDoubleClick ||
+    a.setTextDivRef !== b.setTextDivRef ||
+    a.onUpdateContent !== b.onUpdateContent ||
+    a.onFinishEdit !== b.onFinishEdit ||
+    a.onEditKeyDown !== b.onEditKeyDown ||
+    a.editingRefSetter !== b.editingRefSetter ||
+    a.onEffectiveFontSize !== b.onEffectiveFontSize ||
+    a.onTextAspectRatio !== b.onTextAspectRatio ||
+    a.onMaxFillBoxSize !== b.onMaxFillBoxSize ||
+    a.onFillFittedSize !== b.onFillFittedSize ||
+    a.getEffectiveFontSize !== b.getEffectiveFontSize
+  ) {
+    return false;
+  }
+  const boundsA = a.measuredBounds[elA.id];
+  const boundsB = b.measuredBounds[elB.id];
+  if (boundsA === boundsB) return true;
+  if (boundsA == null || boundsB == null) return boundsA === boundsB;
+  return (
+    boundsA.x === boundsB.x &&
+    boundsA.y === boundsB.y &&
+    boundsA.width === boundsB.width &&
+    boundsA.height === boundsB.height
+  );
 }
 
 function WhiteboardTextElementInner({
@@ -379,10 +438,11 @@ function WhiteboardTextElementInner({
   /* Rounded world position/size; viewBox position/size for foreignObject (pan/zoom applied). */
   const foX = Math.round(el.x);
   const foY = Math.round(el.y);
-  const foViewX = vbxPanX + vbxZoom * foX;
-  const foViewY = vbxPanY + vbxZoom * foY;
-  const foViewW = vbxZoom * foWidthRounded;
-  const foViewH = vbxZoom * foHeightRounded;
+  const zoom = clampZoom(vbxZoom);
+  const foViewX = vbxPanX + zoom * foX;
+  const foViewY = vbxPanY + zoom * foY;
+  const foViewW = zoom * foWidthRounded;
+  const foViewH = zoom * foHeightRounded;
 
   const foreignObjectContent = (
     <>
@@ -553,7 +613,7 @@ function WhiteboardTextElementInner({
         style={{
           width: foWidthRounded,
           height: foHeightRounded,
-          transform: `scale(${vbxZoom})`,
+          transform: `scale(${zoom})`,
           transformOrigin: "0 0",
         }}
       >
@@ -563,4 +623,7 @@ function WhiteboardTextElementInner({
   );
 }
 
-export const WhiteboardTextElement = memo(WhiteboardTextElementInner);
+export const WhiteboardTextElement = memo(
+  WhiteboardTextElementInner,
+  textElementPropsEqual
+);

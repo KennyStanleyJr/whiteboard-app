@@ -1,4 +1,5 @@
 import { memo, useEffect, useRef } from "react";
+import { clampZoom } from "@/hooks/canvas/canvasCoords";
 import type { ImageElement } from "@/types/whiteboard";
 import { safeSvgNumber } from "@/lib/safeSvgNumber";
 
@@ -9,6 +10,38 @@ export interface WhiteboardImageElementProps {
     naturalWidth: number,
     naturalHeight: number
   ) => void;
+  /** When set, render in viewBox space (for correct stacking with text layer). */
+  viewBoxTransform?: { panX: number; panY: number; zoom: number };
+}
+
+function imageElementPropsEqual(
+  a: WhiteboardImageElementProps,
+  b: WhiteboardImageElementProps
+): boolean {
+  const elA = a.element;
+  const elB = b.element;
+  if (
+    elA.id !== elB.id ||
+    elA.x !== elB.x ||
+    elA.y !== elB.y ||
+    elA.width !== elB.width ||
+    elA.height !== elB.height ||
+    elA.src !== elB.src ||
+    elA.imageFill !== elB.imageFill ||
+    elA.imageCornerRadius !== elB.imageCornerRadius ||
+    elA.naturalWidth !== elB.naturalWidth ||
+    elA.naturalHeight !== elB.naturalHeight
+  ) {
+    return false;
+  }
+  if (a.onNaturalDimensions !== b.onNaturalDimensions) return false;
+  const vtA = a.viewBoxTransform;
+  const vtB = b.viewBoxTransform;
+  if (vtA === vtB) return true;
+  if (vtA == null || vtB == null) return false;
+  return (
+    vtA.panX === vtB.panX && vtA.panY === vtB.panY && vtA.zoom === vtB.zoom
+  );
 }
 
 function clipRadius(
@@ -63,11 +96,23 @@ function meetRect(
 function WhiteboardImageElementInner({
   element,
   onNaturalDimensions,
+  viewBoxTransform,
 }: WhiteboardImageElementProps): JSX.Element {
-  const x = safeSvgNumber(element.x, 0);
-  const y = safeSvgNumber(element.y, 0);
-  const w = safeSvgNumber(Math.max(1, element.width), 1);
-  const h = safeSvgNumber(Math.max(1, element.height), 1);
+  const zoom = viewBoxTransform ? clampZoom(viewBoxTransform.zoom) : 1;
+  const x = viewBoxTransform
+    ? safeSvgNumber(viewBoxTransform.panX + zoom * element.x, 0)
+    : safeSvgNumber(element.x, 0);
+  const y = viewBoxTransform
+    ? safeSvgNumber(viewBoxTransform.panY + zoom * element.y, 0)
+    : safeSvgNumber(element.y, 0);
+  const w = safeSvgNumber(
+    Math.max(1, viewBoxTransform ? zoom * (element.width ?? 1) : (element.width ?? 1)),
+    1
+  );
+  const h = safeSvgNumber(
+    Math.max(1, viewBoxTransform ? zoom * (element.height ?? 1) : (element.height ?? 1)),
+    1
+  );
   const preserveAspectRatio = element.imageFill ? "none" : "xMidYMid meet";
 
   const loadedRef = useRef(false);
@@ -153,4 +198,7 @@ function WhiteboardImageElementInner({
   );
 }
 
-export const WhiteboardImageElement = memo(WhiteboardImageElementInner);
+export const WhiteboardImageElement = memo(
+  WhiteboardImageElementInner,
+  imageElementPropsEqual
+);

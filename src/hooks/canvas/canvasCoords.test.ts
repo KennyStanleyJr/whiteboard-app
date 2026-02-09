@@ -1,12 +1,36 @@
 import { describe, it, expect } from "vitest";
 import {
+  clampZoom,
   clientToViewBox,
   clientToWorld,
+  MIN_ZOOM,
   viewBoxToClient,
   viewBoxToWorld,
   worldToClient,
   worldToViewBox,
 } from "./canvasCoords";
+
+describe("clampZoom", () => {
+  it("returns value when finite and positive", () => {
+    expect(clampZoom(1)).toBe(1);
+    expect(clampZoom(0.5)).toBe(0.5);
+    expect(clampZoom(2)).toBe(2);
+  });
+
+  it("returns MIN_ZOOM when zero or negative", () => {
+    expect(clampZoom(0)).toBe(MIN_ZOOM);
+    expect(clampZoom(-1)).toBe(MIN_ZOOM);
+  });
+
+  it("returns MIN_ZOOM when non-finite", () => {
+    expect(clampZoom(Number.NaN)).toBe(MIN_ZOOM);
+    expect(clampZoom(Number.POSITIVE_INFINITY)).toBe(MIN_ZOOM);
+  });
+
+  it("clamps small positive values to at least MIN_ZOOM", () => {
+    expect(clampZoom(0.0001)).toBe(MIN_ZOOM);
+  });
+});
 
 function createMockElement(rect: {
   left: number;

@@ -1,3 +1,14 @@
+/** Minimum zoom used when zoom is invalid or zero; keeps overlay and elements in sync. */
+export const MIN_ZOOM = 0.001;
+
+/** Clamp zoom to a valid positive value; invalid/zero becomes MIN_ZOOM. */
+export function clampZoom(zoom: number): number {
+  return Math.max(
+    Number.isFinite(zoom) && zoom > 0 ? zoom : MIN_ZOOM,
+    MIN_ZOOM
+  );
+}
+
 /**
  * Convert client coordinates to SVG viewBox coordinates.
  * Uses container rect and viewBox dimensions so coordinates align with the SVG.

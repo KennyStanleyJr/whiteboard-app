@@ -1,3 +1,4 @@
+import { clampZoom } from "@/hooks/canvas/canvasCoords";
 import type { WhiteboardElement } from "@/types/whiteboard";
 import {
   getElementBounds,
@@ -17,6 +18,12 @@ const BAR_LENGTH_PX = 20;
 /** Bar thickness in pixels; kept constant on screen via zoom. */
 const BAR_THICKNESS_PX = 6;
 
+export interface ViewBoxTransform {
+  panX: number;
+  panY: number;
+  zoom: number;
+}
+
 export interface ElementSelectionOverlayProps {
   selectedElementIds: string[];
   elements: WhiteboardElement[];
@@ -25,6 +32,8 @@ export interface ElementSelectionOverlayProps {
   liveResizeBounds?: { elementId: string; bounds: ElementBounds } | null;
   /** Current zoom; used so selection stroke and handle size stay constant on screen. */
   zoom: number;
+  /** When set, overlay is drawn in viewBox space (for correct stacking). */
+  viewBoxTransform?: ViewBoxTransform;
   onResizeHandleDown?: (handleId: ResizeHandleId, e: React.PointerEvent) => void;
   onResizeHandleMove?: (e: React.PointerEvent) => void;
   onResizeHandleUp?: (e: React.PointerEvent) => void;
@@ -210,14 +219,16 @@ export function ElementSelectionOverlay({
   measuredBounds,
   liveResizeBounds,
   zoom,
+  viewBoxTransform,
   onResizeHandleDown,
   onResizeHandleMove,
   onResizeHandleUp,
 }: ElementSelectionOverlayProps): JSX.Element {
-  const zoomSafe = Math.max(zoom, 0.001);
+  const zoomSafe = clampZoom(zoom);
+  const inViewBoxSpace = viewBoxTransform != null;
   const paddingWorld = SELECTION_BOX_PADDING_PX / zoomSafe;
-  const barLengthWorld = BAR_LENGTH_PX / zoomSafe;
-  const barThicknessWorld = BAR_THICKNESS_PX / zoomSafe;
+  const barLengthWorld = inViewBoxSpace ? BAR_LENGTH_PX : BAR_LENGTH_PX / zoomSafe;
+  const barThicknessWorld = inViewBoxSpace ? BAR_THICKNESS_PX : BAR_THICKNESS_PX / zoomSafe;
   const showHandles =
     selectedElementIds.length === 1 &&
     onResizeHandleDown != null &&
@@ -244,14 +255,24 @@ export function ElementSelectionOverlay({
           ? getElementBounds(el, measuredBounds)
           : measuredBounds[id] ?? getElementBounds(el, measuredBounds);
     const b = sanitizeElementBounds(rawBounds);
-    const sx = safeSvgNumber(b.x - paddingWorld, 0);
-    const sy = safeSvgNumber(b.y - paddingWorld, 0);
+    const panX = viewBoxTransform?.panX ?? 0;
+    const panY = viewBoxTransform?.panY ?? 0;
+    const safeZoom = clampZoom(viewBoxTransform?.zoom ?? 1);
+    const paddingForElement = inViewBoxSpace
+      ? SELECTION_BOX_PADDING_PX / safeZoom
+      : paddingWorld;
+    const sx = inViewBoxSpace
+      ? safeSvgNumber(panX + safeZoom * (b.x - paddingForElement), 0)
+      : safeSvgNumber(b.x - paddingForElement, 0);
+    const sy = inViewBoxSpace
+      ? safeSvgNumber(panY + safeZoom * (b.y - paddingForElement), 0)
+      : safeSvgNumber(b.y - paddingForElement, 0);
     const sw = safeSvgNumber(
-      Math.max(1, b.width + 2 * paddingWorld),
+      Math.max(1, (inViewBoxSpace ? safeZoom : 1) * (b.width + 2 * paddingForElement)),
       1
     );
     const sh = safeSvgNumber(
-      Math.max(1, b.height + 2 * paddingWorld),
+      Math.max(1, (inViewBoxSpace ? safeZoom : 1) * (b.height + 2 * paddingForElement)),
       1
     );
 
