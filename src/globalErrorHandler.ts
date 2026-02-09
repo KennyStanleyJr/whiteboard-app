@@ -79,4 +79,38 @@ export function installGlobalErrorHandlers(): void {
 		showOverlay('Unhandled error', message)
 		event.preventDefault()
 	}
+
+	startDomWatchdog()
+}
+
+const WATCHDOG_INTERVAL_MS = 2000
+const WATCHDOG_DELAY_MS = 5000
+
+/**
+ * If the app root becomes empty (e.g. React unmounts or canvas/WebGL fails
+ * without throwing), show recovery overlay. Catches "white screen" with no
+ * console errors.
+ */
+function startDomWatchdog(): void {
+	let emptyCount = 0
+	window.setTimeout(() => {
+		const intervalId = window.setInterval(() => {
+			if (document.getElementById(OVERLAY_ID)) return
+			const root = document.getElementById('root')
+			const isEmpty =
+				!root || root.childNodes.length === 0 || root.textContent?.trim() === ''
+			if (isEmpty) {
+				emptyCount += 1
+				if (emptyCount >= 2) {
+					window.clearInterval(intervalId)
+					showOverlay(
+						'App stopped rendering',
+						'The app content disappeared (e.g. WebGL context lost or render tree cleared). Reload to recover.',
+					)
+				}
+			} else {
+				emptyCount = 0
+			}
+		}, WATCHDOG_INTERVAL_MS)
+	}, WATCHDOG_DELAY_MS)
 }
