@@ -1,22 +1,25 @@
 import { useEffect, useRef, useState } from 'react'
 
 /**
- * Registers the PWA service worker in production and shows a prompt when an
- * update is available. Uses prompt mode so the page is never taken over by a
- * new SW unexpectedly (avoids white screen in prod).
+ * Registers the PWA service worker in production when enabled, and shows a
+ * prompt when an update is available. Uses prompt mode so the page is never
+ * taken over by a new SW unexpectedly.
  *
+ * Service worker registration is disabled by default (white screen in prod).
+ * Set VITE_ENABLE_PWA=true at build time to enable SW and update prompts.
  * Uses immediate: true so registration runs when this effect runs instead of
- * waiting for the load event. The load event can fire before React mounts, so
- * without immediate: true the SW might never register when called from useEffect.
+ * waiting for the load event.
  */
 type UpdateSw = (reloadPage?: boolean) => Promise<void>
+
+const PWA_ENABLED = import.meta.env.VITE_ENABLE_PWA === 'true'
 
 export function PwaUpdatePrompt() {
 	const [needRefresh, setNeedRefresh] = useState(false)
 	const updateSwRef = useRef<UpdateSw | null>(null)
 
 	useEffect(() => {
-		if (!import.meta.env.PROD) return
+		if (!import.meta.env.PROD || !PWA_ENABLED) return
 
 		void import('virtual:pwa-register').then(({ registerSW }) => {
 			const updateSw = registerSW({
