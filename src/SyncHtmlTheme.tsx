@@ -3,7 +3,7 @@ import { useEffect } from 'react'
 import { DARK_BG, LIGHT_BG } from './themeConstants'
 import type { ExcalidrawTheme } from './types'
 
-let themeColorMetaCache: HTMLMetaElement | null | undefined = undefined
+let themeColorMetaCache: HTMLMetaElement | null | undefined
 
 function getThemeColorMeta(): HTMLMetaElement | null {
 	if (themeColorMetaCache === undefined) {

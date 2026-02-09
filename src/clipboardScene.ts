@@ -14,9 +14,7 @@ function nextId(): string {
  * Returns a copy of pasted elements with new unique ids and remapped references
  * so pasted content does not collide with existing canvas elements.
  */
-function remapPastedElementIds(
-	elements: readonly ElementLike[],
-): ElementLike[] {
+function remapPastedElementIds(elements: readonly ElementLike[]): ElementLike[] {
 	const idMap = new Map<string, string>()
 	const groupIdMap = new Map<string, string>()
 	for (const el of elements) {

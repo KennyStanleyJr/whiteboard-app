@@ -65,7 +65,11 @@ export function extractPreferences(appState: Record<string, unknown>): StoredPre
 		if (typeof v === 'boolean') prefs[key] = v
 	}
 	const activeTool = appState.activeTool as { locked?: boolean } | undefined
-	if (activeTool != null && typeof activeTool === 'object' && typeof activeTool.locked === 'boolean') {
+	if (
+		activeTool != null &&
+		typeof activeTool === 'object' &&
+		typeof activeTool.locked === 'boolean'
+	) {
 		prefs[ELEMENT_LOCK_KEY] = activeTool.locked
 	}
 	return prefs
