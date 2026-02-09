@@ -69,20 +69,28 @@ export function getElementBounds(
     const w = el.width;
     const h = el.height;
     if (w !== undefined && h !== undefined && w > 0 && h > 0) {
+      /* Round position and size so selection box matches foreignObject (which uses rounded dims); fixes Safari misalignment. */
       return sanitizeElementBounds({
-        x: el.x,
-        y: el.y,
-        width: w,
-        height: h,
+        x: Math.round(el.x),
+        y: Math.round(el.y),
+        width: Math.round(w),
+        height: Math.round(h),
       });
     }
     const measured = measuredBounds?.[el.id];
     if (measured !== undefined) {
-      return sanitizeElementBounds(measured);
+      /* Round position and dimensions so selection box matches foreignObject; consistent with stored measured bounds. */
+      return sanitizeElementBounds({
+        x: Math.round(el.x),
+        y: Math.round(el.y),
+        width: Math.round(measured.width),
+        height: Math.round(measured.height),
+      });
     }
+    /* Round position so selection box matches foreignObject when no measured bounds yet (e.g. newly created text). */
     return sanitizeElementBounds({
-      x: el.x,
-      y: el.y,
+      x: Math.round(el.x),
+      y: Math.round(el.y),
       width: TEXT_EDIT_WIDTH,
       height: TEXT_EDIT_HEIGHT,
     });

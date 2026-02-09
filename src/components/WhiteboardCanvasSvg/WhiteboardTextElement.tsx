@@ -373,10 +373,14 @@ function WhiteboardTextElementInner({
       onFinishEdit();
   };
 
+  /* Round position so foreignObject matches selection box (getElementBounds rounds for text); fixes Safari misalignment. */
+  const foX = Math.round(el.x);
+  const foY = Math.round(el.y);
+
   return (
     <foreignObject
-      x={safeSvgNumber(el.x, 0)}
-      y={safeSvgNumber(el.y, 0)}
+      x={safeSvgNumber(foX, 0)}
+      y={safeSvgNumber(foY, 0)}
       width={safeSvgNumber(foWidthRounded, MIN_FOREIGN_OBJECT_SIZE)}
       height={safeSvgNumber(foHeightRounded, MIN_FOREIGN_OBJECT_SIZE)}
       className="whiteboard-text-edit"

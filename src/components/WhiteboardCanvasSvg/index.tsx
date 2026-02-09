@@ -207,7 +207,7 @@ export const WhiteboardCanvasSvg = forwardRef<
           width,
           height
         );
-        if (topLeft !== null && bottomRight !== null) {
+        if (topLeft !== null && bottomRight !== null && el != null) {
           const wl = viewBoxToWorld(
             topLeft.x,
             topLeft.y,
@@ -225,18 +225,17 @@ export const WhiteboardCanvasSvg = forwardRef<
           const w = br.x - wl.x;
           const h = br.y - wl.y;
           if (
-            Number.isFinite(wl.x) &&
-            Number.isFinite(wl.y) &&
             Number.isFinite(w) &&
             Number.isFinite(h) &&
             w > 0 &&
             h > 0
           ) {
+            /* Use rounded element position and dimensions so selection/FO stay aligned; round all to reduce jitter and match foreignObject. */
             next[id] = sanitizeElementBounds({
-              x: wl.x,
-              y: wl.y,
-              width: w,
-              height: h,
+              x: Math.round(el.x),
+              y: Math.round(el.y),
+              width: Math.round(w),
+              height: Math.round(h),
             });
           }
         }
