@@ -1,4 +1,4 @@
-import { Excalidraw, THEME } from '@excalidraw/excalidraw'
+import { Excalidraw, MainMenu, THEME } from '@excalidraw/excalidraw'
 import '@excalidraw/excalidraw/index.css'
 import { useCallback, useState } from 'react'
 import { SyncHtmlTheme } from './SyncHtmlTheme'
@@ -48,7 +48,20 @@ function App() {
 						toggleTheme: true,
 					},
 				}}
-			/>
+			>
+				<MainMenu>
+					<MainMenu.DefaultItems.LoadScene />
+					<MainMenu.DefaultItems.SaveToActiveFile />
+					<MainMenu.DefaultItems.Export />
+					<MainMenu.DefaultItems.SaveAsImage />
+					<MainMenu.DefaultItems.SearchMenu />
+					<MainMenu.DefaultItems.Help />
+					<MainMenu.DefaultItems.ClearCanvas />
+					<MainMenu.Separator />
+					<MainMenu.DefaultItems.ToggleTheme />
+					<MainMenu.DefaultItems.ChangeCanvasBackground />
+				</MainMenu>
+			</Excalidraw>
 		</div>
 	)
 }
