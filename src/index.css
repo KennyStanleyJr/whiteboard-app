@@ -9,3 +9,7 @@ body {
 	font-family: 'Inter', sans-serif;
 	overscroll-behavior: none;
 }
+
+.color-picker-container--no-top-picks {
+	justify-content: left !important;
+}
