@@ -2,7 +2,7 @@ import type { RefObject } from "react";
 import { forwardRef, useCallback, useImperativeHandle, useLayoutEffect, useRef, useEffect } from "react";
 import { clientToViewBox, viewBoxToWorld } from "../../hooks/canvas/canvasCoords";
 import type { SelectionRect } from "../../hooks";
-import type { WhiteboardElement } from "../../types/whiteboard";
+import type { TextElement, WhiteboardElement } from "../../types/whiteboard";
 import {
   type ElementBounds,
   boundsEqualWithinEpsilon,
@@ -324,21 +324,19 @@ export const WhiteboardCanvasSvg = forwardRef<
       className="whiteboard-canvas"
       viewBox={viewBox}
       preserveAspectRatio="none"
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onPointerLeave={onPointerLeave}
+      onContextMenu={onContextMenu}
+      style={{ cursor: isPanning ? "grabbing" : "default" }}
     >
       <defs>
         <DotGridPattern color={gridStyle === "dotted" ? gridColor : undefined} />
         <LineGridPattern color={gridColor} />
         <NotebookGridPattern color={gridColor} />
       </defs>
-      <g
-        transform={transform}
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
-        onPointerLeave={onPointerLeave}
-        onContextMenu={onContextMenu}
-        style={{ cursor: isPanning ? "grabbing" : "default" }}
-      >
+      <g transform={transform}>
         <rect
           x={-CANVAS_EXTENT}
           y={-CANVAS_EXTENT}
@@ -362,29 +360,6 @@ export const WhiteboardCanvasSvg = forwardRef<
           />
         )}
         {elements.map((el) => {
-          if (el.kind === "text") {
-            return (
-              <WhiteboardTextElement
-                key={el.id}
-                element={el}
-                isEditing={el.id === editingElementId}
-                isResizing={isResizing}
-                measuredBounds={measuredBounds}
-                onDoubleClick={onElementDoubleClick}
-                setTextDivRef={setTextDivRef}
-                onUpdateContent={onUpdateElementContent}
-                onFinishEdit={onFinishEditElement}
-                onEditKeyDown={handleEditKeyDown}
-                editingRefSetter={setEditingRef}
-                toolbarContainerRef={toolbarContainerRef}
-                onEffectiveFontSize={onEffectiveFontSize}
-                onTextAspectRatio={onTextAspectRatio}
-                onMaxFillBoxSize={onMaxFillBoxSize}
-                onFillFittedSize={onFillFittedSize}
-                getEffectiveFontSize={getEffectiveFontSize}
-              />
-            );
-          }
           if (el.kind === "shape") {
             return <WhiteboardShapeElement key={el.id} element={el} />;
           }
@@ -410,6 +385,31 @@ export const WhiteboardCanvasSvg = forwardRef<
           onResizeHandleUp={onResizeHandleUp}
         />
       </g>
+      {/* Text in viewBox space so position stays correct with pan/zoom. */}
+      {elements
+        .filter((el): el is TextElement => el.kind === "text")
+        .map((el) => (
+          <WhiteboardTextElement
+            key={el.id}
+            element={el}
+            isEditing={el.id === editingElementId}
+            isResizing={isResizing}
+            measuredBounds={measuredBounds}
+            onDoubleClick={onElementDoubleClick}
+            setTextDivRef={setTextDivRef}
+            onUpdateContent={onUpdateElementContent}
+            onFinishEdit={onFinishEditElement}
+            onEditKeyDown={handleEditKeyDown}
+            editingRefSetter={setEditingRef}
+            toolbarContainerRef={toolbarContainerRef}
+            onEffectiveFontSize={onEffectiveFontSize}
+            onTextAspectRatio={onTextAspectRatio}
+            onMaxFillBoxSize={onMaxFillBoxSize}
+            onFillFittedSize={onFillFittedSize}
+            getEffectiveFontSize={getEffectiveFontSize}
+            viewBoxTransform={{ panX, panY, zoom }}
+          />
+        ))}
       {selectionRect !== null && (
         <rect
           className="selection-box"

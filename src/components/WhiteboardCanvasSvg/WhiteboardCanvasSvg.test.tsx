@@ -51,14 +51,16 @@ describe("WhiteboardCanvasSvg", () => {
 
   it("shows grabbing cursor when panning", () => {
     const { container } = render(<WhiteboardCanvasSvg {...defaultProps} isPanning={true} />);
-    const g = container.querySelector("g");
-    expect(g?.style.cursor).toBe("grabbing");
+    const svg = container.querySelector("svg.whiteboard-canvas");
+    expect(svg).toBeInstanceOf(SVGElement);
+    expect((svg as SVGElement).style.cursor).toBe("grabbing");
   });
 
   it("shows default cursor when not panning", () => {
     const { container } = render(<WhiteboardCanvasSvg {...defaultProps} isPanning={false} />);
-    const g = container.querySelector("g");
-    expect(g?.style.cursor).toBe("default");
+    const svg = container.querySelector("svg.whiteboard-canvas");
+    expect(svg).toBeInstanceOf(SVGElement);
+    expect((svg as SVGElement).style.cursor).toBe("default");
   });
 
   it("does not render selection box when selectionRect is null", () => {

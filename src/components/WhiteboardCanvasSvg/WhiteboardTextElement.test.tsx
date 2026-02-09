@@ -21,6 +21,9 @@ const measuredBounds: Record<string, { x: number; y: number; width: number; heig
   t1: { x: 10, y: 20, width: 50, height: 18 },
 };
 
+/** Default pan/zoom for tests (identity: viewBox position = world position). */
+const defaultViewBoxTransform = { panX: 0, panY: 0, zoom: 1 };
+
 function renderInSvg(ui: React.ReactElement): ReturnType<typeof render> {
   return render(<svg>{ui}</svg>);
 }
@@ -38,6 +41,7 @@ describe("WhiteboardTextElement", () => {
         onFinishEdit={vi.fn()}
         onEditKeyDown={vi.fn()}
         editingRefSetter={vi.fn()}
+        viewBoxTransform={defaultViewBoxTransform}
       />
     );
     const fo = container.querySelector("foreignObject.whiteboard-text-edit");
@@ -60,6 +64,7 @@ describe("WhiteboardTextElement", () => {
         onFinishEdit={vi.fn()}
         onEditKeyDown={vi.fn()}
         editingRefSetter={vi.fn()}
+        viewBoxTransform={defaultViewBoxTransform}
       />
     );
     const fo = container.querySelector("foreignObject.whiteboard-text-edit");
@@ -81,6 +86,7 @@ describe("WhiteboardTextElement", () => {
         onFinishEdit={vi.fn()}
         onEditKeyDown={vi.fn()}
         editingRefSetter={vi.fn()}
+        viewBoxTransform={defaultViewBoxTransform}
       />
     );
     const fo = container.querySelector("foreignObject.whiteboard-text-edit");
@@ -103,6 +109,7 @@ describe("WhiteboardTextElement", () => {
         onFinishEdit={onFinishEdit}
         onEditKeyDown={vi.fn()}
         editingRefSetter={vi.fn()}
+        viewBoxTransform={defaultViewBoxTransform}
       />
     );
     const div = container.querySelector<HTMLDivElement>(
@@ -129,6 +136,7 @@ describe("WhiteboardTextElement", () => {
         onFinishEdit={vi.fn()}
         onEditKeyDown={onEditKeyDown}
         editingRefSetter={vi.fn()}
+        viewBoxTransform={defaultViewBoxTransform}
       />
     );
     const div = container.querySelector<HTMLDivElement>(
@@ -161,6 +169,7 @@ describe("WhiteboardTextElement", () => {
         onFinishEdit={vi.fn()}
         onEditKeyDown={vi.fn()}
         editingRefSetter={vi.fn()}
+        viewBoxTransform={defaultViewBoxTransform}
       />
     );
     const div = container.querySelector(".whiteboard-text-display--fit");
@@ -186,6 +195,7 @@ describe("WhiteboardTextElement", () => {
         onFinishEdit={vi.fn()}
         onEditKeyDown={vi.fn()}
         editingRefSetter={vi.fn()}
+        viewBoxTransform={defaultViewBoxTransform}
       />
     );
     const fo = container.querySelector("foreignObject.whiteboard-text-edit");

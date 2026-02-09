@@ -59,6 +59,8 @@ export interface WhiteboardTextElementProps {
   getEffectiveFontSize?: (elementId: string) => number | undefined;
   /** When true, skip onFillFittedSize to avoid lag during resize (resize handler is source of truth). */
   isResizing?: boolean;
+  /** Pan/zoom for viewBox-space positioning (text layer outside transformed group). */
+  viewBoxTransform: { panX: number; panY: number; zoom: number };
 }
 
 function WhiteboardTextElementInner({
@@ -78,6 +80,7 @@ function WhiteboardTextElementInner({
   onFillFittedSize,
   getEffectiveFontSize,
   isResizing = false,
+  viewBoxTransform: { panX: vbxPanX, panY: vbxPanY, zoom: vbxZoom },
 }: WhiteboardTextElementProps): JSX.Element {
   const hasExplicitSize =
     el.width !== undefined &&
@@ -373,26 +376,16 @@ function WhiteboardTextElementInner({
       onFinishEdit();
   };
 
-  /* Round position so foreignObject matches selection box (getElementBounds rounds for text); fixes Safari misalignment. */
+  /* Rounded world position/size; viewBox position/size for foreignObject (pan/zoom applied). */
   const foX = Math.round(el.x);
   const foY = Math.round(el.y);
+  const foViewX = vbxPanX + vbxZoom * foX;
+  const foViewY = vbxPanY + vbxZoom * foY;
+  const foViewW = vbxZoom * foWidthRounded;
+  const foViewH = vbxZoom * foHeightRounded;
 
-  return (
-    <foreignObject
-      x={safeSvgNumber(foX, 0)}
-      y={safeSvgNumber(foY, 0)}
-      width={safeSvgNumber(foWidthRounded, MIN_FOREIGN_OBJECT_SIZE)}
-      height={safeSvgNumber(foHeightRounded, MIN_FOREIGN_OBJECT_SIZE)}
-      className="whiteboard-text-edit"
-      onDoubleClick={
-        isEditing
-          ? undefined
-          : (e) => {
-              e.stopPropagation();
-              onDoubleClick(el.id);
-            }
-      }
-    >
+  const foreignObjectContent = (
+    <>
       {isEditing ? hasExplicitSize && fillEnabled ? (
         <div ref={fillEditContainerRef} style={SIZED_WRAPPER_STYLE}>
           <div
@@ -537,6 +530,35 @@ function WhiteboardTextElementInner({
           {...contentProps}
         />
       )}
+    </>
+  );
+
+  return (
+    <foreignObject
+      x={safeSvgNumber(foViewX, 0)}
+      y={safeSvgNumber(foViewY, 0)}
+      width={safeSvgNumber(foViewW, MIN_FOREIGN_OBJECT_SIZE)}
+      height={safeSvgNumber(foViewH, MIN_FOREIGN_OBJECT_SIZE)}
+      className="whiteboard-text-edit"
+      onDoubleClick={
+        isEditing
+          ? undefined
+          : (e) => {
+              e.stopPropagation();
+              onDoubleClick(el.id);
+            }
+      }
+    >
+      <div
+        style={{
+          width: foWidthRounded,
+          height: foHeightRounded,
+          transform: `scale(${vbxZoom})`,
+          transformOrigin: "0 0",
+        }}
+      >
+        {foreignObjectContent}
+      </div>
     </foreignObject>
   );
 }
