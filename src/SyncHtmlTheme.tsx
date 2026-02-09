@@ -1,13 +1,13 @@
+import { THEME } from '@excalidraw/excalidraw'
 import { useEffect } from 'react'
+import type { ExcalidrawTheme } from './types'
 
 /** Background colors matching Excalidraw light/dark themes */
 const LIGHT_BG = 'hsl(210, 20%, 98%)'
 const DARK_BG = 'hsl(240, 5%, 6.5%)'
 
-export type Theme = 'light' | 'dark'
-
 export interface SyncHtmlThemeProps {
-	theme: Theme
+	theme: ExcalidrawTheme
 }
 
 /**
@@ -16,7 +16,7 @@ export interface SyncHtmlThemeProps {
  */
 export function SyncHtmlTheme({ theme }: SyncHtmlThemeProps) {
 	useEffect(() => {
-		const isDarkMode = theme === 'dark'
+		const isDarkMode = theme === THEME.DARK
 		const root = document.documentElement
 		root.style.backgroundColor = isDarkMode ? DARK_BG : LIGHT_BG
 
