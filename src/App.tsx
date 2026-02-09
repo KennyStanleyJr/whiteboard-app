@@ -1,4 +1,5 @@
 import { Tldraw } from 'tldraw'
+import { PwaUpdatePrompt } from './PwaUpdatePrompt'
 import { SyncHtmlTheme } from './SyncHtmlTheme'
 
 function App() {
@@ -7,6 +8,7 @@ function App() {
 			<Tldraw>
 				<SyncHtmlTheme />
 			</Tldraw>
+			<PwaUpdatePrompt />
 		</div>
 	)
 }
