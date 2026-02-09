@@ -3,9 +3,21 @@ import '@excalidraw/excalidraw/index.css'
 import { useCallback, useState } from 'react'
 import { SyncHtmlTheme } from './SyncHtmlTheme'
 
+const THEME_STORAGE_KEY = 'whiteboard-theme'
+
+function loadStoredTheme(): typeof THEME.LIGHT | typeof THEME.DARK {
+	if (typeof window === 'undefined') return THEME.LIGHT
+	try {
+		const stored = localStorage.getItem(THEME_STORAGE_KEY)
+		return stored === 'dark' ? THEME.DARK : THEME.LIGHT
+	} catch {
+		return THEME.LIGHT
+	}
+}
+
 function App() {
 	const [theme, setTheme] = useState<typeof THEME.LIGHT | typeof THEME.DARK>(
-		THEME.LIGHT,
+		loadStoredTheme,
 	)
 
 	const handleChange = useCallback(
@@ -13,6 +25,14 @@ function App() {
 			const next =
 				appState.theme === 'dark' ? THEME.DARK : THEME.LIGHT
 			setTheme(next)
+			try {
+				localStorage.setItem(
+					THEME_STORAGE_KEY,
+					appState.theme === 'dark' ? 'dark' : 'light',
+				)
+			} catch {
+				// Ignore storage errors (e.g. private mode)
+			}
 		},
 		[],
 	)
