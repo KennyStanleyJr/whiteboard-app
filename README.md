@@ -7,7 +7,12 @@ Infinite whiteboard app powered by the **[tldraw](https://tldraw.dev)** SDK. One
 - **tldraw** – Infinite canvas, shapes, drawing, and collaboration primitives
 - **React 19** + **TypeScript** (strict)
 - **Vite 7**
+- **vite-plugin-pwa** – Offline support, installable PWA (manifest + service worker)
 - **ESLint 9** (flat config, type-checked, max-warnings 0)
+
+## PWA
+
+The app is a **Progressive Web App**: users can install it from the browser (Chrome “Install app”, Safari “Add to Home Screen”) and use it offline. The service worker caches assets and updates automatically when you deploy. Icons and manifest are in `public/`; the build outputs `sw.js`, `manifest.webmanifest`, and the registration script.
 
 ## Requirements
 
