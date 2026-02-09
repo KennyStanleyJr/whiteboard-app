@@ -1,40 +1,49 @@
 import { Excalidraw, MainMenu, THEME } from '@excalidraw/excalidraw'
 import '@excalidraw/excalidraw/index.css'
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import {
+	loadStoredScene,
+	loadStoredTheme,
+	saveSceneToStorage,
+	saveStoredTheme,
+	SAVE_DEBOUNCE_MS,
+} from './storage'
 import { SyncHtmlTheme } from './SyncHtmlTheme'
+import type { ExcalidrawTheme, OnChangeParams } from './types'
 
-const THEME_STORAGE_KEY = 'whiteboard-theme'
-
-function loadStoredTheme(): typeof THEME.LIGHT | typeof THEME.DARK {
-	if (typeof window === 'undefined') return THEME.LIGHT
-	try {
-		const stored = localStorage.getItem(THEME_STORAGE_KEY)
-		return stored === 'dark' ? THEME.DARK : THEME.LIGHT
-	} catch {
-		return THEME.LIGHT
-	}
-}
+const UI_OPTIONS = { canvasActions: { toggleTheme: true } } as const
 
 function App() {
-	const [theme, setTheme] = useState<typeof THEME.LIGHT | typeof THEME.DARK>(
-		loadStoredTheme,
-	)
+	const [theme, setTheme] = useState<ExcalidrawTheme>(loadStoredTheme)
+	const [initialData] = useState(loadStoredScene)
+	const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+	const clearSaveTimeout = useCallback(() => {
+		if (saveTimeoutRef.current != null) {
+			clearTimeout(saveTimeoutRef.current)
+			saveTimeoutRef.current = null
+		}
+	}, [])
+
+	useEffect(() => () => clearSaveTimeout(), [clearSaveTimeout])
 
 	const handleChange = useCallback(
-		(_elements: unknown, appState: { theme?: string }) => {
-			const next =
-				appState.theme === 'dark' ? THEME.DARK : THEME.LIGHT
-			setTheme(next)
-			try {
-				localStorage.setItem(
-					THEME_STORAGE_KEY,
-					appState.theme === 'dark' ? 'dark' : 'light',
-				)
-			} catch {
-				// Ignore storage errors (e.g. private mode)
-			}
+		(
+			elements: OnChangeParams[0],
+			appState: OnChangeParams[1],
+			files: OnChangeParams[2],
+		) => {
+			const isDark = appState.theme === 'dark'
+			setTheme(isDark ? THEME.DARK : THEME.LIGHT)
+			saveStoredTheme(isDark ? 'dark' : 'light')
+
+			clearSaveTimeout()
+			saveTimeoutRef.current = setTimeout(() => {
+				saveTimeoutRef.current = null
+				saveSceneToStorage(elements, appState, files)
+			}, SAVE_DEBOUNCE_MS)
 		},
-		[],
+		[clearSaveTimeout],
 	)
 
 	return (
@@ -42,12 +51,9 @@ function App() {
 			<SyncHtmlTheme theme={theme} />
 			<Excalidraw
 				theme={theme}
+				initialData={initialData ?? undefined}
 				onChange={handleChange}
-				UIOptions={{
-					canvasActions: {
-						toggleTheme: true,
-					},
-				}}
+				UIOptions={UI_OPTIONS}
 			>
 				<MainMenu>
 					<MainMenu.DefaultItems.LoadScene />

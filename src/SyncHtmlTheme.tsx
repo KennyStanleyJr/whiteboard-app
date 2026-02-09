@@ -6,11 +6,15 @@ const DARK_BG = 'hsl(240, 5%, 6.5%)'
 
 export type Theme = 'light' | 'dark'
 
+export interface SyncHtmlThemeProps {
+	theme: Theme
+}
+
 /**
  * Syncs the document root background and theme-color meta tag to the app's
  * light/dark mode. Pass the current theme from the canvas component.
  */
-export function SyncHtmlTheme({ theme }: { theme: Theme }) {
+export function SyncHtmlTheme({ theme }: SyncHtmlThemeProps) {
 	useEffect(() => {
 		const isDarkMode = theme === 'dark'
 		const root = document.documentElement
