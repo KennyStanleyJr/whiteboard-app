@@ -35,7 +35,7 @@ export default defineConfig({
 		}),
 	],
 	build: {
-		chunkSizeWarningLimit: 4500, // Excalidraw chunk ~4.4 MB
+		chunkSizeWarningLimit: 5500, // Excalidraw chunk ~5.1 MB
 		rollupOptions: {
 			output: {
 				manualChunks(id: string): string | undefined {

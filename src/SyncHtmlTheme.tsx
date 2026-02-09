@@ -1,10 +1,17 @@
 import { THEME } from '@excalidraw/excalidraw'
 import { useEffect } from 'react'
+import { DARK_BG, LIGHT_BG } from './themeConstants'
 import type { ExcalidrawTheme } from './types'
 
-/** Background colors matching Excalidraw light/dark themes */
-const LIGHT_BG = 'hsl(210, 20%, 98%)'
-const DARK_BG = 'hsl(240, 5%, 6.5%)'
+let themeColorMetaCache: HTMLMetaElement | null | undefined = undefined
+
+function getThemeColorMeta(): HTMLMetaElement | null {
+	if (themeColorMetaCache === undefined) {
+		const el = document.querySelector('meta[name="theme-color"]')
+		themeColorMetaCache = el instanceof HTMLMetaElement ? el : null
+	}
+	return themeColorMetaCache ?? null
+}
 
 export interface SyncHtmlThemeProps {
 	theme: ExcalidrawTheme
@@ -17,19 +24,16 @@ export interface SyncHtmlThemeProps {
 export function SyncHtmlTheme({ theme }: SyncHtmlThemeProps) {
 	useEffect(() => {
 		const isDarkMode = theme === THEME.DARK
+		const bg = isDarkMode ? DARK_BG : LIGHT_BG
 		const root = document.documentElement
-		root.style.backgroundColor = isDarkMode ? DARK_BG : LIGHT_BG
+		root.style.setProperty('--app-bg', bg)
 
-		const meta = document.querySelector('meta[name="theme-color"]')
-		if (meta) {
-			meta.setAttribute('content', isDarkMode ? DARK_BG : LIGHT_BG)
-		}
+		const meta = getThemeColorMeta()
+		if (meta) meta.setAttribute('content', bg)
 
 		return () => {
-			root.style.backgroundColor = ''
-			if (meta) {
-				meta.setAttribute('content', LIGHT_BG)
-			}
+			root.style.removeProperty('--app-bg')
+			if (meta) meta.setAttribute('content', LIGHT_BG)
 		}
 	}, [theme])
 

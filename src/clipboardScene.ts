@@ -1,7 +1,10 @@
-import { restore } from '@excalidraw/excalidraw'
-import type { ExcalidrawImperativeAPI } from '@excalidraw/excalidraw/types'
+import { restoreElements } from '@excalidraw/excalidraw'
+import type {
+	BinaryFileData,
+	ExcalidrawImperativeAPI,
+} from '@excalidraw/excalidraw/types'
 
-export type ElementLike = Record<string, unknown> & { id: string }
+type ElementLike = Record<string, unknown> & { id: string }
 
 function nextId(): string {
 	return crypto.randomUUID()
@@ -37,49 +40,61 @@ function remapPastedElementIds(
 		)
 	}
 
-	const result: ElementLike[] = []
-	for (const el of elements) {
-		const newEl: ElementLike = {
-			...el,
-			id: mapId(el.id),
-			groupIds: mapGroupIds(el.groupIds as readonly string[] | undefined),
-		}
-		const frameId = el.frameId
-		if (typeof frameId === 'string' && frameId !== '') {
-			newEl.frameId = idMap.has(frameId) ? mapId(frameId) : null
-		}
-		const boundElements = el.boundElements
-		if (Array.isArray(boundElements)) {
-			newEl.boundElements = boundElements
-				.filter((b: unknown) => {
-					if (typeof b !== 'object' || b == null || !('id' in b)) return false
-					const id = (b as { id: string }).id
-					return typeof id === 'string' && idMap.has(id)
-				})
-				.map((b: unknown) => {
-					const bound = b as { id: string; type?: string }
-					return { ...bound, id: mapId(bound.id) }
-				})
-		}
-		const containerId = el.containerId
-		if (typeof containerId === 'string') {
-			newEl.containerId = idMap.has(containerId) ? mapId(containerId) : null
-		}
-		const startBinding = el.startBinding as { elementId: string } | undefined
-		if (startBinding?.elementId != null) {
-			newEl.startBinding = idMap.has(startBinding.elementId)
-				? { ...startBinding, elementId: mapId(startBinding.elementId) }
-				: null
-		}
-		const endBinding = el.endBinding as { elementId: string } | undefined
-		if (endBinding?.elementId != null) {
-			newEl.endBinding = idMap.has(endBinding.elementId)
-				? { ...endBinding, elementId: mapId(endBinding.elementId) }
-				: null
-		}
-		result.push(newEl)
+	return elements.map((el) =>
+		mapSingleElement(el, idMap, mapId, mapGroupIds),
+	)
+}
+
+type IdMappers = {
+	mapId: (id: string) => string
+	mapGroupIds: (ids: readonly string[] | undefined) => string[]
+}
+
+function mapSingleElement(
+	el: ElementLike,
+	idMap: Map<string, string>,
+	mapId: IdMappers['mapId'],
+	mapGroupIds: IdMappers['mapGroupIds'],
+): ElementLike {
+	const newEl: ElementLike = {
+		...el,
+		id: mapId(el.id),
+		groupIds: mapGroupIds(el.groupIds as readonly string[] | undefined),
 	}
-	return result
+	const frameId = el.frameId
+	if (typeof frameId === 'string' && frameId !== '') {
+		newEl.frameId = idMap.has(frameId) ? mapId(frameId) : null
+	}
+	const boundElements = el.boundElements
+	if (Array.isArray(boundElements)) {
+		newEl.boundElements = boundElements
+			.filter((b: unknown) => {
+				if (typeof b !== 'object' || b == null || !('id' in b)) return false
+				const id = (b as { id: string }).id
+				return typeof id === 'string' && idMap.has(id)
+			})
+			.map((b: unknown) => {
+				const bound = b as { id: string; type?: string }
+				return { ...bound, id: mapId(bound.id) }
+			})
+	}
+	const containerId = el.containerId
+	if (typeof containerId === 'string') {
+		newEl.containerId = idMap.has(containerId) ? mapId(containerId) : null
+	}
+	const startBinding = el.startBinding as { elementId: string } | undefined
+	if (startBinding?.elementId != null) {
+		newEl.startBinding = idMap.has(startBinding.elementId)
+			? { ...startBinding, elementId: mapId(startBinding.elementId) }
+			: null
+	}
+	const endBinding = el.endBinding as { elementId: string } | undefined
+	if (endBinding?.elementId != null) {
+		newEl.endBinding = idMap.has(endBinding.elementId)
+			? { ...endBinding, elementId: mapId(endBinding.elementId) }
+			: null
+	}
+	return newEl
 }
 
 type SceneAPI = Pick<
@@ -87,10 +102,15 @@ type SceneAPI = Pick<
 	'getSceneElements' | 'addFiles' | 'updateScene'
 >
 
+type ParsedScene = {
+	elements?: unknown
+	files?: Record<string, BinaryFileData>
+}
+
 /** Parses text as JSON and returns the object if it has an elements array; otherwise null. */
-function parseSceneJson(text: string): Parameters<typeof restore>[0] | null {
+function parseSceneJson(text: string): ParsedScene | null {
 	const trimmed = text?.trim()
-	if (trimmed == null || trimmed === '') return null
+	if (!trimmed) return null
 	let parsed: unknown
 	try {
 		parsed = JSON.parse(trimmed)
@@ -100,7 +120,7 @@ function parseSceneJson(text: string): Parameters<typeof restore>[0] | null {
 	if (parsed == null || typeof parsed !== 'object') return null
 	const obj = parsed as Record<string, unknown>
 	if (!Array.isArray(obj.elements)) return null
-	return parsed as Parameters<typeof restore>[0]
+	return parsed as ParsedScene
 }
 
 /**
@@ -115,13 +135,17 @@ export function applySceneJsonToCanvas(
 	if (parsed == null || api == null) return false
 
 	try {
-		const restored = restore(parsed, null, null)
+		const restoredElements = restoreElements(
+			Array.isArray(parsed.elements) ? parsed.elements : [],
+			null,
+		)
 		const pastedWithNewIds = remapPastedElementIds(
-			restored.elements as readonly ElementLike[],
+			restoredElements as readonly ElementLike[],
 		)
 		const currentElements = api.getSceneElements()
 		const newElements = [...currentElements, ...pastedWithNewIds]
-		const fileList = Object.values(restored.files)
+		const files = parsed.files ?? {}
+		const fileList = Object.values(files)
 		if (fileList.length > 0) {
 			api.addFiles(fileList)
 		}

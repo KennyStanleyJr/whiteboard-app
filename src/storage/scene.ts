@@ -1,7 +1,33 @@
-import { restore, serializeAsJSON } from '@excalidraw/excalidraw'
+import {
+	restoreAppState,
+	restoreElements,
+	serializeAsJSON,
+} from '@excalidraw/excalidraw'
+import type { BinaryFiles } from '@excalidraw/excalidraw/types'
 import type { OnChangeParams } from '../types'
 
-export const SCENE_STORAGE_KEY = 'whiteboard-scene'
+type SceneData = {
+	elements?: unknown
+	appState?: Parameters<typeof restoreAppState>[0]
+	files?: BinaryFiles
+}
+
+function restoreScene(data: SceneData): {
+	elements: ReturnType<typeof restoreElements>
+	appState: ReturnType<typeof restoreAppState>
+	files: BinaryFiles
+} {
+	const rawElements = Array.isArray(data.elements) ? data.elements : []
+	const elements = restoreElements(
+		rawElements as Parameters<typeof restoreElements>[0],
+		null,
+	)
+	const appState = restoreAppState(data.appState ?? null, null)
+	const files = data.files ?? {}
+	return { elements, appState, files }
+}
+
+const SCENE_STORAGE_KEY = 'whiteboard-scene'
 export const SAVE_DEBOUNCE_MS = 400
 
 /** View state keys that serializeAsJSON("local") omits; we persist them so pan/zoom restore. */
@@ -27,14 +53,14 @@ function serializeToData(
 	return JSON.stringify(data)
 }
 
-export function loadStoredScene(): ReturnType<typeof restore> | null {
+export function loadStoredScene(): ReturnType<typeof restoreScene> | null {
 	if (typeof window === 'undefined') return null
 	try {
 		const raw = localStorage.getItem(SCENE_STORAGE_KEY)
-		if (raw == null || raw === '') return null
-		const data = JSON.parse(raw) as Parameters<typeof restore>[0]
+		if (!raw) return null
+		const data = JSON.parse(raw) as SceneData
 		if (data == null || typeof data !== 'object') return null
-		return restore(data, null, null)
+		return restoreScene(data)
 	} catch {
 		return null
 	}
