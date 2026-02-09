@@ -101,6 +101,10 @@ function WhiteboardTextElementInner({
         ? TEXT_EDIT_HEIGHT
         : DEFAULT_UNMEASURED_TEXT_HEIGHT;
 
+  /* Integer dimensions reduce subpixel layout and jank on Safari/iOS. Use everywhere (foreignObject and fill scale) for consistency. */
+  const foWidthRounded = Math.round(foWidth);
+  const foHeightRounded = Math.round(foHeight);
+
   const [naturalSize, setNaturalSize] = useState<{
     width: number;
     height: number;
@@ -220,11 +224,11 @@ function WhiteboardTextElementInner({
     return () => ro.disconnect();
   }, [isEditing, fillEnabled, hasExplicitSize]);
 
-  /* In fill mode with explicit size, use element dimensions so scale updates when canvas resizes the box. */
+  /* In fill mode with explicit size, use rounded dimensions so fill scale matches the foreignObject size. */
   const boxH =
     hasExplicitSize && fillEnabled
-      ? foHeight
-      : (containerSize?.height ?? foHeight);
+      ? foHeightRounded
+      : (containerSize?.height ?? foHeightRounded);
   const hasValidNaturalSize =
     naturalSize != null &&
     naturalSize.width > 0 &&
@@ -369,8 +373,8 @@ function WhiteboardTextElementInner({
     <foreignObject
       x={safeSvgNumber(el.x, 0)}
       y={safeSvgNumber(el.y, 0)}
-      width={safeSvgNumber(foWidth, MIN_FOREIGN_OBJECT_SIZE)}
-      height={safeSvgNumber(foHeight, MIN_FOREIGN_OBJECT_SIZE)}
+      width={safeSvgNumber(foWidthRounded, MIN_FOREIGN_OBJECT_SIZE)}
+      height={safeSvgNumber(foHeightRounded, MIN_FOREIGN_OBJECT_SIZE)}
       className="whiteboard-text-edit"
       onDoubleClick={
         isEditing
@@ -388,7 +392,7 @@ function WhiteboardTextElementInner({
               position: "absolute",
               left: 0,
               top: 0,
-              transform: `scale(${editorScale})`,
+              transform: `scale(${editorScale}) translateZ(0)`,
               transformOrigin: "0 0",
             }}
           >
@@ -468,7 +472,7 @@ function WhiteboardTextElementInner({
                   width: "max-content",
                   maxWidth: "none",
                   whiteSpace: textWhiteSpace,
-                  transform: `scale(${fillScale}) translateY(${FILL_VERTICAL_NUDGE_PX}px)`,
+                  transform: `scale(${fillScale}) translateY(${FILL_VERTICAL_NUDGE_PX}px) translateZ(0)`,
                   transformOrigin: "0 0",
                 }}
                 {...contentProps}

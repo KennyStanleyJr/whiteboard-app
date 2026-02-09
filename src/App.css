@@ -464,6 +464,8 @@
   overflow: visible;
 }
 
+/* Crisp text on Safari/macOS and Safari/Chrome on iOS: font smoothing + geometric precision.
+   translateZ(0) promotes content to its own compositor layer so scaled SVG doesn't rasterize at wrong resolution. */
 .whiteboard-text-display {
   width: 100%;
   height: 100%;
@@ -475,6 +477,11 @@
   white-space: pre;
   background: transparent;
   border: none;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: geometricPrecision;
+  transform: translateZ(0);
+  backface-visibility: hidden;
 }
 
 /* Zero margins so fill and non-fill modes align (no down/right shift from <p> etc.). */
