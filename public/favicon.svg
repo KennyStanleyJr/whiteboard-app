@@ -1,21 +1,21 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
   <style>
-    /* Dark default: desaturated dark bg, light border and squares */
-    .bg { fill: #262626; }
-    .border { fill: none; stroke-width: 2; stroke: #e5e5e5; }
-    .sq { fill: #e5e5e5; }
+    /* Dark default: matches canvas dark bg (themeConstants.DARK_BG), white border and squares */
+    .bg { fill: hsl(240, 5%, 6.5%); }
+    .border { fill: none; stroke-width: 2; stroke: #fff; }
+    .sq { fill: #fff; }
     @media (prefers-color-scheme: light) {
-      .bg { fill: #f5f5f5; }
+      .bg { fill: hsl(210, 20%, 98%); }
       .border { stroke: #404040; }
       .sq { fill: #404040; }
     }
   </style>
-  <rect class="bg" width="32" height="32" />
-  <!-- Outer border (5px padding) -->
-  <rect class="border" x="5" y="5" width="22" height="22" rx="2" />
-  <!-- 4 filled squares in 2x2 grid (5x5 each, same scale as previous dots) -->
-  <rect class="sq" x="9.5" y="9.5" width="5" height="5" rx="1" />
-  <rect class="sq" x="17.5" y="9.5" width="5" height="5" rx="1" />
-  <rect class="sq" x="9.5" y="17.5" width="5" height="5" rx="1" />
-  <rect class="sq" x="17.5" y="17.5" width="5" height="5" rx="1" />
+  <rect class="bg" width="32" height="32" rx="4" ry="4" />
+  <!-- Outer border 18x18 centered -->
+  <rect class="border" x="7" y="7" width="18" height="18" rx="4" />
+  <!-- 4 filled squares centered in 2x2 grid (2px gap between) -->
+  <rect class="sq" x="10" y="10" width="5" height="5" rx="1" />
+  <rect class="sq" x="17" y="10" width="5" height="5" rx="1" />
+  <rect class="sq" x="10" y="17" width="5" height="5" rx="1" />
+  <rect class="sq" x="17" y="17" width="5" height="5" rx="1" />
 </svg>

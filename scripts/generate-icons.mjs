@@ -21,9 +21,9 @@ const TARGETS = [
 	{ name: 'maskable-icon-512x512.png', size: 512 },
 ]
 
-/** Dark default for PNG/ICO: desaturated dark bg with light border and dots. */
-const DARK_BG = '#262626'
-const LIGHT_COLOR = '#e5e5e5'
+/** Matches canvas dark bg (themeConstants.DARK_BG); white border and squares. */
+const DARK_BG = 'hsl(240, 5%, 6.5%)'
+const LIGHT_COLOR = '#fff'
 
 async function main() {
 	let svg = await readFile(SRC, 'utf8')
