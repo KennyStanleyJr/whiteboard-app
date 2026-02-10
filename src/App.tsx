@@ -2,6 +2,7 @@ import { CommandPalette, Excalidraw, MainMenu, THEME } from '@excalidraw/excalid
 import type { ExcalidrawImperativeAPI } from '@excalidraw/excalidraw/types'
 import '@excalidraw/excalidraw/index.css'
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { setupCanvasWheelZoom } from './canvasWheelZoom'
 import { applySceneJsonToCanvas } from './clipboardScene'
 import { setupContextMenuCopyJsonInjection } from './contextMenuCopyJson'
 import { getInitialData } from './initialData'
@@ -105,6 +106,11 @@ function App() {
 		() => setupContextMenuCopyJsonInjection(copySceneToClipboard, excalidrawAPIRef),
 		[copySceneToClipboard],
 	)
+
+	/** Custom wheel: plain scroll zooms from cursor; Ctrl+scroll pans. */
+	useEffect(() => {
+		return setupCanvasWheelZoom(excalidrawAPIRef)
+	}, [])
 
 	/** Paste: apply scene JSON only when focus is not in a text field; otherwise let browser paste. */
 	useEffect(() => {
