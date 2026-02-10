@@ -6,14 +6,16 @@
     <link rel="icon" href="/favicon.svg" sizes="any" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/apple-touch-icon-180x180.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <meta name="theme-color" content="hsl(210, 20%, 98%)" />
+    <meta name="theme-color" content="hsl(240, 5%, 6.5%)" />
     <script>
       (function () {
         try {
+          var theme = 'dark';
           var raw = localStorage.getItem('whiteboard-settings');
-          if (!raw) return;
-          var parsed = JSON.parse(raw);
-          var theme = parsed && parsed.theme === 'dark' ? 'dark' : 'light';
+          if (raw) {
+            var parsed = JSON.parse(raw);
+            if (parsed && (parsed.theme === 'dark' || parsed.theme === 'light')) theme = parsed.theme;
+          }
           var bg = theme === 'dark' ? 'hsl(240, 5%, 6.5%)' : 'hsl(210, 20%, 98%)';
           document.documentElement.style.setProperty('--app-bg', bg);
           var meta = document.querySelector('meta[name="theme-color"]');
