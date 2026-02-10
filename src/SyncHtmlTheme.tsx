@@ -31,10 +31,8 @@ export function SyncHtmlTheme({ theme }: SyncHtmlThemeProps) {
 		const meta = getThemeColorMeta()
 		if (meta) meta.setAttribute('content', bg)
 
-		return () => {
-			root.style.removeProperty('--app-bg')
-			if (meta) meta.setAttribute('content', LIGHT_BG)
-		}
+		// Do not reset on cleanup: leave HTML in sync with last theme so it never flashes wrong.
+		return () => {}
 	}, [theme])
 
 	return null
