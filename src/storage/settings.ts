@@ -6,6 +6,7 @@ const PREFERENCE_KEYS = [
 	'zenModeEnabled',
 	'viewModeEnabled',
 	'objectsSnapModeEnabled',
+	'exportBackground',
 ] as const
 const ELEMENT_LOCK_KEY = 'elementLockEnabled' as const
 
@@ -15,6 +16,7 @@ type StoredPreferences = Partial<{
 	viewModeEnabled: boolean
 	objectsSnapModeEnabled: boolean
 	elementLockEnabled: boolean
+	exportBackground: boolean
 }>
 
 type StoredSettings = {
@@ -81,7 +83,9 @@ export function applyPreferencesToAppState(
 	preferences: StoredPreferences,
 ): void {
 	for (const key of PREFERENCE_KEYS) {
-		const v = preferences[key]
+		let v = preferences[key]
+		// Default for existing users upgrading before we persisted this.
+		if (key === 'exportBackground' && v === undefined) v = false
 		if (typeof v === 'boolean') appState[key] = v
 	}
 	const locked = preferences[ELEMENT_LOCK_KEY]

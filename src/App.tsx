@@ -57,6 +57,13 @@ function App() {
 			const prefsJson = JSON.stringify(newPrefs)
 			const last = lastSavedSettingsRef.current
 			const themeChanged = last?.theme !== newTheme
+			// Sync exportWithDarkMode so copy-as-image (context menu) inherits light/dark mode.
+			// Export from menu is unchanged: it uses appState and the dialog's toggle.
+			if (themeChanged) {
+				excalidrawAPIRef.current?.updateScene({
+					appState: { exportWithDarkMode: isDark },
+				})
+			}
 			const prefsChanged = last?.prefs !== prefsJson
 			if (themeChanged || prefsChanged) {
 				saveStoredSettings({
@@ -134,6 +141,15 @@ function App() {
 				UIOptions={UI_OPTIONS}
 				excalidrawAPI={(api) => {
 					excalidrawAPIRef.current = api
+					// Sync export settings: theme for copy-as-image, stored pref for background.
+					const { theme: appTheme } = api.getAppState()
+					const { preferences } = loadStoredSettings()
+					api.updateScene({
+						appState: {
+							exportWithDarkMode: appTheme === 'dark',
+							exportBackground: preferences.exportBackground ?? false,
+						},
+					})
 				}}
 			>
 				<CommandPalette />
