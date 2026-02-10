@@ -61,17 +61,16 @@ function setupContextMenuCopyJsonObserver(
 		if (list != null) inject(list)
 	}
 
+	function findMenuList(node: Element): Element | null {
+		return node.matches(MENU_SELECTOR) ? node : node.querySelector(MENU_SELECTOR)
+	}
+
 	function handleMutations(mutations: MutationRecord[]): void {
-		const slice = mutations.slice(0, MAX_MUTATIONS)
-		for (let i = 0; i < slice.length; i++) {
-			const m = slice[i]
+		for (const m of mutations.slice(0, MAX_MUTATIONS)) {
 			const nodes = Array.from(m.addedNodes).slice(0, MAX_ADDED_NODES_PER_MUTATION)
-			for (let j = 0; j < nodes.length; j++) {
-				const node = nodes[j]
+			for (const node of nodes) {
 				if (!(node instanceof Element)) continue
-				const list = node.matches?.(MENU_SELECTOR)
-					? node
-					: node.querySelector?.(MENU_SELECTOR)
+				const list = findMenuList(node)
 				if (list != null) {
 					queueMicrotask(() => inject(list))
 					return

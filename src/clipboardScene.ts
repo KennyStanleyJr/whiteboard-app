@@ -1,3 +1,4 @@
+import { DEFAULT_GRID_STEP } from '@excalidraw/common'
 import { restoreElements } from '@excalidraw/excalidraw'
 import type {
 	BinaryFileData,
@@ -48,6 +49,7 @@ type IdMappers = {
 	mapGroupIds: (ids: readonly string[] | undefined) => string[]
 }
 
+/** Maps one element: id, groupIds, frameId, boundElements, containerId, bindings. */
 function mapSingleElement(
 	el: ElementLike,
 	idMap: Map<string, string>,
@@ -95,10 +97,33 @@ function mapSingleElement(
 	return newEl
 }
 
+/**
+ * Same offset as Excalidraw's duplicate/paste (2× grid step) so pasted
+ * elements appear beside the originals and match built-in paste behavior.
+ */
+const PASTE_OFFSET = DEFAULT_GRID_STEP * 2
+
+/**
+ * Returns a copy of elements with x,y shifted by PASTE_OFFSET so pasted
+ * content is visibly offset from the original position.
+ */
+function offsetElements(elements: readonly ElementLike[]): ElementLike[] {
+	return elements.map((el) => ({
+		...el,
+		x: (el.x as number) + PASTE_OFFSET,
+		y: (el.y as number) + PASTE_OFFSET,
+	}))
+}
+
 type SceneAPI = Pick<
 	ExcalidrawImperativeAPI,
 	'getSceneElements' | 'addFiles' | 'updateScene'
 >
+
+/** Elements array type expected by updateScene (avoids long inline assertion). */
+type SceneElementsUpdate = Parameters<
+	ExcalidrawImperativeAPI['updateScene']
+>[0]['elements']
 
 type ParsedScene = {
 	elements?: unknown
@@ -107,7 +132,7 @@ type ParsedScene = {
 
 /** Parses text as JSON and returns the object if it has an elements array; otherwise null. */
 function parseSceneJson(text: string): ParsedScene | null {
-	const trimmed = text?.trim()
+	const trimmed = text.trim()
 	if (!trimmed) return null
 	let parsed: unknown
 	try {
@@ -140,17 +165,20 @@ export function applySceneJsonToCanvas(
 		const pastedWithNewIds = remapPastedElementIds(
 			restoredElements as readonly ElementLike[],
 		)
+		const pastedOffset = offsetElements(pastedWithNewIds)
 		const currentElements = api.getSceneElements()
-		const newElements = [...currentElements, ...pastedWithNewIds]
+		const newElements = [...currentElements, ...pastedOffset]
 		const files = parsed.files ?? {}
 		const fileList = Object.values(files)
 		if (fileList.length > 0) {
 			api.addFiles(fileList)
 		}
+		const selectedElementIds = Object.fromEntries(
+			pastedOffset.map((el) => [el.id, true] as const),
+		) as Record<string, true>
 		api.updateScene({
-			elements: newElements as Parameters<
-				ExcalidrawImperativeAPI['updateScene']
-			>[0]['elements'],
+			elements: newElements as SceneElementsUpdate,
+			appState: { selectedElementIds },
 		})
 		return true
 	} catch {

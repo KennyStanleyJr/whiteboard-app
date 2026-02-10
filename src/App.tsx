@@ -99,8 +99,20 @@ function App() {
 		[copySceneToClipboard],
 	)
 
+	/** Paste: apply scene JSON only when focus is not in a text field; otherwise let browser paste. */
 	useEffect(() => {
+		function isFocusInTextField(): boolean {
+			const el = document.activeElement
+			if (!(el instanceof HTMLElement)) return false
+			return (
+				el.closest('input, textarea') != null ||
+				el.isContentEditable ||
+				el.closest('[contenteditable="true"], [contenteditable=""]') != null
+			)
+		}
+
 		function onPasteCapture(e: ClipboardEvent) {
+			if (isFocusInTextField()) return
 			const text = e.clipboardData?.getData('text/plain')?.trim()
 			if (!text) return
 			if (!applySceneJsonToCanvas(text, excalidrawAPIRef.current)) return
