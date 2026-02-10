@@ -82,7 +82,8 @@ export function getSelectedSceneAsJSON(
 ): string {
 	const ids = appState.selectedElementIds
 	if (ids == null || Object.keys(ids).length === 0) {
-		return serializeToData([], appState, {})
+		const clearedState = { ...appState, selectedElementIds: {} }
+		return serializeToData([], clearedState, {})
 	}
 	const selected = elements.filter((el) => (el as { id: string }).id in ids)
 	const fileIds = new Set(
@@ -93,7 +94,8 @@ export function getSelectedSceneAsJSON(
 	const selectedFiles = Object.fromEntries(
 		Object.entries(files).filter(([id]) => fileIds.has(id)),
 	) as OnChangeParams[2]
-	return serializeToData(selected, appState, selectedFiles)
+	const clearedState = { ...appState, selectedElementIds: {} }
+	return serializeToData(selected, clearedState, selectedFiles)
 }
 
 export function saveSceneToStorage(

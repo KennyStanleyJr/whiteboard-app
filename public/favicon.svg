@@ -1,4 +1,16 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none" stroke="#333" stroke-width="2">
-  <rect x="2" y="2" width="28" height="28" rx="2"/>
-  <path d="M8 12h16M8 18h12M8 24h8"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <style>
+    /* Default stroke for PNG/ICO generation (Sharp ignores media queries) */
+    .sq { fill: none; stroke-width: 2; stroke: #333; }
+    @media (prefers-color-scheme: dark) {
+      .sq { stroke: #a3a3a3; }
+    }
+  </style>
+  <!-- Outer border -->
+  <rect class="sq" x="3" y="3" width="26" height="26" rx="2"/>
+  <!-- 4 smaller squares in 2x2 grid, centered with gap (gap accounts for stroke width) -->
+  <rect class="sq" x="7" y="7" width="7" height="7" rx="1"/>
+  <rect class="sq" x="18" y="7" width="7" height="7" rx="1"/>
+  <rect class="sq" x="7" y="18" width="7" height="7" rx="1"/>
+  <rect class="sq" x="18" y="18" width="7" height="7" rx="1"/>
 </svg>
