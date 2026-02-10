@@ -20,3 +20,326 @@ body {
 		font-size: 16px !important;
 	}
 }
+
+/* Cloud save/load icon row at top of main menu: horizontal, icon-only, fill menu width. */
+.excalidraw .main-menu-cloud-row.dropdown-menu-group {
+	margin-top: 0;
+	margin-bottom: 0.25rem;
+	display: flex;
+	flex-direction: row;
+	gap: 2px;
+	width: 100%;
+}
+.excalidraw .main-menu-cloud-row .dropdown-menu-item {
+	flex: 1 1 0;
+	min-width: 0;
+	justify-content: center;
+	column-gap: 0;
+}
+.excalidraw .main-menu-cloud-row .dropdown-menu-item__text {
+	width: 0;
+	min-width: 0;
+	overflow: hidden;
+}
+
+/* Cloud storage Save/Load dialogs – match Excalidraw Island/dropdown style. */
+.cloud-storage-dialog-overlay {
+	position: fixed;
+	inset: 0;
+	background: rgba(0, 0, 0, 0.5);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	z-index: 10000;
+}
+/* Keep theme wrapper from stretching so the panel stays centered in the overlay. */
+.cloud-storage-dialog-overlay > div {
+	flex: 0 0 auto;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	min-width: 0;
+	min-height: 0;
+}
+/* Overwrite confirm sits above the save dialog. */
+.cloud-storage-dialog-overlay-confirm {
+	z-index: 10001;
+}
+.excalidraw .cloud-storage-dialog-confirm-panel {
+	display: flex;
+	flex-direction: column;
+	min-width: 280px;
+	text-align: center;
+}
+.excalidraw .cloud-storage-dialog-confirm-title {
+	margin: 0 0 var(--space-factor);
+	font-size: 1rem;
+	font-weight: 600;
+}
+.excalidraw .cloud-storage-dialog-confirm-desc {
+	margin: 0 0 calc(4 * var(--space-factor));
+	font-size: 0.875rem;
+	color: var(--color-on-surface);
+	line-height: 1.4;
+}
+.excalidraw .cloud-storage-dialog-confirm-panel .cloud-storage-dialog-actions {
+	display: flex;
+	flex-direction: row;
+	justify-content: center;
+	gap: 0.5rem;
+	margin-top: calc(2 * var(--space-factor));
+}
+.excalidraw .cloud-storage-dialog-panel {
+	display: flex;
+	flex-direction: column;
+	align-items: stretch;
+	background-color: var(--island-bg-color);
+	border-radius: var(--border-radius-lg);
+	box-shadow: var(--box-shadow, var(--shadow-island));
+	padding: calc(5 * var(--space-factor));
+	min-width: 320px;
+	max-width: 400px;
+	max-height: 80vh;
+	overflow: auto;
+	color: var(--color-on-surface);
+	font-family: inherit;
+}
+.excalidraw.theme--dark .cloud-storage-dialog-panel {
+	box-shadow: var(--box-shadow, var(--shadow-island)), 0 0 0 1px rgba(0, 0, 0, 0.15);
+}
+.excalidraw .cloud-storage-dialog-panel h2,
+.excalidraw .cloud-storage-dialog-panel .cloud-storage-dialog-description {
+	margin-left: 0;
+	margin-right: 0;
+	padding: 0;
+}
+.excalidraw .cloud-storage-dialog-panel h2 {
+	margin-top: 0;
+	margin-bottom: calc(2 * var(--space-factor));
+	font-size: 1rem;
+	font-weight: 600;
+	color: var(--color-on-surface);
+}
+.excalidraw .cloud-storage-dialog-form {
+	display: flex;
+	flex-direction: column;
+	gap: calc(3 * var(--space-factor));
+}
+.excalidraw .cloud-storage-dialog-form label {
+	display: flex;
+	flex-direction: column;
+	gap: var(--space-factor);
+	font-size: 0.875rem;
+	color: var(--color-on-surface);
+}
+.excalidraw .cloud-storage-dialog-form .cloud-storage-dialog-label-row {
+	display: flex;
+	justify-content: space-between;
+	align-items: baseline;
+	gap: 0.5rem;
+}
+.excalidraw .cloud-storage-dialog-form .cloud-storage-dialog-label-row .cloud-storage-dialog-error {
+	margin-left: auto;
+	text-align: right;
+}
+.excalidraw .cloud-storage-dialog-form input {
+	padding: 0.5rem 0.625rem;
+	border: 1px solid var(--default-border-color);
+	border-radius: var(--border-radius-md);
+	font-size: 0.875rem;
+	font-family: inherit;
+	background-color: var(--input-bg-color);
+	color: var(--color-on-surface);
+	box-sizing: border-box;
+}
+.excalidraw .cloud-storage-dialog-form input::placeholder {
+	color: var(--color-gray-50);
+}
+.excalidraw .cloud-storage-dialog-form input:focus {
+	outline: none;
+	box-shadow: 0 0 0 2px var(--focus-highlight-color);
+}
+.excalidraw .cloud-storage-dialog-actions {
+	display: flex;
+	gap: 0.5rem;
+	justify-content: flex-end;
+	margin-top: calc(2 * var(--space-factor));
+}
+.excalidraw .cloud-storage-dialog-btn {
+	padding: 0.5rem 1rem;
+	border-radius: var(--border-radius-md);
+	font-size: 0.875rem;
+	font-family: inherit;
+	cursor: pointer;
+	transition: background-color 0.15s, box-shadow 0.15s;
+}
+.excalidraw .cloud-storage-dialog-btn--secondary {
+	background-color: transparent;
+	border: 1px solid var(--default-border-color);
+	color: var(--color-on-surface);
+}
+.excalidraw .cloud-storage-dialog-btn--secondary:hover {
+	background-color: var(--button-hover-bg);
+}
+.excalidraw .cloud-storage-dialog-btn--primary {
+	background-color: var(--color-primary);
+	border: 1px solid var(--color-primary);
+	color: var(--color-icon-white);
+}
+.excalidraw .cloud-storage-dialog-btn--primary:hover:not(:disabled) {
+	background-color: var(--color-primary-hover);
+	border-color: var(--color-primary-hover);
+}
+.excalidraw .cloud-storage-dialog-btn--primary:disabled {
+	opacity: 0.6;
+	cursor: not-allowed;
+}
+.excalidraw .cloud-storage-dialog-btn--danger {
+	background-color: var(--color-danger);
+	border: 1px solid var(--color-danger);
+	color: var(--color-icon-white);
+}
+.excalidraw .cloud-storage-dialog-btn--danger:hover:not(:disabled) {
+	background-color: var(--color-danger-hover, #c53030);
+	border-color: var(--color-danger-hover, #c53030);
+}
+.excalidraw .cloud-storage-dialog-btn--danger:disabled {
+	opacity: 0.6;
+	cursor: not-allowed;
+}
+.excalidraw .cloud-storage-dialog-error {
+	color: var(--color-danger);
+	font-size: 0.75rem;
+}
+.excalidraw .cloud-storage-dialog-hint {
+	color: var(--color-gray-50);
+	font-size: 0.875rem;
+	margin: 0;
+}
+.excalidraw .cloud-storage-dialog-description {
+	margin-bottom: calc(2 * var(--space-factor));
+}
+.excalidraw .cloud-storage-dialog-warning {
+	color: var(--color-gray-50);
+	font-size: 0.75rem;
+	margin: 0 0 calc(2 * var(--space-factor));
+}
+.excalidraw .cloud-storage-dialog-refresh {
+	align-self: flex-start;
+	padding: var(--space-factor) calc(2 * var(--space-factor));
+	font-size: 0.75rem;
+	border: 1px solid var(--default-border-color);
+	border-radius: var(--border-radius-md);
+	background: transparent;
+	color: var(--color-on-surface);
+	cursor: pointer;
+	font-family: inherit;
+}
+.excalidraw .cloud-storage-dialog-refresh:hover {
+	background-color: var(--button-hover-bg);
+}
+.excalidraw .cloud-storage-dialog-loading {
+	font-size: 0.875rem;
+	color: var(--color-gray-50);
+}
+.excalidraw .cloud-storage-dialog-list {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+	max-height: 280px;
+	overflow: auto;
+}
+.excalidraw .cloud-storage-dialog-list-item {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	padding: 0.5rem 0;
+	border-bottom: 1px solid var(--default-border-color);
+	font-size: 0.875rem;
+}
+.excalidraw .cloud-storage-dialog-list-item .cloud-storage-dialog-item-name {
+	flex: 1;
+	font-weight: 500;
+	color: var(--color-on-surface);
+}
+.excalidraw .cloud-storage-dialog-list-item .cloud-storage-dialog-item-meta {
+	font-size: 0.75rem;
+	color: var(--color-gray-50);
+}
+.excalidraw .cloud-storage-dialog-item-menu-wrap {
+	position: relative;
+	flex-shrink: 0;
+}
+.excalidraw .cloud-storage-dialog-item-menu-btn {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 28px;
+	height: 28px;
+	padding: 0;
+	border: none;
+	border-radius: var(--border-radius-md);
+	background: transparent;
+	color: var(--color-on-surface);
+	cursor: pointer;
+}
+.excalidraw .cloud-storage-dialog-item-menu-btn:hover {
+	background-color: var(--button-hover-bg);
+}
+.excalidraw .cloud-storage-dialog-item-dropdown {
+	min-width: 140px;
+	padding: var(--space-factor);
+	background-color: var(--island-bg-color);
+	border-radius: var(--border-radius-md);
+	box-shadow: var(--box-shadow, var(--shadow-island));
+	border: 1px solid var(--default-border-color);
+	z-index: 100;
+}
+.excalidraw .cloud-storage-dialog-item-menu-wrap .cloud-storage-dialog-item-dropdown:not(.cloud-storage-dialog-item-dropdown--fixed) {
+	position: absolute;
+	bottom: 100%;
+	right: 0;
+	margin-bottom: 2px;
+}
+.cloud-storage-dialog-item-dropdown--fixed {
+	position: fixed;
+}
+.excalidraw .cloud-storage-dialog-dropdown-item {
+	display: block;
+	width: 100%;
+	padding: 0.5rem 0.75rem;
+	border: none;
+	border-radius: var(--border-radius-md);
+	background: transparent;
+	color: var(--color-on-surface);
+	font-size: 0.875rem;
+	font-family: inherit;
+	text-align: left;
+	cursor: pointer;
+}
+.excalidraw .cloud-storage-dialog-dropdown-item:hover {
+	background-color: var(--button-hover-bg);
+}
+.excalidraw .cloud-storage-dialog-dropdown-item--danger {
+	color: var(--color-danger);
+}
+.excalidraw .cloud-storage-dialog-dropdown-item--danger:hover {
+	color: var(--color-danger);
+}
+.excalidraw .cloud-storage-dialog-load-btn {
+	padding: var(--space-factor) 0.75rem;
+	font-size: 0.75rem;
+	border: none;
+	border-radius: var(--border-radius-md);
+	background-color: var(--color-primary);
+	color: var(--color-icon-white);
+	cursor: pointer;
+	font-family: inherit;
+}
+.excalidraw .cloud-storage-dialog-load-btn:hover:not(:disabled) {
+	background-color: var(--color-primary-hover);
+}
+.excalidraw .cloud-storage-dialog-load-btn:disabled {
+	opacity: 0.6;
+	cursor: not-allowed;
+}

@@ -12,6 +12,16 @@ type SceneData = {
 	files?: BinaryFiles
 }
 
+export function restoreSceneFromData(data: unknown): {
+	elements: ReturnType<typeof restoreElements>
+	appState: ReturnType<typeof restoreAppState>
+	files: BinaryFiles
+} | null {
+	if (data == null || typeof data !== 'object') return null
+	const d = data as SceneData
+	return restoreScene(d)
+}
+
 function restoreScene(data: SceneData): {
 	elements: ReturnType<typeof restoreElements>
 	appState: ReturnType<typeof restoreAppState>
@@ -30,8 +40,8 @@ function restoreScene(data: SceneData): {
 const SCENE_STORAGE_KEY = 'whiteboard-scene'
 export const SAVE_DEBOUNCE_MS = 400
 
-/** View state keys that serializeAsJSON("local") omits; we persist them so pan/zoom restore. */
-const VIEW_STATE_KEYS = ['scrollX', 'scrollY', 'zoom'] as const
+/** View state keys that serializeAsJSON("local") omits; we persist them so pan/zoom restore. Theme is not saved—it follows client settings. */
+const PERSISTED_APP_STATE_KEYS = ['scrollX', 'scrollY', 'zoom'] as const
 
 function serializeToData(
 	elements: OnChangeParams[0],
@@ -46,7 +56,7 @@ function serializeToData(
 	if (data.appState && typeof data.appState === 'object') {
 		const state = appState as unknown as Record<string, unknown>
 		const out = data.appState
-		for (const key of VIEW_STATE_KEYS) {
+		for (const key of PERSISTED_APP_STATE_KEYS) {
 			if (key in appState) out[key] = state[key]
 		}
 	}

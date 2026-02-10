@@ -27,3 +27,25 @@ export function CopyAsJsonIcon() {
 		</svg>
 	)
 }
+
+/** Cloud with arrow up (save/upload). Excalidraw-style stroke icon. */
+export function SaveCloudIcon() {
+	return (
+		<svg {...MENU_ICON_PROPS}>
+			<path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z" />
+			<polyline points="12 16 12 8" />
+			<polyline points="9 11 12 8 15 11" />
+		</svg>
+	)
+}
+
+/** Cloud with arrow down (load/download). Excalidraw-style stroke icon. */
+export function LoadCloudIcon() {
+	return (
+		<svg {...MENU_ICON_PROPS}>
+			<path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z" />
+			<polyline points="12 8 12 16" />
+			<polyline points="9 13 12 16 15 13" />
+		</svg>
+	)
+}

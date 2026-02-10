@@ -8,6 +8,7 @@ export {
 	getSceneAsJSON,
 	getSelectedSceneAsJSON,
 	loadStoredScene,
+	restoreSceneFromData,
 	saveSceneToStorage,
 	SAVE_DEBOUNCE_MS,
 } from './scene'

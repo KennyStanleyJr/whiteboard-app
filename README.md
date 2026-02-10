@@ -25,6 +25,18 @@ npm install
 npm run dev
 ```
 
+### Cloud storage (Supabase)
+
+Optional: save and load whiteboards in the cloud with a name and optional password.
+
+1. Create a [Supabase](https://supabase.com) project.
+2. Copy `.env.example` to `.env` and set `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`.
+3. Run the migrations in the Supabase SQL editor in order: `supabase/migrations/20250210000000_create_whiteboards.sql`, then `20250210000001_whiteboards_name_length.sql`.
+
+Then use **Save to cloud** and **Load from cloud** in the main menu. Without Supabase env vars, those menu items show a setup hint.
+
+**Security:** Passwords are hashed with bcrypt (client-side) before storage; only the hash is sent. The anon key is public by design; RLS currently allows any anonymous user to list, save, and load. Use password protection on sensitive boards. For production multi-tenant use, switch to Supabase Auth and RLS policies that scope rows by user.
+
 ## Scripts
 
 | Command | Description |

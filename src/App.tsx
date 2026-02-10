@@ -2,22 +2,31 @@ import { CommandPalette, Excalidraw, MainMenu, THEME } from '@excalidraw/excalid
 import type { ExcalidrawImperativeAPI } from '@excalidraw/excalidraw/types'
 import '@excalidraw/excalidraw/index.css'
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { CloudStorageDialog } from './CloudStorageDialog'
 import { setupCanvasWheelZoom } from './canvasWheelZoom'
 import { applySceneJsonToCanvas } from './clipboardScene'
 import { setupContextMenuCopyJsonInjection } from './contextMenuCopyJson'
 import { getInitialData } from './initialData'
-import { CommandPaletteIcon, CopyAsJsonIcon } from './mainMenuIcons'
+import {
+	CommandPaletteIcon,
+	CopyAsJsonIcon,
+	LoadCloudIcon,
+	SaveCloudIcon,
+} from './mainMenuIcons'
 import {
 	extractPreferences,
 	getSceneAsJSON,
 	getSelectedSceneAsJSON,
 	loadStoredSettings,
+	restoreSceneFromData,
 	saveSceneToStorage,
 	saveStoredSettings,
 	SAVE_DEBOUNCE_MS,
 } from './storage'
 import { SyncHtmlTheme } from './SyncHtmlTheme'
 import type { ExcalidrawTheme, OnChangeParams } from './types'
+
+type CloudDialogMode = 'closed' | 'save' | 'load'
 
 const UI_OPTIONS = { canvasActions: { toggleTheme: true } } as const
 
@@ -32,6 +41,7 @@ function App() {
 		() => (loadStoredSettings().theme === 'dark' ? THEME.DARK : THEME.LIGHT),
 	)
 	const [initialData] = useState(getInitialData)
+	const [cloudDialogMode, setCloudDialogMode] = useState<CloudDialogMode>('closed')
 	const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 	const excalidrawAPIRef = useRef<ExcalidrawImperativeAPI | null>(null)
 	const lastSavedSettingsRef = useRef<{ theme: ExcalidrawTheme; prefs: string } | null>(null)
@@ -89,6 +99,24 @@ function App() {
 		})
 	}, [])
 
+	const handleLoadCloudScene = useCallback((data: unknown) => {
+		const restored = restoreSceneFromData(data)
+		if (!restored) return
+		const api = excalidrawAPIRef.current
+		if (!api) return
+		const fileList = Object.values(restored.files)
+		if (fileList.length > 0) {
+			api.addFiles(fileList)
+		}
+		const appStateForScene = { ...restored.appState } as Record<string, unknown>
+		delete appStateForScene.theme
+		api.updateScene({
+			elements: restored.elements,
+			appState: appStateForScene as typeof restored.appState,
+		})
+		setCloudDialogMode('closed')
+	}, [])
+
 	const copySceneToClipboard = useCallback((selectionOnly: boolean) => {
 		const api = excalidrawAPIRef.current
 		if (api == null) return
@@ -140,6 +168,13 @@ function App() {
 	return (
 		<div style={{ position: 'fixed', inset: 0 }}>
 			<SyncHtmlTheme theme={theme} />
+			<CloudStorageDialog
+				mode={cloudDialogMode}
+				onClose={() => setCloudDialogMode('closed')}
+				excalidrawAPIRef={excalidrawAPIRef}
+				onLoadScene={handleLoadCloudScene}
+				theme={theme}
+			/>
 			<Excalidraw
 				theme={theme}
 				initialData={initialData ?? undefined}
@@ -147,19 +182,44 @@ function App() {
 				UIOptions={UI_OPTIONS}
 				excalidrawAPI={(api) => {
 					excalidrawAPIRef.current = api
-					// Sync export settings: theme for copy-as-image, stored pref for background.
-					const { theme: appTheme } = api.getAppState()
-					const { preferences } = loadStoredSettings()
-					api.updateScene({
-						appState: {
-							exportWithDarkMode: appTheme === 'dark',
-							exportBackground: preferences.exportBackground ?? false,
-						},
-					})
+					// Defer sync until after Excalidraw has mounted (next macrotask).
+					setTimeout(() => {
+						const current = excalidrawAPIRef.current
+						if (!current) return
+						const { theme: appTheme } = current.getAppState()
+						const { preferences } = loadStoredSettings()
+						current.updateScene({
+							appState: {
+								exportWithDarkMode: appTheme === 'dark',
+								exportBackground: preferences.exportBackground ?? false,
+							},
+						})
+					}, 0)
 				}}
 			>
 				<CommandPalette />
 				<MainMenu>
+					<MainMenu.Group
+						className="main-menu-cloud-row"
+						style={{ display: 'flex', flexDirection: 'row', gap: 0 }}
+					>
+						<MainMenu.Item
+							icon={<SaveCloudIcon />}
+							onSelect={() => setCloudDialogMode('save')}
+							title="Save to cloud"
+							aria-label="Save to cloud"
+						>
+							{' '}
+						</MainMenu.Item>
+						<MainMenu.Item
+							icon={<LoadCloudIcon />}
+							onSelect={() => setCloudDialogMode('load')}
+							title="Load from cloud"
+							aria-label="Load from cloud"
+						>
+							{' '}
+						</MainMenu.Item>
+					</MainMenu.Group>
 					<MainMenu.DefaultItems.LoadScene />
 					<MainMenu.DefaultItems.SaveToActiveFile />
 					<MainMenu.DefaultItems.Export />
