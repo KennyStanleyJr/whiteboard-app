@@ -11,5 +11,5 @@ body {
 }
 
 .color-picker-container--no-top-picks {
-	justify-content: left !important;
+	justify-content: flex-start !important;
 }

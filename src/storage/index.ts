@@ -6,6 +6,7 @@ export {
 } from './settings'
 export {
 	getSceneAsJSON,
+	getSelectedSceneAsJSON,
 	loadStoredScene,
 	saveSceneToStorage,
 	SAVE_DEBOUNCE_MS,

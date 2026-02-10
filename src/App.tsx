@@ -7,6 +7,7 @@ import {
 	applyPreferencesToAppState,
 	extractPreferences,
 	getSceneAsJSON,
+	getSelectedSceneAsJSON,
 	loadStoredScene,
 	loadStoredSettings,
 	saveSceneToStorage,
@@ -118,15 +119,82 @@ function App() {
 		})
 	}, [])
 
-	const handleCopyAsJson = useCallback(() => {
+	const copySceneToClipboard = useCallback((selectionOnly: boolean) => {
 		const api = excalidrawAPIRef.current
 		if (api == null) return
 		const elements = api.getSceneElements()
 		const appState = api.getAppState()
 		const files = api.getFiles()
-		const json = getSceneAsJSON(elements, appState, files)
+		const json = selectionOnly
+			? getSelectedSceneAsJSON(elements, appState, files)
+			: getSceneAsJSON(elements, appState, files)
 		void navigator.clipboard.writeText(json)
 	}, [])
+
+	/** Inject "Copy as JSON" (selection only) and strip "to clipboard" from other copy labels in context menu. */
+	useEffect(() => {
+		const MENU_SELECTOR = '.context-menu'
+		const MENU_CONTAINER = 'excalidraw-contextMenuContainer'
+		const INJECTED_MARKER = 'data-copy-as-json-injected'
+		const COPY_LABEL_IDS = ['copyAsPng', 'copyAsSvg', 'copyText'] as const
+		const MAX_MUTATIONS = 50
+		const MAX_ADDED_NODES_PER_MUTATION = 50
+
+		function stripToClipboardFromLabels(list: Element): void {
+			for (const id of COPY_LABEL_IDS) {
+				const item = list.querySelector(`[data-testid="${id}"]`)?.closest('li')
+				const label = item?.querySelector('.context-menu-item__label')
+				if (label?.textContent) {
+					label.textContent = label.textContent.replace(/\s*to\s+clipboard\s*/gi, ' ').trim()
+				}
+			}
+		}
+
+		function inject(list: Element): boolean {
+			stripToClipboardFromLabels(list)
+			if (list.querySelector(`[${INJECTED_MARKER}]`) != null) return true
+			const after = list.querySelector('[data-testid="copyAsSvg"]')?.closest('li')
+			if (after == null) return false
+			const li = document.createElement('li')
+			li.setAttribute(INJECTED_MARKER, 'true')
+			li.setAttribute('data-testid', 'copyAsJson')
+			li.innerHTML = `<button type="button" class="context-menu-item"><div class="context-menu-item__label">Copy as JSON</div><kbd class="context-menu-item__shortcut"></kbd></button>`
+			li.addEventListener('click', () => {
+				copySceneToClipboard(true)
+				excalidrawAPIRef.current?.updateScene({ appState: { contextMenu: null } })
+			})
+			after.after(li)
+			return true
+		}
+
+		function tryInject(): void {
+			const list = document.querySelector(MENU_SELECTOR)
+			if (list != null) inject(list)
+		}
+
+		const observer = new MutationObserver((mutations) => {
+			const mutationsSlice = Array.from(mutations).slice(0, MAX_MUTATIONS)
+			for (let i = 0; i < mutationsSlice.length; i++) {
+				const m = mutationsSlice[i]
+				const nodes = Array.from(m.addedNodes).slice(0, MAX_ADDED_NODES_PER_MUTATION)
+				for (let j = 0; j < nodes.length; j++) {
+					const node = nodes[j]
+					if (!(node instanceof Element)) continue
+					const list = node.matches?.(MENU_SELECTOR) ? node : node.querySelector?.(MENU_SELECTOR)
+					if (list != null) {
+						queueMicrotask(() => inject(list))
+						return
+					}
+					if (node.parentElement?.classList?.contains(MENU_CONTAINER)) {
+						setTimeout(tryInject, 0)
+						setTimeout(tryInject, 40)
+					}
+				}
+			}
+		})
+		observer.observe(document.body, { childList: true, subtree: true })
+		return () => observer.disconnect()
+	}, [copySceneToClipboard])
 
 	useEffect(() => {
 		function onPasteCapture(e: ClipboardEvent) {
@@ -161,9 +229,9 @@ function App() {
 					<MainMenu.DefaultItems.SaveAsImage />
 					<MainMenu.Item
 						icon={<CopyAsJsonIcon />}
-						onSelect={handleCopyAsJson}
+						onSelect={() => copySceneToClipboard(false)}
 					>
-						Copy as JSON
+						Copy all as JSON
 					</MainMenu.Item>
 					<MainMenu.Item
 						icon={<CommandPaletteIcon />}

@@ -74,6 +74,28 @@ export function getSceneAsJSON(
 	return serializeToData(elements, appState, files)
 }
 
+/** Scene JSON for only the selected elements (and their image files). */
+export function getSelectedSceneAsJSON(
+	elements: OnChangeParams[0],
+	appState: OnChangeParams[1],
+	files: OnChangeParams[2],
+): string {
+	const ids = appState.selectedElementIds
+	if (ids == null || Object.keys(ids).length === 0) {
+		return serializeToData([], appState, {})
+	}
+	const selected = elements.filter((el) => (el as { id: string }).id in ids)
+	const fileIds = new Set(
+		selected
+			.map((el) => (el as { fileId?: string }).fileId)
+			.filter((id): id is string => typeof id === 'string' && id !== ''),
+	)
+	const selectedFiles = Object.fromEntries(
+		Object.entries(files).filter(([id]) => fileIds.has(id)),
+	) as OnChangeParams[2]
+	return serializeToData(selected, appState, selectedFiles)
+}
+
 export function saveSceneToStorage(
 	elements: OnChangeParams[0],
 	appState: OnChangeParams[1],
