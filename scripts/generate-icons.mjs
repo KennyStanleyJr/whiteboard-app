@@ -21,16 +21,16 @@ const TARGETS = [
 	{ name: 'maskable-icon-512x512.png', size: 512 },
 ]
 
-/** Neutral stroke for PNG/ICO: visible on both light (#f0f2f5) and dark (#1e293b) theme backgrounds. */
-const UNIVERSAL_STROKE = '#6b6b6b'
+/** Dark default for PNG/ICO: desaturated dark bg with light border and dots. */
+const DARK_BG = '#262626'
+const LIGHT_COLOR = '#e5e5e5'
 
 async function main() {
 	let svg = await readFile(SRC, 'utf8')
-	// Sharp ignores @media (prefers-color-scheme). Strip media query and use a universal stroke
-	// so generated icons look correct on both light and dark backgrounds (PWA, favicon.ico).
+	// Sharp ignores @media (prefers-color-scheme). Replace style with dark default for PNG/ICO.
 	svg = svg.replace(
 		/<style>[\s\S]*?<\/style>/,
-		`<style>.sq { fill: none; stroke-width: 2; stroke: ${UNIVERSAL_STROKE}; }</style>`,
+		`<style>.bg { fill: ${DARK_BG}; }.border { fill: none; stroke-width: 2; stroke: ${LIGHT_COLOR}; }.sq { fill: ${LIGHT_COLOR}; }</style>`,
 	)
 
 	const pipeline = sharp(Buffer.from(svg))

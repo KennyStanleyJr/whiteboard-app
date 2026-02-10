@@ -1,16 +1,21 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
   <style>
-    /* Default stroke for PNG/ICO generation (Sharp ignores media queries) */
-    .sq { fill: none; stroke-width: 2; stroke: #333; }
-    @media (prefers-color-scheme: dark) {
-      .sq { stroke: #a3a3a3; }
+    /* Dark default: desaturated dark bg, light border and squares */
+    .bg { fill: #262626; }
+    .border { fill: none; stroke-width: 2; stroke: #e5e5e5; }
+    .sq { fill: #e5e5e5; }
+    @media (prefers-color-scheme: light) {
+      .bg { fill: #f5f5f5; }
+      .border { stroke: #404040; }
+      .sq { fill: #404040; }
     }
   </style>
-  <!-- Outer border -->
-  <rect class="sq" x="3" y="3" width="26" height="26" rx="2"/>
-  <!-- 4 smaller squares in 2x2 grid, centered with gap (gap accounts for stroke width) -->
-  <rect class="sq" x="7" y="7" width="7" height="7" rx="1"/>
-  <rect class="sq" x="18" y="7" width="7" height="7" rx="1"/>
-  <rect class="sq" x="7" y="18" width="7" height="7" rx="1"/>
-  <rect class="sq" x="18" y="18" width="7" height="7" rx="1"/>
+  <rect class="bg" width="32" height="32" />
+  <!-- Outer border (5px padding) -->
+  <rect class="border" x="5" y="5" width="22" height="22" rx="2" />
+  <!-- 4 filled squares in 2x2 grid (5x5 each, same scale as previous dots) -->
+  <rect class="sq" x="9.5" y="9.5" width="5" height="5" rx="1" />
+  <rect class="sq" x="17.5" y="9.5" width="5" height="5" rx="1" />
+  <rect class="sq" x="9.5" y="17.5" width="5" height="5" rx="1" />
+  <rect class="sq" x="17.5" y="17.5" width="5" height="5" rx="1" />
 </svg>
