@@ -26,7 +26,7 @@ type StoredSettings = {
 
 function getDefaults(): StoredSettings {
 	return {
-		theme: 'light',
+		theme: 'dark',
 		preferences: {},
 	}
 }
@@ -39,7 +39,7 @@ export function loadStoredSettings(): StoredSettings {
 		const parsed = JSON.parse(raw) as Partial<StoredSettings>
 		if (parsed == null || typeof parsed !== 'object') return getDefaults()
 		const theme =
-			parsed.theme === 'dark' || parsed.theme === 'light' ? parsed.theme : 'light'
+			parsed.theme === 'dark' || parsed.theme === 'light' ? parsed.theme : 'dark'
 		const prefs: StoredPreferences = {}
 		const src = parsed.preferences ?? {}
 		for (const key of [...PREFERENCE_KEYS, ELEMENT_LOCK_KEY] as const) {
