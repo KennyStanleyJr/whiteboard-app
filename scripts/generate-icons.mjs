@@ -3,11 +3,11 @@
  * Generate PNG and ICO icons from public/favicon.svg.
  * Run: npm run generate-icons
  */
-import { readFile, writeFile } from 'fs/promises'
+import { readFile } from 'fs/promises'
 import { dirname, join } from 'path'
 import { fileURLToPath } from 'url'
 import sharp from 'sharp'
-import toIco from 'to-ico'
+import ico from 'sharp-ico'
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)))
 const SRC = join(ROOT, 'public', 'favicon.svg')
@@ -45,10 +45,9 @@ async function main() {
 		console.log(`Generated ${name}`)
 	}
 
-	// Generate favicon.ico (16, 32, 48)
-	const png48 = await pipeline.clone().resize(48, 48).png().toBuffer()
-	const icoBuf = await toIco([png48], { resize: true, sizes: [16, 32, 48] })
-	await writeFile(join(OUT, 'favicon.ico'), icoBuf)
+	// Generate favicon.ico (16, 32, 48); explicit .png() for consistent format.
+	const sharp48 = pipeline.clone().resize(48, 48).png()
+	await ico.sharpsToIco([sharp48], join(OUT, 'favicon.ico'), { sizes: [16, 32, 48] })
 	console.log('Generated favicon.ico')
 
 	console.log('Done.')
