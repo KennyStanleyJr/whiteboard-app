@@ -7,12 +7,15 @@ export default defineConfig({
 		react(),
 		VitePWA({
 			registerType: 'autoUpdate',
+			injectRegister: null,
 			manifest: {
 				name: 'Whiteboard',
 				short_name: 'Whiteboard',
 				description: 'Infinite whiteboard for text, images, videos, links, post-it notes, and arrows.',
-				theme_color: '#f5f5f5',
-				background_color: '#f5f5f5',
+				start_url: '/',
+				id: '/',
+				theme_color: '#0f0f11',
+				background_color: '#0f0f11',
 				display: 'standalone',
 				orientation: 'any',
 				icons: [
