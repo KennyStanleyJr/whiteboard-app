@@ -55,9 +55,27 @@ whiteboard-app/
 ├── public/                   # Static assets
 ├── src/
 │   ├── App.tsx               # Excalidraw full-screen editor
+│   ├── CloudStorageDialog.tsx
+│   ├── canvasWheelZoom.ts    # Ctrl/⌘+wheel pan, plain wheel zoom
+│   ├── clipboardScene.ts
+│   ├── contextMenuCopyJson.ts
+│   ├── initialData.ts
+│   ├── mainMenuIcons.tsx
+│   ├── storage/              # localStorage scene + settings
+│   │   ├── index.ts
+│   │   ├── scene.ts
+│   │   └── settings.ts
+│   ├── supabase/             # Cloud save/load (optional)
+│   │   ├── client.ts
+│   │   └── whiteboards.ts
+│   ├── SyncHtmlTheme.tsx
+│   ├── themeConstants.ts
+│   ├── types.ts
 │   ├── main.tsx
 │   ├── index.css
 │   └── vite-env.d.ts
+├── supabase/
+│   └── migrations/          # Run in Supabase SQL editor
 ├── index.html
 ├── package.json
 ├── tsconfig.json

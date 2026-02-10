@@ -159,6 +159,109 @@ body {
 	outline: none;
 	box-shadow: 0 0 0 2px var(--focus-highlight-color);
 }
+/* Save dialog: name input with dropdown of existing whiteboards */
+.excalidraw .cloud-storage-dialog-name-combo {
+	position: relative;
+	width: 100%;
+}
+.excalidraw .cloud-storage-dialog-name-input-wrap {
+	position: relative;
+	width: 100%;
+	min-width: 0;
+}
+.excalidraw .cloud-storage-dialog-name-input-wrap > input {
+	display: block;
+	width: 100%;
+	box-sizing: border-box;
+	padding-right: 2.25rem;
+}
+/* Override Excalidraw input hover/focus so only one outline: default border when idle/hover, single focus ring when focused */
+.excalidraw .cloud-storage-dialog-name-input-wrap > input:hover {
+	box-shadow: none !important;
+	border-color: var(--default-border-color) !important;
+}
+.excalidraw .cloud-storage-dialog-name-input-wrap > input:focus {
+	border-color: transparent !important;
+	box-shadow: 0 0 0 2px var(--focus-highlight-color) !important;
+}
+.excalidraw .cloud-storage-dialog-name-input-wrap > input:focus:hover {
+	border-color: transparent !important;
+	box-shadow: 0 0 0 2px var(--focus-highlight-color) !important;
+}
+.excalidraw .cloud-storage-dialog-name-dropdown-btn {
+	position: absolute;
+	top: 0;
+	right: 0;
+	bottom: 0;
+	width: 2.25rem;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 0;
+	border: none;
+	border-radius: 0 var(--border-radius-md) var(--border-radius-md) 0;
+	background: transparent;
+	color: var(--color-on-surface);
+	cursor: pointer;
+	transition: background-color 0.15s;
+	outline: none;
+	box-shadow: none;
+}
+.excalidraw .cloud-storage-dialog-name-dropdown-btn:hover,
+.excalidraw .cloud-storage-dialog-name-dropdown-btn:focus,
+.excalidraw .cloud-storage-dialog-name-dropdown-btn:focus-visible {
+	background-color: rgba(0, 0, 0, 0.06);
+	outline: none;
+	box-shadow: none;
+}
+.excalidraw.theme--dark .cloud-storage-dialog-name-dropdown-btn:hover,
+.excalidraw.theme--dark .cloud-storage-dialog-name-dropdown-btn:focus,
+.excalidraw.theme--dark .cloud-storage-dialog-name-dropdown-btn:focus-visible {
+	background-color: rgba(255, 255, 255, 0.08);
+}
+.excalidraw .cloud-storage-dialog-name-dropdown {
+	position: absolute;
+	top: 100%;
+	left: 0;
+	right: 0;
+	margin-top: 2px;
+	max-height: 200px;
+	overflow-y: auto;
+	background-color: var(--island-bg-color);
+	border: 1px solid var(--default-border-color);
+	border-radius: var(--border-radius-md);
+	box-shadow: var(--box-shadow, var(--shadow-island));
+	z-index: 1;
+	padding: 0.25rem 0;
+}
+.excalidraw .cloud-storage-dialog-name-dropdown--fixed {
+	position: fixed;
+	z-index: 10002;
+}
+.excalidraw .cloud-storage-dialog-name-dropdown-empty {
+	padding: 0.5rem 0.625rem;
+	font-size: 0.875rem;
+	color: var(--color-on-surface);
+	opacity: 0.7;
+}
+.excalidraw .cloud-storage-dialog-name-dropdown-item {
+	display: block;
+	width: 100%;
+	padding: 0.4rem 0.625rem;
+	border: none;
+	background: none;
+	font-size: 0.875rem;
+	font-family: inherit;
+	color: var(--color-on-surface);
+	text-align: left;
+	cursor: pointer;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+.excalidraw .cloud-storage-dialog-name-dropdown-item:hover {
+	background-color: var(--button-hover-bg);
+}
 .excalidraw .cloud-storage-dialog-actions {
 	display: flex;
 	gap: 0.5rem;
