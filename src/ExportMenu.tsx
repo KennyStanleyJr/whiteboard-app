@@ -2,11 +2,10 @@
  * Export/Import JSON menu items and helpers for main menu and context menu.
  */
 
-import type { TLContent } from '@tldraw/editor'
-import { getSnapshot } from 'tldraw'
-import { importJsonFromText } from './pasteJson'
-import type { TLStore } from 'tldraw'
+import type { Editor, TLContent } from '@tldraw/editor'
+import type { TLShapeId } from '@tldraw/tlschema'
 import { useCallback } from 'react'
+import { importJsonFromText } from './pasteJson'
 import {
 	ArrangeMenuSubmenu,
 	ClipboardMenuGroup,
@@ -40,16 +39,39 @@ import {
 
 const EXPORT_FILENAME = 'whiteboard-export.json'
 
-function getStoreJsonString(store: TLStore): string {
-	const documentSnapshot = store.getStoreSnapshot('all')
-	const snap = getSnapshot(store)
-	const session = snap?.session ?? {}
-	const payload = { document: documentSnapshot, session }
-	return JSON.stringify(payload)
+type PageRecord = { typeName: string; id: string; name: string; index: string; meta: unknown }
+
+/** Convert TLContent to document format compatible with importJsonFromText. */
+function contentToDocSnapshot(
+	content: TLContent,
+	pageId: string,
+	pageRecord: PageRecord | null
+): { document: { store: Record<string, unknown>; schema: unknown } } {
+	const store: Record<string, unknown> = {}
+	for (const s of content.shapes) store[s.id] = s
+	for (const b of content.bindings ?? []) store[b.id] = b
+	for (const a of content.assets ?? []) store[a.id] = a
+	if (pageRecord) store[pageId] = pageRecord
+	else store[pageId] = { typeName: 'page', id: pageId, name: 'Page', index: 'a0', meta: {} }
+	return { document: { store, schema: content.schema } }
 }
 
-function exportStoreAsJson(store: TLStore): void {
-	const json = getStoreJsonString(store)
+/** Resolve content for given shape IDs and return doc snapshot, or null. */
+async function getContentAsJsonDoc(
+	editor: Editor,
+	shapeIds: Iterable<TLShapeId>
+): Promise<{ document: { store: Record<string, unknown>; schema: unknown } } | null> {
+	const ids = Array.from(shapeIds)
+	const content = editor.getContentFromCurrentPage(ids)
+	if (!content) return null
+	const resolved = await editor.resolveAssetsInContent(content)
+	if (!resolved) return null
+	const pageId = editor.getCurrentPageId()
+	const page = editor.store.get(pageId) as PageRecord | undefined
+	return contentToDocSnapshot(resolved, pageId, page ?? null)
+}
+
+function downloadJson(json: string): void {
 	const blob = new Blob([json], { type: 'application/json' })
 	const url = URL.createObjectURL(blob)
 	const a = document.createElement('a')
@@ -59,28 +81,23 @@ function exportStoreAsJson(store: TLStore): void {
 	URL.revokeObjectURL(url)
 }
 
-/** Convert TLContent (selected shapes) to pasteable document format. */
-function contentToDocSnapshot(
-	content: TLContent,
-	pageId: string,
-	pageRecord: { typeName: string; id: string; name: string; index: string; meta: unknown } | null
-): { document: { store: Record<string, unknown>; schema: unknown } } {
-	const store: Record<string, unknown> = {}
-	for (const s of content.shapes) store[s.id] = s
-	for (const b of content.bindings ?? []) store[b.id] = b
-	for (const a of content.assets) store[a.id] = a
-	if (pageRecord) store[pageId] = pageRecord
-	else store[pageId] = { typeName: 'page', id: pageId, name: 'Page', index: 'a0', meta: {} }
-	return { document: { store, schema: content.schema } }
-}
-
 function ExportJsonMenuItem() {
 	const editor = useEditor()
+	const toasts = useToasts()
 	const onSelect = useCallback(
-		(_source: TLUiEventSource) => {
-			exportStoreAsJson(editor.store)
+		async (_source: TLUiEventSource) => {
+			try {
+				const doc = await getContentAsJsonDoc(editor, editor.getCurrentPageShapeIds())
+				if (doc) downloadJson(JSON.stringify(doc))
+			} catch {
+				toasts.addToast({
+					title: 'Export failed',
+					description: 'Could not export page.',
+					severity: 'error',
+				})
+			}
 		},
-		[editor]
+		[editor, toasts]
 	)
 	return (
 		<TldrawUiMenuItem
@@ -100,17 +117,18 @@ function CopyJsonMenuItem() {
 		async (_source: TLUiEventSource) => {
 			try {
 				const ids = editor.getSelectedShapeIds()
-				const shapeIds = ids.length > 0 ? ids : Array.from(editor.getCurrentPageShapeIds())
-				const content = editor.getContentFromCurrentPage(shapeIds)
-				if (!content) return
-				const resolved = await editor.resolveAssetsInContent(content)
-				if (!resolved) return
-				const pageId = editor.getCurrentPageId()
-				const page = editor.store.get(pageId) as { typeName: string; id: string; name: string; index: string; meta: unknown } | undefined
-				const doc = contentToDocSnapshot(resolved, pageId, page ?? null)
-				const json = JSON.stringify(doc)
-				if (!navigator.clipboard?.writeText) return
-				await navigator.clipboard.writeText(json)
+				const shapeIds = ids.length > 0 ? ids : editor.getCurrentPageShapeIds()
+				const doc = await getContentAsJsonDoc(editor, shapeIds)
+				if (!doc) return
+				if (!navigator.clipboard?.writeText) {
+					toasts.addToast({
+						title: 'Copy failed',
+						description: 'Clipboard is not available.',
+						severity: 'error',
+					})
+					return
+				}
+				await navigator.clipboard.writeText(JSON.stringify(doc))
 			} catch {
 				toasts.addToast({
 					title: 'Copy failed',
@@ -139,22 +157,9 @@ function ExportJsonSelectionMenuItem() {
 		async (_source: TLUiEventSource) => {
 			try {
 				const ids = editor.getSelectedShapeIds()
-				const shapeIds = ids.length > 0 ? ids : Array.from(editor.getCurrentPageShapeIds())
-				const content = editor.getContentFromCurrentPage(shapeIds)
-				if (!content) return
-				const resolved = await editor.resolveAssetsInContent(content)
-				if (!resolved) return
-				const pageId = editor.getCurrentPageId()
-				const page = editor.store.get(pageId) as { typeName: string; id: string; name: string; index: string; meta: unknown } | undefined
-				const doc = contentToDocSnapshot(resolved, pageId, page ?? null)
-				const json = JSON.stringify(doc)
-				const blob = new Blob([json], { type: 'application/json' })
-				const url = URL.createObjectURL(blob)
-				const a = document.createElement('a')
-				a.href = url
-				a.download = EXPORT_FILENAME
-				HTMLAnchorElement.prototype.click.call(a)
-				URL.revokeObjectURL(url)
+				const shapeIds = ids.length > 0 ? ids : editor.getCurrentPageShapeIds()
+				const doc = await getContentAsJsonDoc(editor, shapeIds)
+				if (doc) downloadJson(JSON.stringify(doc))
 			} catch {
 				toasts.addToast({
 					title: 'Export failed',

@@ -15,8 +15,9 @@ import {
 	THROTTLE_MS,
 } from './persistStore'
 import { CustomContextMenu, CustomMainMenu } from './ExportMenu'
-import { createPasteActionOverride, setupPasteJson } from './pasteJson'
+import { createPasteActionOverride } from './pasteJson'
 import { setupRightClickPan } from './rightClickPan'
+import { setupShiftScrollPan } from './shiftScrollPan'
 import { SyncThemeToDocument, THEME_CACHE_KEY } from './SyncThemeToDocument'
 
 const licenseKey = import.meta.env.VITE_TLDRAW_LICENSE_KEY ?? undefined
@@ -38,6 +39,7 @@ type LoadingState =
 
 function App() {
 	const store = useMemo(() => createTLStore(), [])
+	const overrides = useMemo(() => [createPasteActionOverride()], [])
 	const [loadingState, setLoadingState] = useState<LoadingState>({ status: 'loading' })
 	const gridRef = useRef({
 		m: new Map<string, boolean>(),
@@ -114,7 +116,7 @@ function App() {
 		}
 	}, [store])
 
-	// Guarantee onMount cleanups (right-click pan, paste JSON) on unmount. Tldraw invokes
+	// Guarantee onMount cleanups (right-click pan, shift-scroll pan) on unmount. Tldraw invokes
 	// onMount's return value; this defends against API changes or unexpected unmount order.
 	useEffect(() => {
 		return () => {
@@ -144,12 +146,12 @@ function App() {
 			<Tldraw
 				store={store}
 				licenseKey={licenseKey}
-				overrides={[createPasteActionOverride()]}
+				overrides={overrides}
 				components={{
 					MainMenu: CustomMainMenu,
 					ContextMenu: CustomContextMenu,
 				}}
-				cameraOptions={{ zoomSpeed: 1.5 }}
+				cameraOptions={{ zoomSpeed: 1.5, wheelBehavior: 'zoom' }}
 				onMount={(editor) => {
 					const cached = getCachedTheme()
 					if (cached !== null) {
@@ -161,10 +163,18 @@ function App() {
 						}
 					}
 					const rightClickPanCleanup = setupRightClickPan(editor)
-					const pasteJsonCleanup = setupPasteJson(editor)
+					const shiftScrollPanCleanup = setupShiftScrollPan(editor)
 					const cleanup = () => {
-						pasteJsonCleanup()
-						rightClickPanCleanup()
+						try {
+							shiftScrollPanCleanup()
+						} catch {
+							// continue to run next cleanup
+						}
+						try {
+							rightClickPanCleanup()
+						} catch {
+							// both cleanups attempted
+						}
 					}
 					tldrawOnMountCleanupRef.current = cleanup
 					return cleanup

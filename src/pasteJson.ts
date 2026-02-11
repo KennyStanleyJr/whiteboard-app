@@ -14,11 +14,19 @@ interface DocSnapshot {
 	schema: SerializedSchema
 }
 
-function isWhiteboardSnapshot(parsed: unknown): parsed is { document: DocSnapshot } {
-	const p = parsed as { document?: DocSnapshot }
-	if (!p?.document?.store || typeof p.document.store !== 'object') return false
-	if (!p.document.schema) return false
-	return true
+/** Accepts full export { document, session }, selection { document }, or raw StoreSnapshot { store, schema }. */
+function getDocSnapshot(parsed: unknown): DocSnapshot | null {
+	if (!parsed || typeof parsed !== 'object') return null
+	const p = parsed as Record<string, unknown>
+	// Full export / selection: { document: { store, schema } }
+	const doc = p.document
+	if (doc && typeof doc === 'object') {
+		const d = doc as Record<string, unknown>
+		if (d.store && typeof d.store === 'object' && d.schema) return d as DocSnapshot
+	}
+	// Raw StoreSnapshot: { store, schema } at top level
+	if (p.store && typeof p.store === 'object' && p.schema) return p as DocSnapshot
+	return null
 }
 
 function documentToContent(doc: DocSnapshot): TLContent | null {
@@ -33,7 +41,8 @@ function documentToContent(doc: DocSnapshot): TLContent | null {
 		.filter((s) => s.parentId && pageIds.has(s.parentId))
 		.map((s) => s.id)
 
-	if (rootShapeIds.length === 0 && shapes.length === 0) return null
+	// Reject empty content or orphaned shapes (shapes with no roots in page hierarchy)
+	if (rootShapeIds.length === 0) return null
 
 	return {
 		schema: doc.schema,
@@ -44,16 +53,18 @@ function documentToContent(doc: DocSnapshot): TLContent | null {
 	}
 }
 
-/** Import JSON from text; merges content onto current page. Returns true if successful. */
+/** Import JSON from text; merges content onto current page (does not replace existing). Returns true if successful. */
 export function importJsonFromText(editor: Editor, text: string): boolean {
 	try {
 		const parsed = JSON.parse(text) as unknown
-		if (!isWhiteboardSnapshot(parsed)) return false
-		const content = documentToContent(parsed.document)
+		const doc = getDocSnapshot(parsed)
+		if (!doc) return false
+		const content = documentToContent(doc)
 		if (!content) return false
 		editor.run(() => {
 			editor.markHistoryStoppingPoint('paste')
 			editor.putContentOntoCurrentPage(content, { select: true })
+			editor.zoomToSelection()
 		})
 		return true
 	} catch {
@@ -61,25 +72,15 @@ export function importJsonFromText(editor: Editor, text: string): boolean {
 	}
 }
 
-export function setupPasteJson(editor: Editor): () => void {
-	const onPaste = (e: ClipboardEvent) => {
-		if (editor.getEditingShapeId() !== null) return
-		const text = e.clipboardData?.getData('text/plain')
-		if (!text || typeof text !== 'string') return
-		if (importJsonFromText(editor, text)) {
-			e.preventDefault()
-			e.stopPropagation()
-		}
-	}
-	document.addEventListener('paste', onPaste, { capture: true })
-	return () => document.removeEventListener('paste', onPaste, { capture: true })
-}
-
 /** Try to paste from clipboard; returns true if our JSON was pasted. For use by paste action override. */
 export async function tryPasteJsonFromClipboard(editor: Editor): Promise<boolean> {
 	if (!navigator.clipboard?.readText) return false
-	const text = await navigator.clipboard.readText()
-	return importJsonFromText(editor, text)
+	try {
+		const text = await navigator.clipboard.readText()
+		return importJsonFromText(editor, text)
+	} catch {
+		return false
+	}
 }
 
 /** Override paste action to try our JSON first, then fall back to default paste. */
@@ -95,7 +96,14 @@ export function createPasteActionOverride(): TLUiOverrides {
 						try {
 							const handled = await tryPasteJsonFromClipboard(editor)
 							if (handled) return
-							if (!navigator.clipboard || typeof navigator.clipboard.read !== 'function') return
+							if (!navigator.clipboard || typeof navigator.clipboard.read !== 'function') {
+								helpers.addToast({
+									title: helpers.msg('action.paste-error-title'),
+									description: helpers.msg('action.paste-error-description'),
+									severity: 'error',
+								})
+								return
+							}
 							const clipboardItems = await navigator.clipboard.read()
 							await helpers.paste(
 								clipboardItems,
@@ -116,3 +124,4 @@ export function createPasteActionOverride(): TLUiOverrides {
 		},
 	}
 }
+
