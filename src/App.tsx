@@ -14,6 +14,8 @@ import {
 	throttle,
 	THROTTLE_MS,
 } from './persistStore'
+import { CustomContextMenu, CustomMainMenu } from './ExportMenu'
+import { createPasteActionOverride, setupPasteJson } from './pasteJson'
 import { setupRightClickPan } from './rightClickPan'
 import { SyncThemeToDocument, THEME_CACHE_KEY } from './SyncThemeToDocument'
 
@@ -41,7 +43,7 @@ function App() {
 		m: new Map<string, boolean>(),
 		prev: null as { pageId: string; isGridMode: boolean } | null,
 	})
-	const rightClickPanCleanupRef = useRef<(() => void) | null>(null)
+	const tldrawOnMountCleanupRef = useRef<(() => void) | null>(null)
 
 	useLayoutEffect(() => {
 		setLoadingState({ status: 'loading' })
@@ -112,12 +114,12 @@ function App() {
 		}
 	}, [store])
 
-	// Guarantee right-click pan cleanup on unmount (Tldraw does invoke onMount's return value;
-	// this defends against API changes or unexpected unmount order).
+	// Guarantee onMount cleanups (right-click pan, paste JSON) on unmount. Tldraw invokes
+	// onMount's return value; this defends against API changes or unexpected unmount order.
 	useEffect(() => {
 		return () => {
-			rightClickPanCleanupRef.current?.()
-			rightClickPanCleanupRef.current = null
+			tldrawOnMountCleanupRef.current?.()
+			tldrawOnMountCleanupRef.current = null
 		}
 	}, [])
 
@@ -142,6 +144,11 @@ function App() {
 			<Tldraw
 				store={store}
 				licenseKey={licenseKey}
+				overrides={[createPasteActionOverride()]}
+				components={{
+					MainMenu: CustomMainMenu,
+					ContextMenu: CustomContextMenu,
+				}}
 				cameraOptions={{ zoomSpeed: 1.5 }}
 				onMount={(editor) => {
 					const cached = getCachedTheme()
@@ -153,8 +160,13 @@ function App() {
 							editor.user.updateUserPreferences({ colorScheme: 'dark' })
 						}
 					}
-					const cleanup = setupRightClickPan(editor)
-					rightClickPanCleanupRef.current = cleanup
+					const rightClickPanCleanup = setupRightClickPan(editor)
+					const pasteJsonCleanup = setupPasteJson(editor)
+					const cleanup = () => {
+						pasteJsonCleanup()
+						rightClickPanCleanup()
+					}
+					tldrawOnMountCleanupRef.current = cleanup
 					return cleanup
 				}}
 			>
