@@ -107,16 +107,15 @@ function App() {
 	}, [])
 
 	useEffect(() => setupContextMenuCopyJsonInjection(copySceneToClipboard, excalidrawAPIRef), [copySceneToClipboard])
-	useEffect(() => setupCanvasWheelZoom(excalidrawAPIRef), [])
-	useEffect(() => setupCanvasRightDragPan(excalidrawAPIRef), [])
-
 	useEffect(() => {
+		const cleanupWheel = setupCanvasWheelZoom(excalidrawAPIRef)
+		const cleanupPan = setupCanvasRightDragPan(excalidrawAPIRef)
 		function isFocusInTextField(): boolean {
 			const el = document.activeElement
 			if (!(el instanceof HTMLElement)) return false
 			return el.closest('input, textarea') != null || el.isContentEditable || el.closest('[contenteditable="true"], [contenteditable=""]') != null
 		}
-		function onPaste(e: ClipboardEvent) {
+		function onPaste(e: ClipboardEvent): void {
 			if (isFocusInTextField()) return
 			const text = e.clipboardData?.getData('text/plain')?.trim()
 			if (!text) return
@@ -125,7 +124,11 @@ function App() {
 			e.stopPropagation()
 		}
 		window.addEventListener('paste', onPaste, true)
-		return () => window.removeEventListener('paste', onPaste, true)
+		return () => {
+			cleanupWheel()
+			cleanupPan()
+			window.removeEventListener('paste', onPaste, true)
+		}
 	}, [])
 
 	return (

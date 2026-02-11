@@ -82,6 +82,9 @@ body {
 	color: var(--color-on-surface);
 	line-height: 1.4;
 }
+.excalidraw #overwrite-confirm-desc {
+	margin-top: var(--space-factor);
+}
 .excalidraw .cloud-storage-dialog-confirm-panel .cloud-storage-dialog-actions {
 	display: flex;
 	flex-direction: row;

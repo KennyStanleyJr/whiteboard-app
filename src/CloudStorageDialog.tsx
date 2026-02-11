@@ -131,9 +131,7 @@ function SaveOverwriteConfirmOverlay({
 					Overwrite?
 				</h2>
 				<p id="overwrite-confirm-desc" className="cloud-storage-dialog-confirm-desc">
-					A whiteboard named &quot;{overwriteConfirm.name}&quot; already exists.
-					<br />
-					Replace it with the current canvas?
+					Replace &quot;{overwriteConfirm.name}&quot; with the current page?
 				</p>
 				<div className="cloud-storage-dialog-actions">
 					<button type="button" onClick={onCancel} className="cloud-storage-dialog-btn cloud-storage-dialog-btn--secondary">
@@ -270,6 +268,7 @@ function SaveForm({
 	const loading = saveState.phase === 'listing' || saveState.phase === 'saving'
 	const error = saveState.error
 	const overwriteConfirm = saveState.phase === 'overwrite_confirm' ? saveState.payload : null
+	const isOverwriting = existingItems.some((item) => item.name === name.trim())
 	const isOverwritingProtected = existingItems.some((item) => item.name === name.trim() && item.hasPassword)
 
 	const performSave = useCallback(
@@ -352,7 +351,7 @@ function SaveForm({
 						Cancel
 					</button>
 					<button type="submit" disabled={loading} className="cloud-storage-dialog-btn cloud-storage-dialog-btn--primary">
-						{loading ? (isOverwritingProtected ? 'Overwriting…' : 'Saving…') : (isOverwritingProtected ? 'Overwrite' : 'Save')}
+						{loading ? (isOverwriting ? 'Verifying…' : 'Saving…') : (isOverwriting ? 'Overwrite' : 'Save')}
 					</button>
 				</div>
 			</form>
