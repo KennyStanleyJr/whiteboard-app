@@ -12,9 +12,11 @@
     "generate-icons": "node scripts/generate-icons.mjs"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.95.3",
+    "@tldraw/sync": "^4.3.0",
     "react": "^19.2.1",
     "react-dom": "^19.2.1",
-    "tldraw": "^3.0.0"
+    "tldraw": "^4.3.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.15.0",

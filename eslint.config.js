@@ -12,6 +12,7 @@ export default tseslint.config(
       "public/docs",
       "docs",
       "scripts",
+      "sync-server",
       "**/*.config.*",
     ],
   },

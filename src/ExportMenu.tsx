@@ -2,10 +2,13 @@
  * Export/Import JSON menu items and helpers for main menu and context menu.
  */
 
-import type { Editor, TLContent } from '@tldraw/editor'
-import type { TLShapeId } from '@tldraw/tlschema'
 import { useCallback } from 'react'
 import { importJsonFromText } from './pasteJson'
+import {
+	createShareLinkForPage,
+	getContentAsJsonDoc,
+	isShareAvailable,
+} from './sharePage'
 import {
 	ArrangeMenuSubmenu,
 	ClipboardMenuGroup,
@@ -19,6 +22,10 @@ import {
 	PreferencesGroup,
 	ReorderMenuSubmenu,
 	SelectAllMenuItem,
+	TldrawUiButton,
+	TldrawUiButtonIcon,
+	TldrawUiButtonLabel,
+	TldrawUiDropdownMenuItem,
 	TldrawUiMenuActionItem,
 	UndoRedoGroup,
 	TldrawUiMenuGroup,
@@ -39,78 +46,21 @@ import {
 
 const EXPORT_FILENAME = 'whiteboard-export.json'
 
-type PageRecord = { typeName: string; id: string; name: string; index: string; meta: unknown }
-
-/** Convert TLContent to document format compatible with importJsonFromText. */
-function contentToDocSnapshot(
-	content: TLContent,
-	pageId: string,
-	pageRecord: PageRecord | null
-): { document: { store: Record<string, unknown>; schema: unknown } } {
-	const store: Record<string, unknown> = {}
-	for (const s of content.shapes) store[s.id] = s
-	for (const b of content.bindings ?? []) store[b.id] = b
-	for (const a of content.assets ?? []) store[a.id] = a
-	if (pageRecord) store[pageId] = pageRecord
-	else store[pageId] = { typeName: 'page', id: pageId, name: 'Page', index: 'a0', meta: {} }
-	return { document: { store, schema: content.schema } }
-}
-
-/** Resolve content for given shape IDs and return doc snapshot, or null. */
-async function getContentAsJsonDoc(
-	editor: Editor,
-	shapeIds: Iterable<TLShapeId>
-): Promise<{ document: { store: Record<string, unknown>; schema: unknown } } | null> {
-	const ids = Array.from(shapeIds)
-	const content = editor.getContentFromCurrentPage(ids)
-	if (!content) return null
-	const resolved = await editor.resolveAssetsInContent(content)
-	if (!resolved) return null
-	const pageId = editor.getCurrentPageId()
-	const page = editor.store.get(pageId) as PageRecord | undefined
-	return contentToDocSnapshot(resolved, pageId, page ?? null)
-}
-
 function downloadJson(json: string): void {
-	const blob = new Blob([json], { type: 'application/json' })
-	const url = URL.createObjectURL(blob)
 	const a = document.createElement('a')
-	a.href = url
+	a.href = URL.createObjectURL(new Blob([json], { type: 'application/json' }))
 	a.download = EXPORT_FILENAME
-	HTMLAnchorElement.prototype.click.call(a)
-	URL.revokeObjectURL(url)
+	a.click()
+	URL.revokeObjectURL(a.href)
 }
 
-function ExportJsonMenuItem() {
-	const editor = useEditor()
-	const toasts = useToasts()
-	const onSelect = useCallback(
-		async (_source: TLUiEventSource) => {
-			try {
-				const doc = await getContentAsJsonDoc(editor, editor.getCurrentPageShapeIds())
-				if (doc) downloadJson(JSON.stringify(doc))
-			} catch {
-				toasts.addToast({
-					title: 'Export failed',
-					description: 'Could not export page.',
-					severity: 'error',
-				})
-			}
-		},
-		[editor, toasts]
-	)
-	return (
-		<TldrawUiMenuItem
-			id="export-json"
-			label="JSON"
-			icon="external-link"
-			onSelect={onSelect}
-		/>
-	)
-}
-
-/** Copy JSON for selected shapes (Edit/context Copy as). */
-function CopyJsonMenuItem() {
+function JsonMenuItem({
+	id,
+	mode,
+}: {
+	id: string
+	mode: 'export' | 'copy' | 'export-selection'
+}) {
 	const editor = useEditor()
 	const toasts = useToasts()
 	const onSelect = useCallback(
@@ -120,64 +70,26 @@ function CopyJsonMenuItem() {
 				const shapeIds = ids.length > 0 ? ids : editor.getCurrentPageShapeIds()
 				const doc = await getContentAsJsonDoc(editor, shapeIds)
 				if (!doc) return
-				if (!navigator.clipboard?.writeText) {
-					toasts.addToast({
-						title: 'Copy failed',
-						description: 'Clipboard is not available.',
-						severity: 'error',
-					})
-					return
+				const json = JSON.stringify(doc)
+				if (mode === 'copy') {
+					if (!navigator.clipboard?.writeText) {
+						toasts.addToast({ title: 'Copy failed', description: 'Clipboard unavailable.', severity: 'error' })
+						return
+					}
+					await navigator.clipboard.writeText(json)
+				} else {
+					downloadJson(json)
 				}
-				await navigator.clipboard.writeText(JSON.stringify(doc))
 			} catch {
 				toasts.addToast({
-					title: 'Copy failed',
-					description: 'Could not copy to clipboard.',
+					title: mode === 'copy' ? 'Copy failed' : 'Export failed',
 					severity: 'error',
 				})
 			}
 		},
-		[editor, toasts]
+		[editor, toasts, mode]
 	)
-	return (
-		<TldrawUiMenuItem
-			id="copy-json"
-			label="JSON"
-			icon="external-link"
-			onSelect={onSelect}
-		/>
-	)
-}
-
-/** Export JSON for selected shapes (Edit/context Export as). */
-function ExportJsonSelectionMenuItem() {
-	const editor = useEditor()
-	const toasts = useToasts()
-	const onSelect = useCallback(
-		async (_source: TLUiEventSource) => {
-			try {
-				const ids = editor.getSelectedShapeIds()
-				const shapeIds = ids.length > 0 ? ids : editor.getCurrentPageShapeIds()
-				const doc = await getContentAsJsonDoc(editor, shapeIds)
-				if (doc) downloadJson(JSON.stringify(doc))
-			} catch {
-				toasts.addToast({
-					title: 'Export failed',
-					description: 'Could not export selection.',
-					severity: 'error',
-				})
-			}
-		},
-		[editor, toasts]
-	)
-	return (
-		<TldrawUiMenuItem
-			id="export-json-selection"
-			label="JSON"
-			icon="external-link"
-			onSelect={onSelect}
-		/>
-	)
+	return <TldrawUiMenuItem id={id} label="JSON" icon="external-link" onSelect={onSelect} />
 }
 
 /** Copy as submenu with SVG, PNG, and JSON options. */
@@ -201,12 +113,36 @@ function CustomCopyAsMenuGroup() {
 				{typeof window.navigator?.clipboard?.write === 'function' && (
 					<TldrawUiMenuActionItem actionId="copy-as-png" />
 				)}
-				<CopyJsonMenuItem />
+				<JsonMenuItem id="copy-json" mode="copy" />
 			</TldrawUiMenuGroup>
 			<TldrawUiMenuGroup id="copy-as-bg">
 				<ToggleTransparentBgMenuItem />
 			</TldrawUiMenuGroup>
 		</TldrawUiMenuSubmenu>
+	)
+}
+
+/** Share page: save current page only to Supabase and copy shareable URL to clipboard. */
+function CreateLinkMenuItem() {
+	const editor = useEditor()
+	const toasts = useToasts()
+	const onSelect = useCallback(
+		async (_source: TLUiEventSource) => {
+			await createShareLinkForPage(editor, editor.getCurrentPageId(), toasts)
+		},
+		[editor, toasts]
+	)
+	return (
+		<TldrawUiDropdownMenuItem>
+			<TldrawUiButton
+				type="menu"
+				data-testid="main-menu.create-link"
+				onClick={() => { void onSelect('main-menu') }}
+			>
+				<TldrawUiButtonLabel>Share page</TldrawUiButtonLabel>
+				<TldrawUiButtonIcon icon="link" small />
+			</TldrawUiButton>
+		</TldrawUiDropdownMenuItem>
 	)
 }
 
@@ -260,7 +196,7 @@ function CustomExportFileContentSubMenu() {
 			<TldrawUiMenuGroup id="export-all-as-group">
 				<TldrawUiMenuActionItem actionId="export-all-as-svg" />
 				<TldrawUiMenuActionItem actionId="export-all-as-png" />
-				<ExportJsonMenuItem />
+				<JsonMenuItem id="export-json" mode="export" />
 			</TldrawUiMenuGroup>
 			<TldrawUiMenuGroup id="export-all-as-bg">
 				<ToggleTransparentBgMenuItem />
@@ -297,7 +233,14 @@ export function CustomMainMenu(props: TLUiMainMenuProps) {
 				<ViewSubmenu />
 				<CustomExportFileContentSubMenu />
 				<ImportJsonMenuItem />
-				<ExtrasGroup />
+				<TldrawUiMenuGroup id="extras">
+					<ExtrasGroup />
+				</TldrawUiMenuGroup>
+				{isShareAvailable() && (
+					<TldrawUiMenuGroup id="create-link">
+						<CreateLinkMenuItem />
+					</TldrawUiMenuGroup>
+				)}
 			</TldrawUiMenuGroup>
 			<PreferencesGroup />
 		</DefaultMainMenu>
@@ -322,7 +265,7 @@ function CustomConversionsMenuGroup() {
 				<TldrawUiMenuGroup id="export-as-group">
 					<TldrawUiMenuActionItem actionId="export-as-svg" />
 					<TldrawUiMenuActionItem actionId="export-as-png" />
-					<ExportJsonSelectionMenuItem />
+					<JsonMenuItem id="export-json-selection" mode="export-selection" />
 				</TldrawUiMenuGroup>
 				<TldrawUiMenuGroup id="export-as-bg">
 					<ToggleTransparentBgMenuItem />

@@ -1,16 +1,17 @@
 const PERSIST_KEY = 'whiteboard-document'
-const THROTTLE_MS = 500
+const THROTTLE_MS = 300
 
 export { PERSIST_KEY, THROTTLE_MS }
 
 export interface Throttled<T extends () => void> {
 	run: T
 	cancel: () => void
+	flush: () => void
 }
 
 /**
  * Throttles a function to run at most once per `intervalMs`.
- * Returns { run, cancel }; call cancel() on unmount to clear any pending timeout.
+ * Returns { run, cancel, flush }; call cancel() on unmount; flush() runs immediately.
  */
 export function throttle<T extends () => void>(fn: T, intervalMs: number): Throttled<T> {
 	let last = 0
@@ -39,7 +40,15 @@ export function throttle<T extends () => void>(fn: T, intervalMs: number): Throt
 			timeout = null
 		}
 	}
-	return { run: run as T, cancel }
+	function flush() {
+		if (timeout !== null) {
+			clearTimeout(timeout)
+			timeout = null
+		}
+		last = Date.now()
+		fn()
+	}
+	return { run: run as T, cancel, flush }
 }
 
 export function loadPersistedSnapshot(): string | null {

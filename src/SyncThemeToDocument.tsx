@@ -1,14 +1,14 @@
 import { useEditor, useValue } from 'tldraw'
 import { useEffect } from 'react'
+import { THEME_CACHE_KEY } from './themeUtils'
 
 const DARK_BG = 'hsl(240, 5%, 6.5%)'
 const LIGHT_BG = 'hsl(210, 20%, 98%)'
 
-const THEME_CACHE_KEY = 'whiteboard-theme'
-
 function applyThemeToDocument(isDark: boolean) {
 	const bg = isDark ? DARK_BG : LIGHT_BG
 	document.documentElement.style.setProperty('--app-bg', bg)
+	document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light')
 	const meta = document.querySelector('meta[name="theme-color"]')
 	if (meta) meta.setAttribute('content', bg)
 	try {
@@ -17,8 +17,6 @@ function applyThemeToDocument(isDark: boolean) {
 		// Ignore storage errors (private mode, quota, etc.)
 	}
 }
-
-export { THEME_CACHE_KEY }
 
 /**
  * Syncs tldraw's theme (dark/light) to document background and PWA theme-color.

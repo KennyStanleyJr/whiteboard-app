@@ -22,10 +22,10 @@ function getDocSnapshot(parsed: unknown): DocSnapshot | null {
 	const doc = p.document
 	if (doc && typeof doc === 'object') {
 		const d = doc as Record<string, unknown>
-		if (d.store && typeof d.store === 'object' && d.schema) return d as DocSnapshot
+		if (d.store && typeof d.store === 'object' && d.schema) return d as unknown as DocSnapshot
 	}
 	// Raw StoreSnapshot: { store, schema } at top level
-	if (p.store && typeof p.store === 'object' && p.schema) return p as DocSnapshot
+	if (p.store && typeof p.store === 'object' && p.schema) return p as unknown as DocSnapshot
 	return null
 }
 

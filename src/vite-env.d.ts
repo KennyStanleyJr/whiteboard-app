@@ -2,6 +2,9 @@
 
 interface ImportMetaEnv {
 	readonly VITE_TLDRAW_LICENSE_KEY?: string
+	readonly VITE_SUPABASE_URL?: string
+	readonly VITE_SUPABASE_ANON_KEY?: string
+	readonly VITE_SYNC_SERVER_URL?: string
 }
 
 interface ImportMeta {

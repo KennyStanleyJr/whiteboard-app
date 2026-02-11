@@ -6,3 +6,57 @@ body {
 	font-family: system-ui, -apple-system, sans-serif;
 	overscroll-behavior: none;
 }
+
+/* Horizontal button row (tldraw v4 removed tlui-buttons__horizontal) */
+.tlui-buttons__horizontal {
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	gap: 2px;
+}
+
+/* Share page: divider below when last in main menu */
+.tlui-menu__group[data-testid='main-menu-group.create-link'] {
+	border-bottom: 1px solid var(--tl-color-divider);
+}
+
+/* Share button: left of 3-dot menu, clickable to copy link. Shows on hover like submenu. */
+.tlui-page_menu__item__share {
+	flex-shrink: 0;
+	position: absolute;
+	right: 32px;
+	top: 0;
+	height: 100%;
+	z-index: 9;
+	opacity: 0;
+}
+
+.tlui-page-menu__item:hover > .tlui-page_menu__item__share,
+.tlui-page_menu__item__sortable:hover > .tlui-page_menu__item__share,
+.tlui-page_menu__item__sortable:focus-visible > .tlui-page_menu__item__share,
+.tlui-page_menu__item__share:focus-visible {
+	opacity: 1;
+}
+
+@media (any-pointer: coarse) {
+	.tlui-page_menu__item__share {
+		opacity: 1;
+	}
+}
+
+/* Loading animation: a segment chases around the rounded square */
+.loading-animation {
+	color: inherit;
+}
+
+.loading-animation path {
+	stroke-dasharray: 0.25 0.75;
+	stroke-dashoffset: 1;
+	animation: loading-chase 1.2s linear infinite;
+}
+
+@keyframes loading-chase {
+	to {
+		stroke-dashoffset: 0;
+	}
+}

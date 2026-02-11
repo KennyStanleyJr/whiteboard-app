@@ -17,6 +17,7 @@
           if (raw === 'light' || raw === 'dark') theme = raw;
           var bg = theme === 'dark' ? dark : light;
           document.documentElement.style.setProperty('--app-bg', bg);
+          document.documentElement.setAttribute('data-theme', theme);
           var meta = document.querySelector('meta[name="theme-color"]');
           if (meta) meta.setAttribute('content', bg);
         } catch (_) {}
