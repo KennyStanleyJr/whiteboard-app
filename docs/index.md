@@ -1,27 +1,20 @@
 # Whiteboard App
 
-Infinite whiteboard app with **text**, **shapes** (rectangle, ellipse), and **images**. Multiple whiteboards can be created, renamed, and switched; each board has its own canvas with pan/zoom, selection, and undo/redo. Export/import supports single-board JSON and multi-board ZIP. Targets **Windows**, **Mac**, **iPhone**, and **iPad**.
+Infinite whiteboard app powered by **[tldraw](https://tldraw.dev)**. One codebase for web (and later desktop/mobile via Electron, Tauri, or PWA).
 
 ## Features
 
-- **Canvas**: Infinite pannable/zoomable canvas (mouse wheel zoom, right-drag or touch to pan).
-- **Elements**: Add and edit text (with formatting and alignment), rectangles, ellipses, and images; resize and reposition via selection handles.
-- **Selection**: Click to select; selection toolbar for font size, color, alignment, and shape fill/stroke.
-- **Undo/redo**: Bounded history per board (keyboard shortcuts supported).
-- **Boards**: Create, rename, delete, and switch between multiple whiteboards; state persisted in `localStorage`.
-- **Import/export**: Download a single board as JSON or all boards as a ZIP; import from `.json` or `.zip` files.
+- **Canvas**: Infinite canvas with shapes, drawing, text, images; pan and zoom.
+- **Theme**: Dark/light mode (default dark); theme syncs to page background and PWA chrome.
+- **Persistence**: Use tldraw’s `persistenceKey` prop to save to IndexedDB (optional).
 
 ## Tech stack
 
-- **Language**: TypeScript (strict mode)
-- **UI**: React 18
-- **Build**: Vite 5
-- **Styling**: Tailwind CSS 4
-- **PWA**: vite-plugin-pwa (offline support, installable app)
-- **State**: TanStack React Query (whiteboard state), `localStorage` (boards + per-board state)
-- **Components**: Radix UI, Lucide icons, react-colorful
-- **Lint**: ESLint 9 (flat config, type-checked, max-warnings 0)
-- **Tests**: Vitest, Testing Library
+- **tldraw** – Infinite canvas, shapes, drawing, text, images, zoom, pan, undo/redo
+- **React 19** + **TypeScript** (strict)
+- **Vite 7**
+- **vite-plugin-pwa** – Offline support, installable PWA (manifest + service worker)
+- **ESLint 9** (flat config, type-checked, max-warnings 0)
 
 ## Quick start
 

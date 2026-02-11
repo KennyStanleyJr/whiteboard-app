@@ -11,7 +11,7 @@ export default defineConfig({
 			manifest: {
 				name: 'Whiteboard',
 				short_name: 'Whiteboard',
-				description: 'Infinite whiteboard for text, images, videos, links, post-it notes, and arrows.',
+				description: 'Infinite whiteboard powered by tldraw.',
 				start_url: '/',
 				id: '/',
 				theme_color: '#0f0f11',
@@ -33,17 +33,17 @@ export default defineConfig({
 			workbox: {
 				cleanupOutdatedCaches: true,
 				globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
-				maximumFileSizeToCacheInBytes: 5 * 1024 * 1024, // Excalidraw chunk ~4.4 MB
+				maximumFileSizeToCacheInBytes: 5 * 1024 * 1024, // tldraw chunk
 			},
 		}),
 	],
 	build: {
-		chunkSizeWarningLimit: 5500, // Excalidraw chunk ~5.1 MB
+		chunkSizeWarningLimit: 5500, // tldraw chunk
 		rollupOptions: {
 			output: {
 				manualChunks(id: string): string | undefined {
 					if (!id.includes('node_modules')) return undefined
-					if (id.includes('excalidraw')) return 'excalidraw'
+					if (id.includes('tldraw')) return 'tldraw'
 					if (id.includes('react-dom') || id.includes('react/')) return 'react'
 					return undefined
 				},

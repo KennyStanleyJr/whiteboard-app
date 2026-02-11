@@ -4,13 +4,13 @@ High-level layout of the repository.
 
 ```
 whiteboard-app/
-├── .nvmrc                    # Node version for nvm (22)
-├── docs/                     # Documentation (this site + markdown)
+├── .nvmrc                    # Node version for nvm (>=20)
+├── docs/                     # Documentation (VitePress) – optional
 │   ├── .vitepress/           # VitePress config
-│   ├── NASA_CODING_GUIDELINES.md
 │   ├── index.md
+│   ├── nasa-coding-guidelines.md
 │   └── project-structure.md
-├── public/                   # Static assets (icons, favicon, robots.txt)
+├── public/                   # Static assets (icons, favicon, robots.txt, _redirects)
 │   ├── favicon.svg
 │   ├── favicon.ico
 │   ├── apple-touch-icon-180x180.png
@@ -18,59 +18,26 @@ whiteboard-app/
 │   ├── pwa-192x192.png
 │   ├── pwa-512x512.png
 │   ├── maskable-icon-512x512.png
-│   └── robots.txt
+│   ├── robots.txt
+│   └── _redirects
 ├── src/
-│   ├── api/                  # Boards and whiteboard state (localStorage)
-│   │   ├── boards.ts
-│   │   └── whiteboard.ts
-│   ├── components/          # Canvas, toolbar, selection UI, element renderers
-│   │   ├── ui/               # Button, Dialog, Input, Select (Radix-based)
-│   │   ├── WhiteboardCanvas.tsx
-│   │   ├── WhiteboardToolbar.tsx
-│   │   ├── WhiteboardCanvasSvg/   # SVG elements (text, shape, image)
-│   │   └── SelectionToolbar/
-│   ├── contexts/             # Theme, portal container
-│   ├── hooks/                # Pan/zoom, selection, undo/redo, canvas events
-│   │   ├── canvas/
-│   │   ├── panZoom/
-│   │   ├── selection/
-│   │   ├── useSingleOpen.ts
-│   │   ├── useUndoRedo.ts
-│   │   └── useWhiteboard.ts
-│   ├── lib/                  # Shared helpers and config
-│   │   ├── canvasPreferences.ts
-│   │   ├── elementBounds.ts
-│   │   ├── optimizeImage.ts
-│   │   ├── remapElementIds.ts
-│   │   ├── resizeHandles.ts
-│   │   ├── sanitizeHtml.ts
-│   │   ├── textFormat.ts
-│   │   └── utils.ts
-│   ├── test/                 # Test setup and utilities
-│   ├── types/
-│   │   └── whiteboard.ts
-│   ├── App.tsx
-│   ├── App.css
+│   ├── App.tsx               # tldraw full-screen editor, default dark theme, theme sync
+│   ├── SyncThemeToDocument.tsx  # Syncs tldraw theme to page background and PWA theme-color
 │   ├── main.tsx
-│   └── index.css
+│   ├── index.css
+│   └── vite-env.d.ts
 ├── index.html
 ├── package.json
 ├── tsconfig.json
 ├── vite.config.ts
-├── components.json
 └── eslint.config.js
 ```
 
-## Key directories
+## Key paths
 
 | Path | Purpose |
 |------|--------|
-| `src/api/` | Board and whiteboard CRUD; persistence via `localStorage`. |
-| `src/components/` | React components: canvas, toolbars, SVG element renderers, UI primitives. |
-| `src/hooks/` | Reusable state and behavior: pan/zoom, selection, undo/redo, single-open menu. |
-| `src/lib/` | Pure helpers and app config: bounds, resize handles, sanitization, text format, preferences. |
-| `src/contexts/` | React context (theme, portal container). |
-| `src/types/` | Shared TypeScript types (e.g. whiteboard elements). |
-| `docs/` | Documentation source; built by VitePress into a static site. |
-
-Icons and PWA assets in `public/` are used as-is; replace those files to change the app icon or PWA icons.
+| `src/App.tsx` | Root component: `<Tldraw>` with license key, default dark theme, and `<SyncThemeToDocument>` child. |
+| `src/SyncThemeToDocument.tsx` | Syncs tldraw dark/light mode to `--app-bg` and `<meta name="theme-color">` (no separate storage). |
+| `public/` | PWA icons, favicon, robots.txt; served as-is. |
+| `docs/` | VitePress documentation source; build outputs a static site. |

@@ -1,10 +1,10 @@
 # Whiteboard App
 
-Infinite whiteboard app powered by **[Excalidraw](https://excalidraw.com)** (MIT licensed). One codebase for web (and later desktop/mobile via Electron, Tauri, or PWA).
+Infinite whiteboard app powered by **[tldraw](https://tldraw.dev)**. One codebase for web (and later desktop/mobile via Electron, Tauri, or PWA).
 
 ## Tech Stack
 
-- **Excalidraw** – Infinite canvas, shapes, drawing (MIT open source)
+- **tldraw** – Infinite canvas, shapes, drawing, text, images, zoom, pan, undo/redo
 - **React 19** + **TypeScript** (strict)
 - **Vite 7**
 - **vite-plugin-pwa** – Offline support, installable PWA (manifest + service worker)
@@ -25,18 +25,6 @@ npm install
 npm run dev
 ```
 
-### Cloud storage (Supabase)
-
-Optional: save and load whiteboards in the cloud with a name and optional password.
-
-1. Create a [Supabase](https://supabase.com) project.
-2. Copy `.env.example` to `.env` and set `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`.
-3. Run the migrations in the Supabase SQL editor in order: `supabase/migrations/20250210000000_create_whiteboards.sql`, then `20250210000001_whiteboards_name_length.sql`.
-
-Then use **Save to cloud** and **Load from cloud** in the main menu. Without Supabase env vars, those menu items show a setup hint.
-
-**Security:** Passwords are hashed with bcrypt (client-side) before storage; only the hash is sent. The anon key is public by design; RLS currently allows any anonymous user to list, save, and load. Use password protection on sensitive boards. For production multi-tenant use, switch to Supabase Auth and RLS policies that scope rows by user.
-
 ## Scripts
 
 | Command | Description |
@@ -54,28 +42,10 @@ whiteboard-app/
 ├── docs/                     # Documentation (VitePress) – optional
 ├── public/                   # Static assets
 ├── src/
-│   ├── App.tsx               # Excalidraw full-screen editor
-│   ├── CloudStorageDialog.tsx
-│   ├── canvasWheelZoom.ts    # Ctrl/⌘+wheel pan, plain wheel zoom
-│   ├── clipboardScene.ts
-│   ├── contextMenuCopyJson.ts
-│   ├── initialData.ts
-│   ├── mainMenuIcons.tsx
-│   ├── storage/              # localStorage scene + settings
-│   │   ├── index.ts
-│   │   ├── scene.ts
-│   │   └── settings.ts
-│   ├── supabase/             # Cloud save/load (optional)
-│   │   ├── client.ts
-│   │   └── whiteboards.ts
-│   ├── SyncHtmlTheme.tsx
-│   ├── themeConstants.ts
-│   ├── types.ts
+│   ├── App.tsx               # tldraw full-screen editor
 │   ├── main.tsx
 │   ├── index.css
 │   └── vite-env.d.ts
-├── supabase/
-│   └── migrations/          # Run in Supabase SQL editor
 ├── index.html
 ├── package.json
 ├── tsconfig.json
