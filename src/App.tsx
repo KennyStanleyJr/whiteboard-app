@@ -3,6 +3,7 @@ import type { ExcalidrawImperativeAPI } from '@excalidraw/excalidraw/types'
 import '@excalidraw/excalidraw/index.css'
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
 import { CloudStorageDialog } from './CloudStorageDialog'
+import { setupCanvasRightDragPan } from './canvasRightDragPan'
 import { setupCanvasWheelZoom } from './canvasWheelZoom'
 import { applySceneJsonToCanvas } from './clipboardScene'
 import { setupContextMenuCopyJsonInjection } from './contextMenuCopyJson'
@@ -107,6 +108,7 @@ function App() {
 
 	useEffect(() => setupContextMenuCopyJsonInjection(copySceneToClipboard, excalidrawAPIRef), [copySceneToClipboard])
 	useEffect(() => setupCanvasWheelZoom(excalidrawAPIRef), [])
+	useEffect(() => setupCanvasRightDragPan(excalidrawAPIRef), [])
 
 	useEffect(() => {
 		function isFocusInTextField(): boolean {
