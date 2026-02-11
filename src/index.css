@@ -159,6 +159,14 @@ body {
 		font-size: 16px;
 	}
 }
+
+/* In-canvas text editor: allow native text selection and mobile copy/paste controls */
+.excalidraw .excalidraw-wysiwyg {
+	-webkit-user-select: text;
+	user-select: text;
+	-webkit-touch-callout: default;
+	touch-action: auto;
+}
 .excalidraw .cloud-storage-dialog-form input::placeholder {
 	color: var(--color-gray-50);
 }
