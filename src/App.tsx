@@ -13,6 +13,7 @@ import {
 	throttle,
 	THROTTLE_MS,
 } from './persistStore'
+import { setupRightClickPan } from './rightClickPan'
 import { SyncThemeToDocument, THEME_CACHE_KEY } from './SyncThemeToDocument'
 
 const licenseKey = import.meta.env.VITE_TLDRAW_LICENSE_KEY ?? undefined
@@ -107,6 +108,10 @@ function App() {
 						if (prefs.colorScheme === undefined) {
 							editor.user.updateUserPreferences({ colorScheme: 'dark' })
 						}
+					}
+					const cleanupRightClickPan = setupRightClickPan(editor)
+					return () => {
+						cleanupRightClickPan()
 					}
 				}}
 			>
