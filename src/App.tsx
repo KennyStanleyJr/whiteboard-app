@@ -52,7 +52,7 @@ function App() {
 				for (const ps of states) {
 					if (typeof ps.isGridMode === 'boolean') gridRef.current.m.set(ps.pageId, ps.isGridMode)
 				}
-				loadSnapshot(store, parsed as Parameters<typeof loadSnapshot>[1], { forceOverwriteSessionState: true })
+				loadSnapshot(store, parsed, { forceOverwriteSessionState: true })
 				const inst = store.get(TLINSTANCE_ID) as { currentPageId: string; isGridMode: boolean } | undefined
 				if (inst) {
 					const g = gridRef.current.m.get(inst.currentPageId) ?? false
@@ -82,10 +82,16 @@ function App() {
 					} else if (!p) gridRef.current.prev = { pageId: inst.currentPageId, isGridMode: inst.isGridMode }
 				}
 				const snap = getSnapshot(store)
-				for (const ps of snap.session?.pageStates ?? []) {
-					;(ps as { pageId: string; isGridMode?: boolean }).isGridMode = gridRef.current.m.get(ps.pageId) ?? false
+				const sessionClone = structuredClone(snap.session) ?? {}
+				const pageStates = sessionClone.pageStates ?? []
+				for (const ps of pageStates) {
+					const pageState = ps as { pageId: string; isGridMode?: boolean }
+					pageState.isGridMode = gridRef.current.m.get(pageState.pageId) ?? false
 				}
-				const json = JSON.stringify(snap)
+				// Use 'all' scope so camera (and instance) records are included; default 'document' omits them
+				const documentSnapshot = store.getStoreSnapshot('all')
+				const toSave = { document: documentSnapshot, session: sessionClone }
+				const json = JSON.stringify(toSave)
 				if (json !== lastJson) {
 					savePersistedSnapshot(json)
 					lastJson = json

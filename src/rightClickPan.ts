@@ -17,116 +17,173 @@ interface EditorLike {
 	getInstanceState(): { cursor: { type: string } }
 }
 
-export function setupRightClickPan(editor: EditorLike): () => void {
-	const container = editor.getContainer()
+interface RightClickPanState {
+	rightDown: boolean
+	panning: boolean
+	justFinishedPan: boolean
+	lastScreenX: number
+	lastScreenY: number
+	prevCursor: string | null
+	accDx: number
+	accDy: number
+	rafId: number
+}
 
-	let rightDown = false
-	let panning = false
-	let justFinishedPan = false
-	let lastScreenX = 0
-	let lastScreenY = 0
-	let prevCursor: string | null = null
-	let accDx = 0
-	let accDy = 0
-	let rafId = 0
+function getScreenPoint(container: HTMLElement, e: PointerEvent): { x: number; y: number } {
+	const rect = container.getBoundingClientRect()
+	return { x: e.clientX - rect.left, y: e.clientY - rect.top }
+}
 
-	function getScreenPoint(e: PointerEvent): { x: number; y: number } {
-		const rect = container.getBoundingClientRect()
-		return { x: e.clientX - rect.left, y: e.clientY - rect.top }
+function startPanning(
+	state: RightClickPanState,
+	editor: EditorLike,
+	container: HTMLElement,
+	e: PointerEvent
+): void {
+	state.panning = true
+	state.prevCursor = editor.getInstanceState().cursor.type
+	editor.setCursor({ type: 'grabbing', rotation: 0 })
+	container.style.cursor = 'grabbing'
+	container.setPointerCapture(e.pointerId)
+}
+
+function applyAccumulatedDelta(state: RightClickPanState, editor: EditorLike): void {
+	const dxApply = state.accDx
+	const dyApply = state.accDy
+	state.accDx = 0
+	state.accDy = 0
+	const { x: cx, y: cy, z: cz } = editor.getCamera()
+	editor.setCamera(
+		{ x: cx + dxApply / cz, y: cy + dyApply / cz, z: cz },
+		{ immediate: true }
+	)
+}
+
+function scheduleRafApply(state: RightClickPanState, editor: EditorLike): void {
+	if (state.rafId !== 0) return
+	state.rafId = requestAnimationFrame(() => {
+		state.rafId = 0
+		if (!state.panning) return
+		applyAccumulatedDelta(state, editor)
+	})
+}
+
+function endPanning(
+	state: RightClickPanState,
+	editor: EditorLike,
+	container: HTMLElement,
+	e: PointerEvent
+): void {
+	state.justFinishedPan = true
+	e.preventDefault()
+	e.stopPropagation()
+	if (state.rafId !== 0) {
+		cancelAnimationFrame(state.rafId)
+		state.rafId = 0
 	}
+	if (state.accDx !== 0 || state.accDy !== 0) {
+		applyAccumulatedDelta(state, editor)
+	}
+	container.style.cursor = ''
+	if (state.prevCursor !== null) {
+		editor.setCursor({ type: state.prevCursor, rotation: 0 })
+		state.prevCursor = null
+	}
+	try {
+		container.releasePointerCapture(e.pointerId)
+	} catch {
+		// ignore if already released
+	}
+}
 
-	function onPointerDown(e: PointerEvent): void {
+function createPointerDownHandler(
+	state: RightClickPanState,
+	_editor: EditorLike,
+	container: HTMLElement
+): (e: PointerEvent) => void {
+	return (e: PointerEvent) => {
 		if (e.button !== RIGHT_BUTTON) return
-		rightDown = true
-		panning = false
-		const p = getScreenPoint(e)
-		lastScreenX = p.x
-		lastScreenY = p.y
+		state.rightDown = true
+		state.panning = false
+		state.justFinishedPan = false
+		const p = getScreenPoint(container, e)
+		state.lastScreenX = p.x
+		state.lastScreenY = p.y
 	}
+}
 
-	function onPointerMove(e: PointerEvent): void {
-		// On move, use 'buttons' bitmask; 'button' is only for down/up and is 0 on move.
-		// buttons: 1=left, 2=right, 4=middle
+function createPointerMoveHandler(
+	state: RightClickPanState,
+	editor: EditorLike,
+	container: HTMLElement
+): (e: PointerEvent) => void {
+	return (e: PointerEvent) => {
 		const rightPressed = (e.buttons & 2) !== 0
-		if (!rightDown || !rightPressed) return
-		const p = getScreenPoint(e)
-		const dx = p.x - lastScreenX
-		const dy = p.y - lastScreenY
+		if (!state.rightDown || !rightPressed) return
+		const p = getScreenPoint(container, e)
+		const dx = p.x - state.lastScreenX
+		const dy = p.y - state.lastScreenY
 
-		if (!panning) {
+		if (!state.panning) {
 			const distSq = dx * dx + dy * dy
 			if (distSq < DRAG_THRESHOLD_SQ) return
-			panning = true
-			prevCursor = editor.getInstanceState().cursor.type
-			editor.setCursor({ type: 'grabbing', rotation: 0 })
-			container.style.cursor = 'grabbing'
-			container.setPointerCapture(e.pointerId)
+			startPanning(state, editor, container, e)
 		}
 
 		e.preventDefault()
 		e.stopPropagation()
-		accDx += dx
-		accDy += dy
-		lastScreenX = p.x
-		lastScreenY = p.y
-		if (rafId === 0) {
-			rafId = requestAnimationFrame(() => {
-				rafId = 0
-				if (!panning) return
-				const dxApply = accDx
-				const dyApply = accDy
-				accDx = 0
-				accDy = 0
-				const { x: cx, y: cy, z: cz } = editor.getCamera()
-				editor.setCamera(
-					{ x: cx + dxApply / cz, y: cy + dyApply / cz, z: cz },
-					{ immediate: true }
-				)
-			})
+		state.accDx += dx
+		state.accDy += dy
+		state.lastScreenX = p.x
+		state.lastScreenY = p.y
+		scheduleRafApply(state, editor)
+	}
+}
+
+function createPointerUpHandler(
+	state: RightClickPanState,
+	editor: EditorLike,
+	container: HTMLElement
+): (e: PointerEvent) => void {
+	return (e: PointerEvent) => {
+		// pointercancel does not reliably set .button; only filter by button for pointerup
+		const isRightUp = e.type === 'pointerup' ? e.button === RIGHT_BUTTON : true
+		if (!isRightUp) return
+		if (state.panning) {
+			endPanning(state, editor, container, e)
 		}
+		state.rightDown = false
+		state.panning = false
+	}
+}
+
+function createContextMenuHandler(state: RightClickPanState): (e: Event) => void {
+	return (e: Event) => {
+		if (state.panning || state.justFinishedPan) {
+			e.preventDefault()
+			state.justFinishedPan = false
+		}
+	}
+}
+
+export function setupRightClickPan(editor: EditorLike): () => void {
+	const container = editor.getContainer()
+	const state: RightClickPanState = {
+		rightDown: false,
+		panning: false,
+		justFinishedPan: false,
+		lastScreenX: 0,
+		lastScreenY: 0,
+		prevCursor: null,
+		accDx: 0,
+		accDy: 0,
+		rafId: 0,
 	}
 
-	function onPointerUp(e: PointerEvent): void {
-		if (e.button !== RIGHT_BUTTON) return
-		if (panning) {
-			justFinishedPan = true
-			e.preventDefault()
-			e.stopPropagation()
-			if (rafId !== 0) {
-				cancelAnimationFrame(rafId)
-				rafId = 0
-			}
-			// Apply any remaining accumulated delta once before ending
-			if (accDx !== 0 || accDy !== 0) {
-				const { x: cx, y: cy, z: cz } = editor.getCamera()
-				editor.setCamera(
-					{ x: cx + accDx / cz, y: cy + accDy / cz, z: cz },
-					{ immediate: true }
-				)
-				accDx = 0
-				accDy = 0
-			}
-			container.style.cursor = ''
-			if (prevCursor !== null) {
-				editor.setCursor({ type: prevCursor, rotation: 0 })
-				prevCursor = null
-			}
-			try {
-				container.releasePointerCapture(e.pointerId)
-			} catch {
-				// ignore if already released
-			}
-		}
-		rightDown = false
-		panning = false
-	}
-
-	function onContextMenu(e: Event): void {
-		if (panning || justFinishedPan) {
-			e.preventDefault()
-			justFinishedPan = false
-		}
-	}
+	const onPointerDown = createPointerDownHandler(state, editor, container)
+	const onPointerMove = createPointerMoveHandler(state, editor, container)
+	const onPointerUp = createPointerUpHandler(state, editor, container)
+	const onContextMenu = createContextMenuHandler(state)
 
 	const opts = { capture: true }
 	container.addEventListener('pointerdown', onPointerDown, opts)
@@ -136,9 +193,9 @@ export function setupRightClickPan(editor: EditorLike): () => void {
 	container.addEventListener('contextmenu', onContextMenu, opts)
 
 	return () => {
-		if (rafId !== 0) {
-			cancelAnimationFrame(rafId)
-			rafId = 0
+		if (state.rafId !== 0) {
+			cancelAnimationFrame(state.rafId)
+			state.rafId = 0
 		}
 		container.removeEventListener('pointerdown', onPointerDown, opts)
 		container.removeEventListener('pointermove', onPointerMove, opts)
