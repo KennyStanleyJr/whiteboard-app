@@ -1,10 +1,11 @@
-import { useLayoutEffect, useMemo, useState } from 'react'
+import { useLayoutEffect, useMemo, useRef, useState } from 'react'
 import {
 	createTLStore,
 	DefaultSpinner,
 	getSnapshot,
 	loadSnapshot,
 	Tldraw,
+	TLINSTANCE_ID,
 } from 'tldraw'
 import 'tldraw/tldraw.css'
 import {
@@ -36,46 +37,65 @@ type LoadingState =
 function App() {
 	const store = useMemo(() => createTLStore(), [])
 	const [loadingState, setLoadingState] = useState<LoadingState>({ status: 'loading' })
+	const gridRef = useRef({
+		m: new Map<string, boolean>(),
+		prev: null as { pageId: string; isGridMode: boolean } | null,
+	})
 
 	useLayoutEffect(() => {
 		setLoadingState({ status: 'loading' })
-		console.log('[whiteboard] Loading document...')
 		const raw = loadPersistedSnapshot()
 		if (raw) {
 			try {
-				const snapshot = JSON.parse(raw) as Parameters<typeof loadSnapshot>[1]
-				loadSnapshot(store, snapshot)
-				console.log('[whiteboard] Document restored from localStorage')
+				const parsed = JSON.parse(raw) as Parameters<typeof loadSnapshot>[1]
+				const states = (parsed as { session?: { pageStates?: Array<{ pageId: string; isGridMode?: boolean }> } }).session?.pageStates ?? []
+				for (const ps of states) {
+					if (typeof ps.isGridMode === 'boolean') gridRef.current.m.set(ps.pageId, ps.isGridMode)
+				}
+				loadSnapshot(store, parsed as Parameters<typeof loadSnapshot>[1], { forceOverwriteSessionState: true })
+				const inst = store.get(TLINSTANCE_ID) as { currentPageId: string; isGridMode: boolean } | undefined
+				if (inst) {
+					const g = gridRef.current.m.get(inst.currentPageId) ?? false
+					store.update(TLINSTANCE_ID, (i) => ({ ...i, isGridMode: g }))
+					gridRef.current.prev = { pageId: inst.currentPageId, isGridMode: g }
+				}
 			} catch (err) {
-				const message = err instanceof Error ? err.message : String(err)
-				console.error('[whiteboard] Failed to load document:', err)
-				setLoadingState({ status: 'error', error: message })
+				setLoadingState({ status: 'error', error: err instanceof Error ? err.message : String(err) })
 				return
 			}
-		} else {
-			console.log('[whiteboard] Starting with empty document')
 		}
 		setLoadingState({ status: 'ready' })
 
-		let lastSavedJson: string | null = null
+		let lastJson: string | null = null
 		const persist = throttle(() => {
 			try {
-				const snapshot = getSnapshot(store)
-				const json = JSON.stringify(snapshot)
-				if (json !== lastSavedJson) {
+				const inst = store.get(TLINSTANCE_ID) as { currentPageId: string; isGridMode: boolean } | undefined
+				if (inst) {
+					const p = gridRef.current.prev
+					if (p && inst.currentPageId !== p.pageId) {
+						const g = gridRef.current.m.get(inst.currentPageId) ?? false
+						store.update(TLINSTANCE_ID, (i) => ({ ...i, isGridMode: g }))
+						gridRef.current.prev = { pageId: inst.currentPageId, isGridMode: g }
+					} else if (p && inst.isGridMode !== p.isGridMode) {
+						gridRef.current.m.set(inst.currentPageId, inst.isGridMode)
+						gridRef.current.prev = { pageId: inst.currentPageId, isGridMode: inst.isGridMode }
+					} else if (!p) gridRef.current.prev = { pageId: inst.currentPageId, isGridMode: inst.isGridMode }
+				}
+				const snap = getSnapshot(store)
+				for (const ps of snap.session?.pageStates ?? []) {
+					;(ps as { pageId: string; isGridMode?: boolean }).isGridMode = gridRef.current.m.get(ps.pageId) ?? false
+				}
+				const json = JSON.stringify(snap)
+				if (json !== lastJson) {
 					savePersistedSnapshot(json)
-					lastSavedJson = json
+					lastJson = json
 				}
 			} catch {
-				console.debug('[whiteboard] Skip save (session not ready)')
+				// session not ready
 			}
 		}, THROTTLE_MS)
 		const cleanup = store.listen(persist)
-		console.log('[whiteboard] Persistence listener attached')
-		return () => {
-			cleanup()
-			console.log('[whiteboard] Persistence listener removed')
-		}
+		return () => cleanup()
 	}, [store])
 
 	if (loadingState.status === 'loading') {
@@ -109,10 +129,7 @@ function App() {
 							editor.user.updateUserPreferences({ colorScheme: 'dark' })
 						}
 					}
-					const cleanupRightClickPan = setupRightClickPan(editor)
-					return () => {
-						cleanupRightClickPan()
-					}
+					return setupRightClickPan(editor)
 				}}
 			>
 				<SyncThemeToDocument />

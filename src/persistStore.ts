@@ -31,13 +31,7 @@ export function throttle<T extends () => void>(fn: T, intervalMs: number): () =>
 
 export function loadPersistedSnapshot(): string | null {
 	try {
-		const raw = localStorage.getItem(PERSIST_KEY)
-		if (raw !== null) {
-			console.log('[whiteboard] Loaded from localStorage:', (raw.length / 1024).toFixed(2), 'KB')
-		} else {
-			console.log('[whiteboard] No persisted document in localStorage')
-		}
-		return raw
+		return localStorage.getItem(PERSIST_KEY)
 	} catch (e) {
 		console.warn('[whiteboard] loadPersistedSnapshot failed:', e)
 		return null
@@ -47,8 +41,8 @@ export function loadPersistedSnapshot(): string | null {
 export function savePersistedSnapshot(json: string): void {
 	try {
 		localStorage.setItem(PERSIST_KEY, json)
-		console.log('[whiteboard] Saved to localStorage:', (json.length / 1024).toFixed(2), 'KB')
 	} catch (e) {
 		console.warn('[whiteboard] savePersistedSnapshot failed:', e)
 	}
 }
+
