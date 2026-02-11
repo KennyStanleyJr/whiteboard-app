@@ -152,6 +152,13 @@ body {
 	color: var(--color-on-surface);
 	box-sizing: border-box;
 }
+/* Avoid iOS Safari zoom on focus: inputs need min 16px font-size on touch/mobile */
+@media (max-width: 768px), (pointer: coarse) {
+	.excalidraw .cloud-storage-dialog-form input,
+	.excalidraw .cloud-storage-dialog-name-input-wrap > input {
+		font-size: 16px;
+	}
+}
 .excalidraw .cloud-storage-dialog-form input::placeholder {
 	color: var(--color-gray-50);
 }
