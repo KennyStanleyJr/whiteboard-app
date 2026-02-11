@@ -65,16 +65,13 @@ async function runSaveSubmitFlow(
 				dispatchSave({ type: 'SET_ERROR', error: verifyResult.error })
 				return
 			}
-			dispatchSave({ type: 'START_SAVE' })
-			await performSave({ name: trimmedName, password, data })
-		} else {
-			dispatchSave({
-				type: 'LIST_RESULT_EXISTS',
-				item: existingItem,
-				data,
-				password,
-			})
 		}
+		dispatchSave({
+			type: 'LIST_RESULT_EXISTS',
+			item: existingItem,
+			data,
+			password,
+		})
 	} else {
 		dispatchSave({ type: 'START_SAVE' })
 		void performSave({ name: trimmedName, password, data })
