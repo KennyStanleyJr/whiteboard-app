@@ -1,4 +1,4 @@
-import { useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import {
 	createTLStore,
 	DefaultSpinner,
@@ -41,6 +41,7 @@ function App() {
 		m: new Map<string, boolean>(),
 		prev: null as { pageId: string; isGridMode: boolean } | null,
 	})
+	const rightClickPanCleanupRef = useRef<(() => void) | null>(null)
 
 	useLayoutEffect(() => {
 		setLoadingState({ status: 'loading' })
@@ -51,6 +52,10 @@ function App() {
 				const states = (parsed as { session?: { pageStates?: Array<{ pageId: string; isGridMode?: boolean }> } }).session?.pageStates ?? []
 				for (const ps of states) {
 					if (typeof ps.isGridMode === 'boolean') gridRef.current.m.set(ps.pageId, ps.isGridMode)
+				}
+				// Strip isGridMode from pageStates so tldraw's session validator accepts the snapshot
+				for (const ps of states) {
+					delete (ps as { pageId: string; isGridMode?: boolean }).isGridMode
 				}
 				loadSnapshot(store, parsed, { forceOverwriteSessionState: true })
 				const inst = store.get(TLINSTANCE_ID) as { currentPageId: string; isGridMode: boolean } | undefined
@@ -67,7 +72,7 @@ function App() {
 		setLoadingState({ status: 'ready' })
 
 		let lastJson: string | null = null
-		const persist = throttle(() => {
+		const throttled = throttle(() => {
 			try {
 				const inst = store.get(TLINSTANCE_ID) as { currentPageId: string; isGridMode: boolean } | undefined
 				if (inst) {
@@ -100,9 +105,21 @@ function App() {
 				// session not ready
 			}
 		}, THROTTLE_MS)
-		const cleanup = store.listen(persist)
-		return () => cleanup()
+		const unlisten = store.listen(throttled.run)
+		return () => {
+			throttled.cancel()
+			unlisten()
+		}
 	}, [store])
+
+	// Guarantee right-click pan cleanup on unmount (Tldraw does invoke onMount's return value;
+	// this defends against API changes or unexpected unmount order).
+	useEffect(() => {
+		return () => {
+			rightClickPanCleanupRef.current?.()
+			rightClickPanCleanupRef.current = null
+		}
+	}, [])
 
 	if (loadingState.status === 'loading') {
 		return (
@@ -125,6 +142,7 @@ function App() {
 			<Tldraw
 				store={store}
 				licenseKey={licenseKey}
+				cameraOptions={{ zoomSpeed: 1.5 }}
 				onMount={(editor) => {
 					const cached = getCachedTheme()
 					if (cached !== null) {
@@ -135,7 +153,9 @@ function App() {
 							editor.user.updateUserPreferences({ colorScheme: 'dark' })
 						}
 					}
-					return setupRightClickPan(editor)
+					const cleanup = setupRightClickPan(editor)
+					rightClickPanCleanupRef.current = cleanup
+					return cleanup
 				}}
 			>
 				<SyncThemeToDocument />

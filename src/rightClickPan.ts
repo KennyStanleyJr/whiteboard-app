@@ -47,14 +47,17 @@ function startPanning(
 	container.setPointerCapture(e.pointerId)
 }
 
+const MIN_ZOOM = 0.01
+
 function applyAccumulatedDelta(state: RightClickPanState, editor: EditorLike): void {
 	const dxApply = state.accDx
 	const dyApply = state.accDy
 	state.accDx = 0
 	state.accDy = 0
 	const { x: cx, y: cy, z: cz } = editor.getCamera()
+	const safeZ = Number.isFinite(cz) && cz >= MIN_ZOOM ? cz : 1
 	editor.setCamera(
-		{ x: cx + dxApply / cz, y: cy + dyApply / cz, z: cz },
+		{ x: cx + dxApply / safeZ, y: cy + dyApply / safeZ, z: safeZ },
 		{ immediate: true }
 	)
 }
