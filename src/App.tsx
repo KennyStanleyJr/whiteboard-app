@@ -489,8 +489,12 @@ function useSupabaseSync(
 			const pageId = st.context.pageId
 			if (!shareId || !pageId || !editorRef.current) return
 			void getContentAsJsonDocForPage(editorRef.current, pageId as TLPageId)
-				.then((doc) => (doc ? saveSharedPage(shareId, doc) : undefined))
-				.then(() => {
+				.then((doc) => {
+					if (!doc) return false
+					return saveSharedPage(shareId, doc).then(() => true)
+				})
+				.then((saved) => {
+					if (!saved) return
 					consecutiveFailures = 0
 					lastWriteTimeRef.current = Date.now()
 				})
@@ -1037,9 +1041,14 @@ function App() {
 						onMount={(editor) => {
 							editorRef.current = editor
 
-							// Apply theme
+							// Apply theme; force inputMode to null so the configured
+							// wheelBehavior ('zoom') is always used — tldraw overrides
+							// wheelBehavior to 'pan' when inputMode is 'trackpad'.
 							const cached = getTheme()
-							editor.user.updateUserPreferences({ colorScheme: cached })
+							editor.user.updateUserPreferences({
+								colorScheme: cached,
+								inputMode: null,
+							})
 
 							// If on a shared page, apply readonly based on current machine state
 							if (!isEditable(stateRef.current)) {
