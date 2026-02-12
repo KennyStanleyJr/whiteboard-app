@@ -128,7 +128,7 @@ function applyParsedSnapshot(
 	opts?: { preserveSession?: boolean }
 ): void {
 	const full = parsed as {
-		document?: unknown
+		document?: { store?: Record<string, unknown> }
 		session?: { pageStates?: Array<{ pageId: string; isGridMode?: boolean }> }
 	}
 	const states = full.session?.pageStates ?? []
@@ -144,6 +144,27 @@ function applyParsedSnapshot(
 		| { currentPageId: string; isGridMode: boolean }
 		| undefined
 	if (inst) {
+		// When preserving session, currentPageId may not exist in the loaded document
+		// (e.g. cross-tab: other tab had only shared page). Switch to first page.
+		if (opts?.preserveSession && full.document?.store) {
+			const docStore = full.document.store
+			const pageExists =
+				inst.currentPageId &&
+				(docStore[inst.currentPageId] as { typeName?: string })?.typeName === 'page'
+			if (!pageExists) {
+				const firstPageId = getFirstPageIdFromStore({ store: docStore })
+				if (firstPageId) {
+					const g = gridRef.current.m.get(firstPageId) ?? false
+					store.update(TLINSTANCE_ID, (i) => ({
+						...i,
+						currentPageId: firstPageId as TLPageId,
+						isGridMode: g,
+					}))
+					gridRef.current.prev = { pageId: firstPageId, isGridMode: g }
+					return
+				}
+			}
+		}
 		const g = gridRef.current.m.get(inst.currentPageId) ?? false
 		store.update(TLINSTANCE_ID, (i) => ({ ...i, isGridMode: g }))
 		gridRef.current.prev = { pageId: inst.currentPageId, isGridMode: g }
@@ -377,6 +398,12 @@ function useSharedPageConnect(
 					mergeRemotePageIntoStore(store, remote, shareId, pageId ?? '', gridRef)
 					const actualPageId = pageId || getPageIdForShareId(shareId) || ''
 					send({ type: 'SUPABASE_CONNECTED', pageId: actualPageId || undefined })
+					// Persist merged state after transition; we skip during connecting.
+					requestAnimationFrame(() => {
+						if (!controller.signal.aborted) {
+							store.update(TLINSTANCE_ID, (i) => ({ ...i }))
+						}
+					})
 				} else if (pageId && store.get(pageId as TLPageId)) {
 					send({ type: 'SUPABASE_CONNECTED' })
 				} else {
