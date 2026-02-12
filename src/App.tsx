@@ -3,7 +3,7 @@
  *
  * Data flow:
  *   1. Canvas loads immediately from localStorage (no loading screen).
- *   2. Supabase singleton initialises in the background.
+ *   2. Supabase singleton initializes in the background.
  *   3. The XState machine manages sync lifecycle:
  *        local → shared.connecting → shared.supabaseSync ⇄ shared.serverSync
  *   4. localStorage is ALWAYS written on every store change.
@@ -176,7 +176,7 @@ function applyParsedSnapshot(
 // ── Hooks ──────────────────────────────────────────────────────────────────────
 
 /**
- * Watches the store's current page and synchronises machine events.
+ * Watches the store's current page and synchronizes machine events.
  *
  * Two responsibilities, cleanly separated:
  *   1. useLayoutEffect — on mount, read URL ?p= and send ENTER_SHARED.
@@ -1133,10 +1133,11 @@ function App() {
 									saved?.user?.inputMode === 'trackpad' || saved?.user?.inputMode === 'mouse'
 
 								if (!hasExplicitMode) {
+									// Only use platform for detection: maxTouchPoints is unreliable on
+									// Windows (touchpads, touch screens, or bugs report > 0).
 									const isMacLike = /Mac|iPod|iPhone|iPad/.test(navigator.platform)
-									const hasTouchPoints = navigator.maxTouchPoints > 0
 									const detected: 'trackpad' | 'mouse' =
-										isMacLike || hasTouchPoints ? 'trackpad' : 'mouse'
+										isMacLike ? 'trackpad' : 'mouse'
 									editor.user.updateUserPreferences({ inputMode: detected })
 								}
 							} catch {
