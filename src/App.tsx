@@ -157,7 +157,11 @@ function applyParsedSnapshot(
  * On mount: checks URL for ?p=shareId and navigates accordingly.
  * On page change: sends ENTER_SHARED / LEAVE_SHARED.
  */
-function usePageTracker(store: TLStore, send: Send) {
+function usePageTracker(
+	store: TLStore,
+	send: Send,
+	machineStateRef: React.MutableRefObject<MachineState>
+) {
 	const sendRef = useRef(send)
 	sendRef.current = send
 	const prevShareId = useRef<string | null>(null)
@@ -196,6 +200,10 @@ function usePageTracker(store: TLStore, send: Send) {
 					sendRef.current({ type: 'ENTER_SHARED', shareId, pageId })
 				}
 			} else {
+				// Don't leave while connecting — we're loading shared page from URL.
+				// The merge will add the page and set currentPageId; leave logic
+				// would run prematurely before useSharedPageConnect completes.
+				if (machineIsConnecting(machineStateRef.current)) return
 				clearShareIdFromUrl()
 				if (prevShareId.current) {
 					prevShareId.current = null
@@ -205,7 +213,7 @@ function usePageTracker(store: TLStore, send: Send) {
 		}
 		check()
 		return store.listen(check)
-	}, [store])
+	}, [store, machineStateRef])
 }
 
 /**
@@ -974,7 +982,7 @@ function App() {
 	}, [send])
 
 	// ── Hook: page tracking → machine events ──
-	usePageTracker(store, send)
+	usePageTracker(store, send, stateRef)
 
 	// ── Hook: persistence (always active) ──
 	usePersistence(store, gridRef, stateRef)
