@@ -459,6 +459,61 @@ function mergeRemotePageIntoStore(
 /** Max consecutive Supabase write failures before triggering a reconnect. */
 const SUPABASE_FAILURE_THRESHOLD = 3
 
+/** Find the page record in a remote store and return its id. */
+function findRemotePageId(
+	remoteStore: Record<string, unknown>
+): string | undefined {
+	const entry = Object.values(remoteStore).find(
+		(r): r is { typeName: string; id: string } =>
+			typeof r === 'object' &&
+			r !== null &&
+			'typeName' in r &&
+			(r as { typeName: string }).typeName === 'page'
+	)
+	return entry?.id
+}
+
+/**
+ * Compute a record-level diff between the local page and incoming snapshot,
+ * then apply the changes via mergeRemoteChanges so tldraw keeps unchanged
+ * shapes stable.
+ */
+function mergeRemotePageChanges(
+	store: TLStore,
+	persistSnap: { store: Record<string, unknown>; schema?: unknown },
+	pageId: string,
+	incoming: ShareSnapshot
+): void {
+	const currentPageIds = new Set(getPageRecordIds(persistSnap, pageId))
+	const incomingStore = incoming.document?.store ?? {}
+	const currentStore = persistSnap.store ?? {}
+
+	const toPut: unknown[] = []
+	const toRemoveIds: string[] = []
+
+	for (const [id, rec] of Object.entries(incomingStore)) {
+		const existing = currentStore[id]
+		if (!existing || JSON.stringify(existing) !== JSON.stringify(rec)) {
+			toPut.push(rec)
+		}
+	}
+
+	for (const id of currentPageIds) {
+		if (!(id in incomingStore)) toRemoveIds.push(id)
+	}
+
+	if (toPut.length === 0 && toRemoveIds.length === 0) return
+
+	store.mergeRemoteChanges(() => {
+		if (toRemoveIds.length > 0) {
+			store.remove(toRemoveIds as Parameters<TLStore['remove']>[0])
+		}
+		if (toPut.length > 0) {
+			store.put(toPut as Parameters<TLStore['put']>[0])
+		}
+	})
+}
+
 /**
  * Supabase direct sync — pushes store changes to Supabase AND polls for
  * remote changes written by other clients (e.g. the sync server).
@@ -538,15 +593,7 @@ function useSupabaseSync(
 				// Re-check state after async gap (may have transitioned away)
 				if (!shouldRunSupabaseSync(stateRef.current)) return
 
-				// Find the page record in the remote snapshot
-				const remotePageEntry = Object.values(remote.document.store).find(
-					(r): r is { typeName: string; id: string } =>
-						typeof r === 'object' &&
-						r !== null &&
-						'typeName' in r &&
-						(r as { typeName: string }).typeName === 'page'
-				)
-				const remotePageId = remotePageEntry?.id
+				const remotePageId = findRemotePageId(remote.document.store)
 				if (!remotePageId) return
 
 				// Remap remote page ID to local page ID if needed
@@ -563,38 +610,7 @@ function useSupabaseSync(
 				const localDoc = getPageDocumentFromStore(persistSnap, pageId)
 				if (localDoc && docContentEqual(localDoc, incoming)) return
 
-				// Incremental merge: only touch records that actually changed.
-				// Uses mergeRemoteChanges so tldraw keeps unchanged shapes stable.
-				const currentPageIds = new Set(getPageRecordIds(persistSnap, pageId))
-				const incomingStore = incoming.document?.store ?? {}
-				const currentStore = persistSnap.store ?? {}
-
-				const toPut: unknown[] = []
-				const toRemoveIds: string[] = []
-
-				for (const [id, rec] of Object.entries(incomingStore)) {
-					const existing = currentStore[id]
-					if (!existing || JSON.stringify(existing) !== JSON.stringify(rec)) {
-						toPut.push(rec)
-					}
-				}
-
-				for (const id of currentPageIds) {
-					if (!(id in incomingStore)) toRemoveIds.push(id)
-				}
-
-				if (toPut.length > 0 || toRemoveIds.length > 0) {
-					store.mergeRemoteChanges(() => {
-						if (toRemoveIds.length > 0) {
-							store.remove(
-								toRemoveIds as Parameters<TLStore['remove']>[0]
-							)
-						}
-						if (toPut.length > 0) {
-							store.put(toPut as Parameters<TLStore['put']>[0])
-						}
-					})
-				}
+				mergeRemotePageChanges(store, persistSnap, pageId, incoming)
 			} catch (err) {
 				console.warn('[supabase-poll] Error polling for changes:', (err as Error)?.message)
 			}
