@@ -76,6 +76,7 @@ import {
 	remapIdInValue,
 	type ShareSnapshot,
 } from './sharePage'
+import type { IndexKey } from '@tldraw/utils'
 import { getIndexAbove, sortByIndex } from '@tldraw/utils'
 import { CustomContextMenu, CustomMainMenu } from './ExportMenu'
 import { CustomPageMenu } from './CustomPageMenu'
@@ -451,7 +452,7 @@ function mergeRemotePageIntoStore(
 	// Place new page at end of list
 	const localPages = (Object.entries(localSnap.store ?? {}) as [string, { typeName?: string; index?: string }][])
 		.filter(([, r]) => r?.typeName === 'page')
-		.map(([id, r]) => ({ id, index: r.index ?? 'a0' }))
+		.map(([id, r]) => ({ id, index: (r.index ?? 'a0') as IndexKey }))
 		.sort(sortByIndex)
 	const endIndex = localPages.length > 0 ? getIndexAbove(localPages[localPages.length - 1].index) : getIndexAbove(null)
 
