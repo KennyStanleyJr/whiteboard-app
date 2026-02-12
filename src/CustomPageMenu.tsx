@@ -37,7 +37,7 @@ import {
 	useTranslation,
 	useUiEvents,
 } from 'tldraw'
-import { buildShareUrl, getShareIdForPage } from './sharePage'
+import { buildShareUrl, getShareIdForPage } from './persistence'
 
 function buildSortablePositions(
 	pages: Array<{ id: string }>,

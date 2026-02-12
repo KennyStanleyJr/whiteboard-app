@@ -4,11 +4,9 @@
 
 import { useCallback } from 'react'
 import { importJsonFromText } from './pasteJson'
-import {
-	createShareLinkForPage,
-	getContentAsJsonDoc,
-	isShareAvailable,
-} from './sharePage'
+import { getContentAsJsonDoc } from './sharePage'
+import { isSupabaseConfigured, createSharedPage } from './supabase'
+import { setShareIdForPage, setShareIdInUrl, buildShareUrl } from './persistence'
 import {
 	ArrangeMenuSubmenu,
 	ClipboardMenuGroup,
@@ -122,13 +120,40 @@ function CustomCopyAsMenuGroup() {
 	)
 }
 
-/** Share page: save current page only to Supabase and copy shareable URL to clipboard. */
+/** Share page: save current page to Supabase, copy URL, update share map + URL. */
 function CreateLinkMenuItem() {
 	const editor = useEditor()
 	const toasts = useToasts()
 	const onSelect = useCallback(
 		async (_source: TLUiEventSource) => {
-			await createShareLinkForPage(editor, editor.getCurrentPageId(), toasts)
+			const loadingId = toasts.addToast({ title: 'Creating link…', severity: 'info', keepOpen: true })
+			try {
+				const pageId = editor.getCurrentPageId()
+				const doc = await getContentAsJsonDoc(editor, editor.getPageShapeIds(pageId))
+				if (!doc) {
+					toasts.removeToast(loadingId)
+					toasts.addToast({ title: 'Share page unavailable', description: 'No content on page.', severity: 'error' })
+					return
+				}
+				const result = await createSharedPage(doc)
+				toasts.removeToast(loadingId)
+				if (!result) {
+					toasts.addToast({ title: 'Share page unavailable', description: 'Supabase is not configured.', severity: 'error' })
+					return
+				}
+				setShareIdForPage(pageId, result.id)
+				setShareIdInUrl(result.id)
+				const url = buildShareUrl(result.id)
+				if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(url)
+				toasts.addToast({ title: 'Link created', severity: 'success' })
+			} catch (err) {
+				toasts.removeToast(loadingId)
+				toasts.addToast({
+					title: 'Share page failed',
+					description: err instanceof Error ? err.message : 'Could not save to database.',
+					severity: 'error',
+				})
+			}
 		},
 		[editor, toasts]
 	)
@@ -236,7 +261,7 @@ export function CustomMainMenu(props: TLUiMainMenuProps) {
 				<TldrawUiMenuGroup id="extras">
 					<ExtrasGroup />
 				</TldrawUiMenuGroup>
-				{isShareAvailable() && (
+				{isSupabaseConfigured() && (
 					<TldrawUiMenuGroup id="create-link">
 						<CreateLinkMenuItem />
 					</TldrawUiMenuGroup>

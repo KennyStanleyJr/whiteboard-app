@@ -1,28 +1,20 @@
 /**
- * Tiny connection indicator for shared pages. Shows sync status: "synced", "reconnecting...", or "error".
- * On timeout or error, shows a retry button. Compact container with colored dot.
- * Only shown when current page is shared.
+ * Connection indicator — always visible.
+ * Shows current sync state: "local", "synced", "connected", "connecting...", or "error".
+ * Dot color adjusts for light/dark mode.
  */
 
 import { createContext, useContext, useEffect, useState } from 'react'
 import { useEditor, useValue } from '@tldraw/editor'
 import { TldrawUiIcon } from 'tldraw'
-import { getShareIdForPage } from './sharePage'
-
-export type SyncStatus =
-	| { status: 'no-sync' }
-	| { status: 'loading' }
-	| { status: 'error' }
-	| { status: 'synced-remote'; connectionStatus: 'online' | 'offline' }
+import type { SyncStatus } from './machine'
 
 const INDICATOR_DELAY_MS = 300
 const CONNECTION_TIMEOUT_MS = 10_000
 
-/** True when we're waiting for a connection (loading or reconnecting). */
+/** True when we're waiting for a connection (loading). */
 function isConnecting(status: SyncStatus): boolean {
-	if (status.status === 'loading') return true
-	if (status.status === 'synced-remote' && status.connectionStatus === 'offline') return true
-	return false
+	return status.status === 'loading'
 }
 
 const ConnectionIndicatorContext = createContext<{
@@ -30,37 +22,60 @@ const ConnectionIndicatorContext = createContext<{
 	onRetry?: () => void
 } | null>(null)
 
-function getDotColor(status: SyncStatus): string {
-	if (status.status === 'synced-remote' && status.connectionStatus === 'online') return 'var(--tl-color-success)'
-	if (status.status === 'error') return 'var(--tl-color-danger)'
-	return 'var(--tl-color-warning)'
+function getDotColor(status: SyncStatus, isDark: boolean): string {
+	switch (status.status) {
+		case 'server-sync':
+			return isDark ? '#60a5fa' : '#2563eb' // blue
+		case 'supabase-sync':
+			return 'var(--tl-color-success)' // green
+		case 'error':
+			return 'var(--tl-color-danger)' // red
+		case 'loading':
+			return 'var(--tl-color-warning)' // yellow/orange
+		case 'local':
+		default:
+			return isDark ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.25)' // gray
+	}
 }
 
-function getDisplayText(status: SyncStatus): 'synced' | 'reconnecting...' | 'error' {
-	if (status.status === 'synced-remote' && status.connectionStatus === 'online') return 'synced'
-	if (status.status === 'synced-remote' && status.connectionStatus === 'offline') return 'reconnecting...'
-	if (status.status === 'loading') return 'reconnecting...'
-	if (status.status === 'error') return 'error'
-	return 'reconnecting...'
+function getDisplayText(status: SyncStatus): string {
+	switch (status.status) {
+		case 'server-sync':
+			return 'connected'
+		case 'supabase-sync':
+			return 'synced'
+		case 'loading':
+			return 'connecting...'
+		case 'error':
+			return 'error'
+		case 'local':
+		default:
+			return 'local'
+	}
 }
 
-function getSyncTooltip(status: SyncStatus): string {
-	if (status.status === 'synced-remote' && status.connectionStatus === 'online')
-		return 'Connected to sync server – changes sync in real time'
-	if (status.status === 'synced-remote' && status.connectionStatus === 'offline')
-		return 'Sync server disconnected – reconnecting…'
-	if (status.status === 'error') return 'Sync server connection failed – click to retry'
-	return 'Connecting to sync server…'
+function getTooltip(status: SyncStatus): string {
+	switch (status.status) {
+		case 'server-sync':
+			return 'Connected to sync server — changes sync in real time'
+		case 'supabase-sync':
+			return 'Synced to cloud — changes saved automatically'
+		case 'loading':
+			return 'Connecting to sync server…'
+		case 'error':
+			return 'Connection failed — click to retry'
+		case 'local':
+		default:
+			return 'Local page — data stored on this device'
+	}
 }
 
-/** Renders sync status (dot + text). Only visible when current page is shared. Must be inside Tldraw and ConnectionIndicatorProvider. */
+/** Renders sync status (dot + text). Always visible. Must be inside Tldraw and ConnectionIndicatorProvider. */
 export function ConnectionIndicator() {
 	const ctx = useContext(ConnectionIndicatorContext)
 	const editor = useEditor()
-	const currentPageId = useValue('currentPageId', () => editor.getCurrentPageId(), [editor])
 	const isDarkMode = useValue('isDarkMode', () => editor.user.getIsDarkMode(), [editor])
 	const theme = isDarkMode ? 'dark' : 'light'
-	const isShared = currentPageId ? !!getShareIdForPage(currentPageId) : false
 	const [visible, setVisible] = useState(false)
 	const [timedOut, setTimedOut] = useState(false)
 
@@ -69,10 +84,6 @@ export function ConnectionIndicator() {
 		return () => clearTimeout(t)
 	}, [])
 
-	const statusKey =
-		ctx?.status.status === 'synced-remote'
-			? `synced-${ctx.status.connectionStatus}`
-			: ctx?.status.status ?? 'none'
 	useEffect(() => {
 		if (!ctx || !isConnecting(ctx.status)) {
 			setTimedOut(false)
@@ -80,16 +91,16 @@ export function ConnectionIndicator() {
 		}
 		const t = setTimeout(() => setTimedOut(true), CONNECTION_TIMEOUT_MS)
 		return () => clearTimeout(t)
-	}, [ctx, statusKey])
+	}, [ctx, ctx?.status.status])
 
-	if (!ctx || !isShared || !visible) return null
+	if (!ctx || !visible) return null
 
 	const effectiveStatus: SyncStatus =
 		timedOut && isConnecting(ctx.status) ? { status: 'error' } : ctx.status
 	const isError = effectiveStatus.status === 'error'
 	const text = getDisplayText(effectiveStatus)
-	const dotColor = getDotColor(effectiveStatus)
-	const tooltip = getSyncTooltip(effectiveStatus)
+	const dotColor = getDotColor(effectiveStatus, isDarkMode)
+	const tooltip = getTooltip(effectiveStatus)
 	const textColor = theme === 'light' ? '#000' : '#fff'
 	const textOpacity = theme === 'light' ? 0.5 : 0.25
 

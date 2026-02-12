@@ -14,9 +14,11 @@
   "dependencies": {
     "@supabase/supabase-js": "^2.95.3",
     "@tldraw/sync": "^4.3.0",
+    "@xstate/react": "^6.0.0",
     "react": "^19.2.1",
     "react-dom": "^19.2.1",
-    "tldraw": "^4.3.0"
+    "tldraw": "^4.3.0",
+    "xstate": "^5.27.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.15.0",

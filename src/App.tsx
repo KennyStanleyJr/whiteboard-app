@@ -1,4 +1,25 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+/**
+ * Whiteboard App — state-machine architecture.
+ *
+ * Data flow:
+ *   1. Canvas loads immediately from localStorage (no loading screen).
+ *   2. Supabase singleton initialises in the background.
+ *   3. The XState machine manages sync lifecycle:
+ *        local → shared.connecting → shared.supabaseSync ⇄ shared.serverSync
+ *   4. localStorage is ALWAYS written on every store change.
+ *   5. Cross-tab merge only happens when the tab is NOT focused.
+ *   6. Shared pages are read-only until sync confirms connectivity.
+ *
+ * Everything outside the machine just reads derived state and sends events.
+ */
+
+import {
+	useCallback,
+	useEffect,
+	useLayoutEffect,
+	useMemo,
+	useRef,
+} from 'react'
 import type { Editor as TldrawEditor } from '@tldraw/editor'
 import type { TLPageId } from '@tldraw/tlschema'
 import {
@@ -8,38 +29,52 @@ import {
 	Tldraw,
 	DefaultMenuPanel,
 	TLINSTANCE_ID,
-	TLStore,
+	inlineBase64AssetStore,
+	type TLStore,
 } from 'tldraw'
-import { inlineBase64AssetStore } from 'tldraw'
 import { useSync } from '@tldraw/sync'
+import { useMachine } from '@xstate/react'
 import 'tldraw/tldraw.css'
+
 import {
-	loadPersistedSnapshot,
-	savePersistedSnapshot,
-	PERSIST_KEY,
+	whiteboardMachine,
+	getSyncStatus,
+	isEditable,
+	isSharedPage,
+	shouldRunSupabaseSync,
+	shouldRunServerSync,
+	shouldAttemptServerConnection,
+	isServerSynced,
+	isConnecting as machineIsConnecting,
+	type WhiteboardEvent,
+} from './machine'
+import { initSupabase, isSupabaseConfigured, loadSharedPage, saveSharedPage } from './supabase'
+import {
+	loadSnapshot as loadStorageSnapshot,
+	saveSnapshot as saveStorageSnapshot,
+	getShareIdFromUrl,
+	setShareIdInUrl,
+	clearShareIdFromUrl,
+	getShareIdForPage,
+	setShareIdForPage,
+	getPageIdForShareId,
+	getTheme,
+	SNAPSHOT_KEY,
 	throttle,
 	THROTTLE_MS,
-} from './persistStore'
+} from './persistence'
 import {
-	addUrlChangeListener,
 	buildSyncUri,
-	clearShareIdFromUrl,
 	docContentEqual,
 	docStoreHash,
 	getContentAsJsonDocForPage,
 	getFirstPageIdFromStore,
 	getPageDocumentFromStore,
 	getPageRecordIds,
-	getShareIdForPage,
-	getShareIdFromUrl,
-	isShareAvailable,
-	isSyncAvailable,
+	isSyncServerConfigured,
 	remapDocumentPageId,
-	SHARED_PAGE_MERGED_EVENT,
-	setShareIdForPage,
-	setShareIdInUrl,
-	triggerUrlChangeCheck,
-	updateSharedPageInSupabase,
+	remapIdInValue,
+	type ShareSnapshot,
 } from './sharePage'
 import { CustomContextMenu, CustomMainMenu } from './ExportMenu'
 import { CustomPageMenu } from './CustomPageMenu'
@@ -47,17 +82,22 @@ import { useEditor } from '@tldraw/editor'
 import { createPasteActionOverride } from './pasteJson'
 import { setupRightClickPan } from './rightClickPan'
 import { setupShiftScrollPan } from './shiftScrollPan'
-import {
-	ConnectionIndicator,
-	ConnectionIndicatorProvider,
-	type SyncStatus,
-} from './ConnectionIndicator'
-import { LoadingView } from './LoadingAnimation'
-import { getCachedTheme } from './themeUtils'
+import { ConnectionIndicator, ConnectionIndicatorProvider } from './ConnectionIndicator'
 import { SyncThemeToDocument } from './SyncThemeToDocument'
-import { useMergeSharedPage } from './useMergeSharedPage'
+import type { SnapshotFrom } from 'xstate'
+import { MachineCtx } from './MachineContext'
+
+// ── Constants ──────────────────────────────────────────────────────────────────
 
 const licenseKey = import.meta.env.VITE_TLDRAW_LICENSE_KEY ?? undefined
+const SYNC_APPLY_IDLE_MS = 400
+
+// ── Types ──────────────────────────────────────────────────────────────────────
+
+type MachineState = SnapshotFrom<typeof whiteboardMachine>
+type Send = (event: WhiteboardEvent) => void
+
+// ── Grid-mode per-page tracking ────────────────────────────────────────────────
 
 type GridRef = { m: Map<string, boolean>; prev: { pageId: string; isGridMode: boolean } | null }
 type SnapshotParsed = Parameters<typeof loadSnapshot>[1]
@@ -86,16 +126,22 @@ function applyParsedSnapshot(
 	gridRef: React.MutableRefObject<GridRef>,
 	opts?: { preserveSession?: boolean }
 ): void {
-	const full = parsed as { document?: unknown; session?: { pageStates?: Array<{ pageId: string; isGridMode?: boolean }> } }
+	const full = parsed as {
+		document?: unknown
+		session?: { pageStates?: Array<{ pageId: string; isGridMode?: boolean }> }
+	}
 	const states = full.session?.pageStates ?? []
 	for (const ps of states) {
 		if (typeof ps.isGridMode === 'boolean') gridRef.current.m.set(ps.pageId, ps.isGridMode)
 	}
 	for (const ps of states) delete (ps as { pageId: string; isGridMode?: boolean }).isGridMode
-	// When preserveSession: only load document—tldraw always overwrites currentPageId from snapshot.session
-	const toLoad = (opts?.preserveSession && full.document ? { document: full.document } : parsed) as SnapshotParsed
+	const toLoad = (opts?.preserveSession && full.document
+		? { document: full.document }
+		: parsed) as SnapshotParsed
 	loadSnapshot(store, toLoad, { forceOverwriteSessionState: !opts?.preserveSession })
-	const inst = store.get(TLINSTANCE_ID) as { currentPageId: string; isGridMode: boolean } | undefined
+	const inst = store.get(TLINSTANCE_ID) as
+		| { currentPageId: string; isGridMode: boolean }
+		| undefined
 	if (inst) {
 		const g = gridRef.current.m.get(inst.currentPageId) ?? false
 		store.update(TLINSTANCE_ID, (i) => ({ ...i, isGridMode: g }))
@@ -103,208 +149,386 @@ function applyParsedSnapshot(
 	}
 }
 
-type LoadingState =
-	| { status: 'loading' }
-	| { status: 'ready' }
-	| { status: 'error'; error: string }
+// ── Hooks ──────────────────────────────────────────────────────────────────────
 
-function App() {
-	const [, setTick] = useState(0)
-	useEffect(() => addUrlChangeListener(() => setTick((t) => t + 1)), [])
-	const shareIdFromUrl = getShareIdFromUrl()
-	return <EditorWithSync shareIdFromUrl={shareIdFromUrl} />
+/**
+ * Watches the store's current page and synchronises machine events.
+ * On mount: checks URL for ?p=shareId and navigates accordingly.
+ * On page change: sends ENTER_SHARED / LEAVE_SHARED.
+ */
+function usePageTracker(store: TLStore, send: Send) {
+	const sendRef = useRef(send)
+	sendRef.current = send
+	const prevShareId = useRef<string | null>(null)
+
+	// Initial URL check (synchronous-ish)
+	useLayoutEffect(() => {
+		const shareIdFromUrl = getShareIdFromUrl()
+		if (!shareIdFromUrl) return
+		const pageId = getPageIdForShareId(shareIdFromUrl) ?? ''
+		if (pageId) {
+			try {
+				store.update(TLINSTANCE_ID, (i) => ({ ...i, currentPageId: pageId as TLPageId }))
+			} catch {
+				/* page may not exist in store yet */
+			}
+		}
+		prevShareId.current = shareIdFromUrl
+		sendRef.current({ type: 'ENTER_SHARED', shareId: shareIdFromUrl, pageId })
+	}, [store])
+
+	// Ongoing page tracking
+	useEffect(() => {
+		const prevPageIdRef = { current: '' }
+		const check = (): void => {
+			const inst = store.get(TLINSTANCE_ID) as { currentPageId?: string } | undefined
+			if (!inst?.currentPageId) return
+			const pageId = inst.currentPageId
+			if (prevPageIdRef.current === pageId) return
+			prevPageIdRef.current = pageId
+
+			const shareId = getShareIdForPage(pageId)
+			if (shareId) {
+				setShareIdInUrl(shareId)
+				if (prevShareId.current !== shareId) {
+					prevShareId.current = shareId
+					sendRef.current({ type: 'ENTER_SHARED', shareId, pageId })
+				}
+			} else {
+				clearShareIdFromUrl()
+				if (prevShareId.current) {
+					prevShareId.current = null
+					sendRef.current({ type: 'LEAVE_SHARED' })
+				}
+			}
+		}
+		check()
+		return store.listen(check)
+	}, [store])
 }
 
-/** Error view for shared page load failures. Shows message and retry button. */
-function SharedPageErrorView({ error, onRetry }: { error: string; onRetry: () => void }) {
-	const theme = getCachedTheme() ?? 'dark'
-	return (
-		<div
-			className={`tl-container tl-theme__${theme}`}
-			style={{
-				position: 'fixed',
-				inset: 0,
-				display: 'flex',
-				flexDirection: 'column',
-				alignItems: 'center',
-				justifyContent: 'center',
-				gap: 16,
-				background: 'var(--tl-color-background, var(--app-bg))',
-				color: 'var(--tl-color-text)',
-				padding: 24,
-			}}
-		>
-			<h2 style={{ margin: 0, fontSize: 18, fontWeight: 600 }}>Error loading document</h2>
-			<p style={{ margin: 0, opacity: 0.8, maxWidth: 400, textAlign: 'center' }}>{error}</p>
-			<button
-				type="button"
-				onClick={onRetry}
-				style={{
-					padding: '8px 16px',
-					fontSize: 14,
-					fontWeight: 500,
-					cursor: 'pointer',
-					borderRadius: 6,
-					border: '1px solid var(--tl-color-border)',
-					background: 'var(--tl-color-background)',
-					color: 'var(--tl-color-text)',
-				}}
-			>
-				Retry
-			</button>
-		</div>
+/**
+ * Persistence — always active.
+ * Saves the store to localStorage on every change (throttled).
+ * Merges from localStorage on tab-focus when another tab has written.
+ * Skip merge for shared pages (they get updates from sync, not localStorage).
+ */
+function usePersistence(
+	store: TLStore,
+	gridRef: React.MutableRefObject<GridRef>,
+	machineStateRef: React.MutableRefObject<MachineState>
+) {
+	// Save on every store change.
+	// Skip writes during `connecting` — the store has potentially stale shared-
+	// page data from localStorage and we don't want to broadcast it to other
+	// tabs before the authoritative Supabase fetch completes.
+	useEffect(() => {
+		let lastJson: string | null = null
+		const throttled = throttle(() => {
+			if (machineIsConnecting(machineStateRef.current)) return
+			try {
+				const inst = store.get(TLINSTANCE_ID) as
+					| { currentPageId: string; isGridMode: boolean }
+					| undefined
+				if (inst) syncGridRef(inst, gridRef, store)
+
+				const snap = getSnapshot(store)
+				const sessionClone = structuredClone(snap.session) ?? {}
+				const pageStates = sessionClone.pageStates ?? []
+				for (const ps of pageStates) {
+					const s = ps as { pageId: string; isGridMode?: boolean; camera?: unknown }
+					s.isGridMode = gridRef.current.m.get(s.pageId) ?? false
+					delete s.camera
+				}
+				const rawSnapshot = store.getStoreSnapshot('all')
+				const doc = rawSnapshot as { store: Record<string, unknown>; schema: unknown }
+				const filtered: Record<string, unknown> = {}
+				for (const [id, rec] of Object.entries(doc.store ?? {})) {
+					if ((rec as { typeName?: string })?.typeName !== 'camera') filtered[id] = rec
+				}
+				const documentSnapshot = { store: filtered, schema: doc.schema } as typeof rawSnapshot
+				const toSave = { document: documentSnapshot, session: sessionClone }
+				const json = JSON.stringify(toSave)
+				if (json !== lastJson) {
+					saveStorageSnapshot(json)
+					lastJson = json
+				}
+			} catch {
+				/* session not ready */
+			}
+		}, THROTTLE_MS)
+
+		const unlisten = store.listen(throttled.run)
+		const flush = (): void => throttled.flush()
+		window.addEventListener('beforeunload', flush)
+		window.addEventListener('pagehide', flush)
+		return () => {
+			throttled.flush()
+			throttled.cancel()
+			unlisten()
+			window.removeEventListener('beforeunload', flush)
+			window.removeEventListener('pagehide', flush)
+		}
+	}, [store, gridRef, machineStateRef])
+
+	// Cross-tab merge: only when tab is NOT focused.
+	// Skip in serverSync (WebSocket handles it) and connecting (stale data).
+	// Allow in local and supabaseSync so unfocused tabs pick up edits via localStorage.
+	useEffect(() => {
+		const storageReceivedRef = { current: false }
+
+		const applyFromStorage = (): void => {
+			const ms = machineStateRef.current
+			if (isServerSynced(ms) || machineIsConnecting(ms)) return
+			const raw = loadStorageSnapshot()
+			if (!raw) return
+			try {
+				applyParsedSnapshot(store, JSON.parse(raw) as SnapshotParsed, gridRef, {
+					preserveSession: true,
+				})
+			} catch {
+				/* ignore parse errors */
+			}
+		}
+
+		const onFocus = (): void => {
+			if (!storageReceivedRef.current) return
+			storageReceivedRef.current = false
+			applyFromStorage()
+		}
+
+		const onStorage = (e: StorageEvent): void => {
+			if (e.key !== SNAPSHOT_KEY || !e.newValue) return
+			storageReceivedRef.current = true
+			if (!document.hasFocus()) applyFromStorage()
+		}
+
+		window.addEventListener('focus', onFocus)
+		window.addEventListener('storage', onStorage)
+		return () => {
+			window.removeEventListener('focus', onFocus)
+			window.removeEventListener('storage', onStorage)
+		}
+	}, [store, gridRef, machineStateRef])
+}
+
+/**
+ * Shared page connector — runs during shared.connecting.
+ * Fetches from Supabase, merges remote data into store, reports success/failure.
+ */
+function useSharedPageConnect(
+	store: TLStore,
+	state: MachineState,
+	send: Send,
+	gridRef: React.MutableRefObject<GridRef>
+) {
+	const connecting = machineIsConnecting(state)
+	const shareId = state.context.shareId
+	const pageId = state.context.pageId
+
+	useEffect(() => {
+		if (!connecting || !shareId) return
+		const controller = new AbortController()
+
+		if (!isSupabaseConfigured()) {
+			// No supabase — if we have local data, allow viewing; otherwise fail
+			if (pageId && store.get(pageId as TLPageId)) {
+				send({ type: 'SUPABASE_CONNECTED' })
+			} else {
+				send({ type: 'SUPABASE_FAILED' })
+			}
+			return
+		}
+
+		void loadSharedPage(shareId)
+			.then((remote) => {
+				if (controller.signal.aborted) return
+
+				if (remote?.document?.store) {
+					mergeRemotePageIntoStore(store, remote, shareId, pageId ?? '', gridRef)
+					const actualPageId = pageId || getPageIdForShareId(shareId) || ''
+					send({ type: 'SUPABASE_CONNECTED', pageId: actualPageId || undefined })
+				} else if (pageId && store.get(pageId as TLPageId)) {
+					send({ type: 'SUPABASE_CONNECTED' })
+				} else {
+					send({ type: 'SUPABASE_FAILED' })
+				}
+			})
+			.catch(() => {
+				if (!controller.signal.aborted) send({ type: 'SUPABASE_FAILED' })
+			})
+
+		return () => controller.abort()
+	}, [connecting, shareId, pageId, store, send, gridRef])
+}
+
+/** Merge remote ShareSnapshot into the local TLStore for a given shareId. */
+function mergeRemotePageIntoStore(
+	store: TLStore,
+	remote: ShareSnapshot,
+	shareId: string,
+	existingPageId: string,
+	gridRef: React.MutableRefObject<GridRef>
+): void {
+	const remoteStore = remote.document?.store ?? {}
+
+	// Find the page record in the remote data
+	const remotePageEntry = Object.values(remoteStore).find(
+		(r): r is { typeName: string; id: string } =>
+			typeof r === 'object' && r !== null && 'typeName' in r && (r as { typeName: string }).typeName === 'page'
 	)
-}
+	const remotePageId = remotePageEntry?.id
+	if (!remotePageId) return
 
-/** Single Editor with persist store. Sync connects/disconnects based on current page (shared vs local).
- * When shareIdFromUrl is set (?p= in URL), runs merge first; shows loading until ready. */
-function EditorWithSync({ shareIdFromUrl }: { shareIdFromUrl: string | null }) {
-	const [mergeRetryKey, setMergeRetryKey] = useState(0)
-	const persistStore = useMemo(() => createTLStore(), [])
-	const mergeState = useMergeSharedPage(shareIdFromUrl ?? '', {
-		retryKey: mergeRetryKey,
-		store: persistStore,
+	// If we already have a local page for this share, remap remote to that ID
+	const needRemap = Boolean(existingPageId && existingPageId !== remotePageId)
+	const targetPageId = needRemap ? existingPageId : remotePageId
+
+	// Build remapped remote records
+	const remoteRecords: Record<string, unknown> = {}
+	for (const [id, rec] of Object.entries(remoteStore)) {
+		if (needRemap) {
+			const remapped = remapIdInValue(rec, remotePageId, targetPageId) as Record<string, unknown>
+			const newId = id === remotePageId ? targetPageId : id
+			remoteRecords[newId] = { ...remapped, id: newId }
+		} else {
+			remoteRecords[id] = rec
+		}
+	}
+
+	// Merge: keep all local records except the target page's, then add remote
+	const localSnap = store.getStoreSnapshot('document') as {
+		store: Record<string, unknown>
+		schema?: unknown
+	}
+	const idsToRemove = new Set(getPageRecordIds(localSnap, targetPageId))
+	const merged: Record<string, unknown> = {}
+	for (const [id, rec] of Object.entries(localSnap.store ?? {})) {
+		if (!idsToRemove.has(id)) merged[id] = rec
+	}
+	for (const [id, rec] of Object.entries(remoteRecords)) {
+		merged[id] = rec
+	}
+
+	const mergedDoc = { store: merged, schema: localSnap.schema ?? remote.document.schema }
+	loadSnapshot(store, { document: mergedDoc } as SnapshotParsed, {
+		forceOverwriteSessionState: false,
 	})
-	const needsMerge = Boolean(shareIdFromUrl)
-	const mergeLoading = needsMerge && mergeState.status === 'loading'
-	const mergeError = needsMerge && mergeState.status === 'error'
-	useEffect(() => {
-		if (
-			mergeState.status === 'ready' &&
-			'targetPageId' in mergeState &&
-			mergeState.targetPageId &&
-			shareIdFromUrl
-		) {
-			setShareIdForPage(mergeState.targetPageId, shareIdFromUrl)
-		}
-	}, [mergeState, shareIdFromUrl])
 
-	const [currentPageId, setCurrentPageId] = useState<string | null>(null)
-	const [syncRetryKey, setSyncRetryKey] = useState(0)
-	const [syncStatus, setSyncStatus] = useState<SyncStatus>({ status: 'no-sync' })
-	useEffect(() => {
-		const read = (): void => {
-			const inst = persistStore.get(TLINSTANCE_ID) as { currentPageId?: string } | undefined
-			setCurrentPageId(inst?.currentPageId ?? null)
-		}
-		read()
-		const unlisten = persistStore.listen(read)
-		return () => unlisten()
-	}, [persistStore])
-	const pageShareId = currentPageId ? getShareIdForPage(currentPageId) : undefined
-	// Use shareIdFromUrl when we have it from URL but pageShareId isn't set yet (store loads late)
-	const shareIdForSync = pageShareId ?? shareIdFromUrl ?? undefined
-	const syncUri = shareIdForSync && isSyncAvailable() ? buildSyncUri(shareIdForSync) : ''
-	const useSyncBridge = Boolean(syncUri)
-	// Use targetPageId from merge when currentPageId not yet set (store loads after merge)
-	const pageIdForSync =
-		currentPageId ?? (mergeState.status === 'ready' && 'targetPageId' in mergeState ? mergeState.targetPageId : null)
-	useEffect(() => {
-		if (!useSyncBridge) setSyncStatus({ status: 'no-sync' })
-	}, [useSyncBridge])
-	const needsRetry =
-		syncStatus.status === 'loading' || syncStatus.status === 'error'
-	useEffect(() => {
-		if (!needsRetry || !useSyncBridge) return
-		const onVisibilityChange = (): void => {
-			if (document.visibilityState === 'visible') setSyncRetryKey((k) => k + 1)
-		}
-		document.addEventListener('visibilitychange', onVisibilityChange)
-		return () => document.removeEventListener('visibilitychange', onVisibilityChange)
-	}, [needsRetry, useSyncBridge])
-	// Must be before any early returns: hooks must run in same order every render
-	const isUserInteractingRef = useRef(false)
-	const applySyncRef = useRef<(() => void) | null>(null)
-	const onIdleEnd = useCallback(() => {
-		isUserInteractingRef.current = false
-		applySyncRef.current?.()
-	}, [])
-	if (mergeError) {
-		return (
-			<SharedPageErrorView
-				error={mergeState.error}
-				onRetry={() => setMergeRetryKey((k) => k + 1)}
-			/>
-		)
+	// Navigate to the shared page
+	try {
+		store.update(TLINSTANCE_ID, (i) => ({ ...i, currentPageId: targetPageId as TLPageId }))
+	} catch {
+		/* ignore */
 	}
-	if (mergeLoading) {
-		return <LoadingView theme={getCachedTheme() ?? 'dark'} />
+
+	// Restore grid mode
+	const inst = store.get(TLINSTANCE_ID) as { currentPageId: string; isGridMode: boolean } | undefined
+	if (inst) {
+		const g = gridRef.current.m.get(inst.currentPageId) ?? false
+		store.update(TLINSTANCE_ID, (i) => ({ ...i, isGridMode: g }))
+		gridRef.current.prev = { pageId: inst.currentPageId, isGridMode: g }
 	}
-	const editor = (
-		<Editor
-			store={persistStore}
-			persistToLocalStorage
-			shareId={shareIdForSync}
-			syncBridgeActive={useSyncBridge}
-			components={useSyncBridge ? SYNC_PAGE_COMPONENTS : undefined}
-			isUserInteractingRef={useSyncBridge ? isUserInteractingRef : undefined}
-			onIdleEnd={useSyncBridge ? onIdleEnd : undefined}
-		/>
-	)
-	return (
-		<ConnectionIndicatorProvider status={syncStatus} onRetry={() => setSyncRetryKey((k) => k + 1)}>
-			{useSyncBridge && pageIdForSync && (
-				<SharedPageSyncBridge
-					key={`${pageIdForSync}-${shareIdForSync}-${syncRetryKey}`}
-					persistStore={persistStore}
-					pageId={pageIdForSync}
-					syncUri={syncUri}
-					onStatusChange={setSyncStatus}
-					isUserInteractingRef={isUserInteractingRef}
-					applySyncRef={applySyncRef}
-				/>
-			)}
-			{editor}
-		</ConnectionIndicatorProvider>
-	)
+
+	// Update share map
+	setShareIdForPage(targetPageId, shareId)
 }
 
-/** Headless: runs useSync and bidirectional sync. Reports status via onStatusChange. Does not wrap Editor. */
-function SharedPageSyncBridge({
+/** Max consecutive Supabase write failures before triggering a reconnect. */
+const SUPABASE_FAILURE_THRESHOLD = 3
+
+/**
+ * Supabase direct sync — pushes store changes to Supabase.
+ * Only active when machine is in shared.supabaseSync.
+ */
+function useSupabaseSync(
+	store: TLStore,
+	stateRef: React.MutableRefObject<MachineState>,
+	editorRef: React.MutableRefObject<TldrawEditor | null>,
+	send: Send
+) {
+	useEffect(() => {
+		let consecutiveFailures = 0
+
+		const throttled = throttle(() => {
+			const st = stateRef.current
+			if (!shouldRunSupabaseSync(st)) return
+			const shareId = st.context.shareId
+			const pageId = st.context.pageId
+			if (!shareId || !pageId || !editorRef.current) return
+			void getContentAsJsonDocForPage(editorRef.current, pageId as TLPageId)
+				.then((doc) => (doc ? saveSharedPage(shareId, doc) : undefined))
+				.then(() => {
+					consecutiveFailures = 0
+				})
+				.catch(() => {
+					consecutiveFailures++
+					if (consecutiveFailures >= SUPABASE_FAILURE_THRESHOLD) {
+						consecutiveFailures = 0
+						send({ type: 'SUPABASE_DISCONNECTED' })
+					}
+				})
+		}, THROTTLE_MS)
+
+		const unlisten = store.listen(throttled.run)
+		return () => {
+			throttled.cancel()
+			unlisten()
+		}
+	}, [store, stateRef, editorRef, send])
+}
+
+// ── Server sync bridge (component — uses useSync hook) ─────────────────────────
+
+function ServerSyncBridge({
 	persistStore,
 	pageId,
 	syncUri,
-	onStatusChange,
+	send,
 	isUserInteractingRef,
 	applySyncRef,
 }: {
 	persistStore: TLStore
 	pageId: string
 	syncUri: string
-	onStatusChange: (status: SyncStatus) => void
+	send: Send
 	isUserInteractingRef: React.MutableRefObject<boolean>
 	applySyncRef: React.MutableRefObject<(() => void) | null>
 }) {
 	const storeWithStatus = useSync({ uri: syncUri, assets: inlineBase64AssetStore })
-	const syncStore = storeWithStatus.status === 'synced-remote' ? storeWithStatus.store : null
-	const syncStatus: SyncStatus =
-		storeWithStatus.status === 'synced-remote'
-			? { status: 'synced-remote', connectionStatus: storeWithStatus.connectionStatus }
-			: storeWithStatus.status === 'error'
-				? { status: 'error' }
-				: { status: 'loading' }
-	const statusKey =
-		storeWithStatus.status === 'synced-remote'
-			? storeWithStatus.connectionStatus
-			: storeWithStatus.status
+	const syncStore =
+		storeWithStatus.status === 'synced-remote' ? storeWithStatus.store : null
+
+	// Report connection status to the machine
 	useEffect(() => {
-		onStatusChange(syncStatus)
-		// statusKey is the derived trigger; syncStatus is derived from the same source
-		// eslint-disable-next-line react-hooks/exhaustive-deps -- statusKey captures status changes
-	}, [statusKey, onStatusChange, syncUri])
+		if (storeWithStatus.status === 'synced-remote') {
+			send({ type: 'SERVER_CONNECTED' })
+		} else if (storeWithStatus.status === 'error') {
+			send({ type: 'SERVER_FAILED' })
+		}
+		// 'loading' → no event (machine stays in current state)
+	}, [storeWithStatus.status, send])
+
+	// Bidirectional sync between persist store and sync store
 	useEffect(() => {
 		if (!syncStore) return
 		const applyingFromSyncRef = { current: false }
 		const pushingToSyncRef = { current: false }
 		const pushedHashes = new Set<string>()
+
 		const persistSnapshot = (): { store: Record<string, unknown>; schema?: unknown } =>
-			persistStore.getStoreSnapshot('document') as { store: Record<string, unknown>; schema?: unknown }
+			persistStore.getStoreSnapshot('document') as {
+				store: Record<string, unknown>
+				schema?: unknown
+			}
 		const syncSnapshot = (): { store: Record<string, unknown>; schema?: unknown } =>
-			syncStore.getStoreSnapshot('document') as { store: Record<string, unknown>; schema?: unknown }
+			syncStore.getStoreSnapshot('document') as {
+				store: Record<string, unknown>
+				schema?: unknown
+			}
+
 		const syncToPersist = (): void => {
 			if (pushingToSyncRef.current) return
-			// Skip applying remote updates while user is actively editing (e.g. dragging) to avoid
-			// overwriting in-progress local changes. Apply queued sync on pointer up via applySyncRef.
 			if (isUserInteractingRef.current) return
 			const persistSnap = persistSnapshot()
 			const syncSnap = syncSnapshot()
@@ -312,42 +536,45 @@ function SharedPageSyncBridge({
 			if (!syncPageId) return
 			const syncDoc = getPageDocumentFromStore(syncSnap, syncPageId)
 			if (!syncDoc) return
-			const toLoad = syncPageId !== pageId ? remapDocumentPageId(syncDoc, syncPageId, pageId) : syncDoc
-			// Skip if this is our own echo (hash matches what we just pushed)
+			const toLoad =
+				syncPageId !== pageId
+					? remapDocumentPageId(syncDoc, syncPageId, pageId)
+					: syncDoc
 			const receivedHash = docStoreHash(toLoad)
 			if (pushedHashes.has(receivedHash)) {
 				pushedHashes.delete(receivedHash)
 				return
 			}
-			// Skip if sync content matches our persist content (avoids redundant apply)
 			const persistDoc = getPageDocumentFromStore(persistSnap, pageId)
 			if (persistDoc && docContentEqual(persistDoc, toLoad)) return
+
 			applyingFromSyncRef.current = true
 			try {
-				// Merge: persist (minus shared page) + sync's shared page. loadSnapshot replaces
-				// the document, so we must build a merged doc to preserve other pages.
 				const idsToRemove = new Set(getPageRecordIds(persistSnap, pageId))
-				const persistStoreObj = persistSnap.store ?? {}
 				const merged: Record<string, unknown> = {}
-				for (const [id, rec] of Object.entries(persistStoreObj)) {
+				for (const [id, rec] of Object.entries(persistSnap.store ?? {})) {
 					if (!idsToRemove.has(id)) merged[id] = rec
 				}
-				const syncRecords = toLoad.document?.store ?? {}
-				for (const [id, rec] of Object.entries(syncRecords)) {
+				for (const [id, rec] of Object.entries(toLoad.document?.store ?? {})) {
 					merged[id] = rec
 				}
-				const mergedDoc = {
-					store: merged,
-					schema: persistSnap.schema ?? toLoad.document?.schema,
-				}
-				loadSnapshot(persistStore, { document: mergedDoc } as SnapshotParsed, {
-					forceOverwriteSessionState: false,
-				})
+				loadSnapshot(
+					persistStore,
+					{
+						document: {
+							store: merged,
+							schema: persistSnap.schema ?? toLoad.document?.schema,
+						},
+					} as SnapshotParsed,
+					{ forceOverwriteSessionState: false }
+				)
 			} finally {
 				applyingFromSyncRef.current = false
 			}
 		}
+
 		applySyncRef.current = syncToPersist
+
 		const persistToSync = (): void => {
 			if (applyingFromSyncRef.current) return
 			pushingToSyncRef.current = true
@@ -355,48 +582,58 @@ function SharedPageSyncBridge({
 				const doc = getPageDocumentFromStore(persistSnapshot(), pageId)
 				if (doc) {
 					pushedHashes.add(docStoreHash(doc))
-					loadSnapshot(syncStore, doc as SnapshotParsed, { forceOverwriteSessionState: false })
+					loadSnapshot(syncStore, doc as SnapshotParsed, {
+						forceOverwriteSessionState: false,
+					})
 				}
 			} catch {
-				// ignore merge errors
+				/* ignore merge errors */
 			} finally {
 				pushingToSyncRef.current = false
 			}
 		}
-		const throttledPersistToSync = throttle(persistToSync, THROTTLE_MS)
+
 		persistToSync()
 		syncToPersist()
 		const unlistenSync = syncStore.listen(syncToPersist)
-		const unlistenPersist = persistStore.listen(throttledPersistToSync.run)
+		const unlistenPersist = persistStore.listen(persistToSync)
 		return () => {
 			applySyncRef.current = null
-			throttledPersistToSync.cancel()
 			unlistenSync()
 			unlistenPersist()
 		}
 	}, [syncStore, persistStore, pageId, isUserInteractingRef, applySyncRef])
+
+	// Report disconnection
+	const connectionStatus =
+		storeWithStatus.status === 'synced-remote'
+			? storeWithStatus.connectionStatus
+			: storeWithStatus.status
+	useEffect(() => {
+		if (
+			storeWithStatus.status === 'synced-remote' &&
+			storeWithStatus.connectionStatus === 'offline'
+		) {
+			send({ type: 'SERVER_DISCONNECTED' })
+		}
+		// eslint-disable-next-line react-hooks/exhaustive-deps -- connectionStatus is derived from storeWithStatus
+	}, [connectionStatus, send])
+
 	return null
 }
 
-/** Menu panel with connection indicator to the right. Used when sync is enabled. */
-function MenuPanelWithIndicator() {
-	return (
-		<div style={{ display: 'flex', flexDirection: 'row', alignItems: 'flex-start', gap: 3, minWidth: 0, margin: 0, padding: 0, marginTop: 4 }}>
-			<DefaultMenuPanel />
-			<div style={{ display: 'inline-flex', alignItems: 'center', flexShrink: 0, pointerEvents: 'all' }}>
-				<ConnectionIndicator />
-			</div>
-		</div>
-	)
+// ── Readonly tracker (inside Tldraw) ───────────────────────────────────────────
+
+function ReadonlyTracker({ editable }: { editable: boolean }) {
+	const editor = useEditor()
+	useEffect(() => {
+		editor.updateInstanceState({ isReadonly: !editable })
+	}, [editor, editable])
+	return null
 }
 
-const SYNC_PAGE_COMPONENTS = { MenuPanel: MenuPanelWithIndicator, SharePanel: null }
+// ── User interaction tracker (inside Tldraw) ──────────────────────────────────
 
-/** Idle delay before applying remote updates after user stops interacting. */
-const SYNC_APPLY_IDLE_MS = 400
-
-/** Tracks pointer/key activity so sync skips applying remote updates during active edits.
- * Applies queued updates only after user has been idle for SYNC_APPLY_IDLE_MS. */
 function UserInteractionTracker({
 	isUserInteractingRef,
 	onIdleEnd,
@@ -446,240 +683,122 @@ function UserInteractionTracker({
 	return null
 }
 
-type EditorProps =
-	| {
-			store: TLStore
-			persistToLocalStorage: false
-			shareId?: string
-			syncBridgeActive?: boolean
-			components?: { MenuPanel?: React.ComponentType }
-			isReadonly?: boolean
-			isUserInteractingRef?: React.MutableRefObject<boolean>
-			onIdleEnd?: () => void
-		}
-	| {
-			store?: TLStore
-			persistToLocalStorage: true
-			shareId?: string
-			syncBridgeActive?: boolean
-			components?: { MenuPanel?: React.ComponentType }
-			isReadonly?: boolean
-			isUserInteractingRef?: React.MutableRefObject<boolean>
-			onIdleEnd?: () => void
-		}
+// ── Menu panel with connection indicator ───────────────────────────────────────
 
-function Editor(props: EditorProps) {
-	const internalStore = useMemo(() => createTLStore(), [])
-	const store = props.persistToLocalStorage
-		? ((props as { store?: TLStore }).store ?? internalStore)
-		: (props as { store: TLStore }).store
-	const persistToLocalStorage = props.persistToLocalStorage
-	const shareId = 'shareId' in props ? props.shareId : undefined
-	const syncBridgeActive = 'syncBridgeActive' in props ? props.syncBridgeActive : false
-	const componentOverrides = props.components
-	const isReadonly = props.isReadonly ?? false
-	const isUserInteractingRef = 'isUserInteractingRef' in props ? props.isUserInteractingRef : undefined
-	const onIdleEnd = 'onIdleEnd' in props ? props.onIdleEnd : undefined
-	const editorRef = useRef<TldrawEditor | null>(null)
-	const overrides = useMemo(() => [createPasteActionOverride()], [])
-	const [loadingState, setLoadingState] = useState<LoadingState>({ status: 'loading' })
+function MenuPanelWithIndicator() {
+	return (
+		<div
+			style={{
+				display: 'flex',
+				flexDirection: 'row',
+				alignItems: 'flex-start',
+				gap: 3,
+				minWidth: 0,
+				margin: 0,
+				padding: 0,
+				marginTop: 4,
+			}}
+		>
+			<DefaultMenuPanel />
+			<div
+				style={{
+					display: 'inline-flex',
+					alignItems: 'center',
+					flexShrink: 0,
+					pointerEvents: 'all',
+				}}
+			>
+				<ConnectionIndicator />
+			</div>
+		</div>
+	)
+}
+
+const SYNC_PAGE_COMPONENTS = { MenuPanel: MenuPanelWithIndicator, SharePanel: null }
+
+// ── App ────────────────────────────────────────────────────────────────────────
+
+function App() {
+	// 1. Create store (stable singleton)
+	const store = useMemo(() => createTLStore(), [])
+
+	// 2. Start state machine
+	const [state, send] = useMachine(whiteboardMachine)
+	const stateRef = useRef(state)
+	stateRef.current = state
+
+	// 3. Grid-mode tracking
 	const gridRef = useRef<GridRef>({ m: new Map(), prev: null })
+
+	// 4. Editor ref for Supabase sync
+	const editorRef = useRef<TldrawEditor | null>(null)
 	const tldrawOnMountCleanupRef = useRef<(() => void) | null>(null)
 
-	useLayoutEffect(() => {
-		if (!persistToLocalStorage) {
-			setLoadingState({ status: 'ready' })
-			return
-		}
-		setLoadingState({ status: 'loading' })
+	// 5. Server sync interaction tracking
+	const isUserInteractingRef = useRef(false)
+	const applySyncRef = useRef<(() => void) | null>(null)
+	const onIdleEnd = useCallback(() => {
+		isUserInteractingRef.current = false
+		applySyncRef.current?.()
+	}, [])
 
-		const raw = loadPersistedSnapshot()
+	// Overrides (stable)
+	const overrides = useMemo(() => [createPasteActionOverride()], [])
+
+	// ── Load from localStorage immediately (no loading screen) ──
+	useLayoutEffect(() => {
+		const raw = loadStorageSnapshot()
 		if (raw) {
 			try {
-				const parsed = JSON.parse(raw) as SnapshotParsed
-				applyParsedSnapshot(store, parsed, gridRef)
+				applyParsedSnapshot(store, JSON.parse(raw) as SnapshotParsed, gridRef)
 			} catch (err) {
-				setLoadingState({ status: 'error', error: err instanceof Error ? err.message : String(err) })
-				return
+				console.warn('[whiteboard] Failed to load from localStorage:', err)
 			}
 		}
-		setLoadingState({ status: 'ready' })
-
-		let lastJson: string | null = null
-		const throttled = throttle(() => {
-			try {
-				const inst = store.get(TLINSTANCE_ID) as { currentPageId: string; isGridMode: boolean } | undefined
-				if (inst) syncGridRef(inst, gridRef, store)
-				const snap = getSnapshot(store)
-				const sessionClone = structuredClone(snap.session) ?? {}
-				const pageStates = sessionClone.pageStates ?? []
-				for (const ps of pageStates) {
-					const pageState = ps as { pageId: string; isGridMode?: boolean; camera?: unknown }
-					pageState.isGridMode = gridRef.current.m.get(pageState.pageId) ?? false
-					delete pageState.camera
-				}
-				// Use 'all' scope so instance records are included; omit camera so we always zoom to fit on open
-				const rawSnapshot = store.getStoreSnapshot('all')
-				const doc = rawSnapshot as { store: Record<string, unknown>; schema: unknown }
-				const filtered: Record<string, unknown> = {}
-				for (const [id, rec] of Object.entries(doc.store ?? {})) {
-					const r = rec as { typeName?: string }
-					if (r?.typeName !== 'camera') filtered[id] = rec
-				}
-				const documentSnapshot = { store: filtered, schema: doc.schema } as typeof rawSnapshot
-				const toSave = { document: documentSnapshot, session: sessionClone }
-				const json = JSON.stringify(toSave)
-				if (json !== lastJson) {
-					savePersistedSnapshot(json)
-					lastJson = json
-				}
-				// Shared pages: sync bridge pushes to sync server (which persists to Supabase). Skip direct Supabase when sync is active.
-				if (
-					!syncBridgeActive &&
-					shareId &&
-					isShareAvailable() &&
-					editorRef.current
-				) {
-					const inst = store.get(TLINSTANCE_ID) as { currentPageId: string } | undefined
-					if (inst) {
-						const pageShareId = getShareIdForPage(inst.currentPageId) ?? shareId
-						if (pageShareId) {
-							void getContentAsJsonDocForPage(editorRef.current, inst.currentPageId as TLPageId)
-								.then((doc) => (doc ? updateSharedPageInSupabase(pageShareId, doc) : undefined))
-								.catch(() => { /* Supabase update failed; ignore to avoid unhandled rejection */ })
-						}
-					}
-				}
-			} catch {
-				// session not ready
-			}
-		}, THROTTLE_MS)
-		const unlisten = store.listen(throttled.run)
-		const flushOnUnload = (): void => throttled.flush()
-		window.addEventListener('beforeunload', flushOnUnload)
-		window.addEventListener('pagehide', flushOnUnload)
-		return () => {
-			throttled.flush()
-			throttled.cancel()
-			unlisten()
-			window.removeEventListener('beforeunload', flushOnUnload)
-			window.removeEventListener('pagehide', flushOnUnload)
-		}
-	}, [store, persistToLocalStorage, shareId, syncBridgeActive])
-
-	// When sync disconnects, save shared page to Supabase so changes aren't lost. Skip when sync bridge is active—sync server handles it.
-	useEffect(() => {
-		if (
-			syncBridgeActive ||
-			!shareId ||
-			!isShareAvailable() ||
-			!editorRef.current ||
-			loadingState.status !== 'ready'
-		)
-			return
-		const inst = store.get(TLINSTANCE_ID) as { currentPageId?: string } | undefined
-		const pageId = inst?.currentPageId
-		const pageShareId = pageId ? getShareIdForPage(pageId) : undefined
-		if (!pageId || !pageShareId) return
-		void getContentAsJsonDocForPage(editorRef.current, pageId as TLPageId)
-			.then((doc) => (doc ? updateSharedPageInSupabase(pageShareId, doc) : undefined))
-			.catch(() => { /* Supabase update failed; ignore */ })
-	}, [syncBridgeActive, shareId, store, loadingState.status])
-
-	// Sync from localStorage when another tab writes (storage event) or when returning
-	// to this tab after another tab wrote (storage event sets flag; focus applies).
-	// Only apply when we know another tab wrote—avoid overwriting our own unsaved changes in single-tab.
-	// Skip when viewing a shared page—shared pages get updates from sync server or Supabase, not localStorage.
-	// Preserve current page when applying from storage—only first load should switch pages.
-	useEffect(() => {
-		if (!persistToLocalStorage || loadingState.status !== 'ready' || syncBridgeActive || shareId) return
-		const storageReceivedRef = { current: false }
-		const applyRawSnapshot = (raw: string | null): void => {
-			if (!raw) return
-			try {
-				applyParsedSnapshot(store, JSON.parse(raw) as SnapshotParsed, gridRef, { preserveSession: true })
-			} catch {
-				// ignore parse errors
-			}
-		}
-		const onFocus = (): void => {
-			if (!storageReceivedRef.current) return
-			storageReceivedRef.current = false
-			applyRawSnapshot(loadPersistedSnapshot())
-		}
-		const onStorage = (e: StorageEvent): void => {
-			if (e.key !== PERSIST_KEY || e.newValue == null) return
-			storageReceivedRef.current = true
-			// Only apply when this tab is in the background; if the user is editing here,
-			// applying would overwrite their in-progress changes.
-			if (!document.hasFocus()) applyRawSnapshot(e.newValue)
-		}
-		window.addEventListener('focus', onFocus)
-		window.addEventListener('storage', onStorage)
-		return () => {
-			window.removeEventListener('focus', onFocus)
-			window.removeEventListener('storage', onStorage)
-		}
-	}, [store, loadingState.status, persistToLocalStorage, syncBridgeActive, shareId])
-
-	// On tab focus: if current page is shared and sync is available, re-check URL so we can switch to sync.
-	useEffect(() => {
-		if (!persistToLocalStorage || loadingState.status !== 'ready' || !isSyncAvailable()) return
-		const onVisibilityChange = (): void => {
-			if (document.visibilityState !== 'visible') return
-			const inst = store.get(TLINSTANCE_ID) as { currentPageId: string } | undefined
-			if (!inst?.currentPageId) return
-			if (getShareIdForPage(inst.currentPageId)) triggerUrlChangeCheck()
-		}
-		document.addEventListener('visibilitychange', onVisibilityChange)
-		return () => document.removeEventListener('visibilitychange', onVisibilityChange)
-	}, [store, loadingState.status, persistToLocalStorage])
-
-	// When shared page merge completes (background fetch), reload from localStorage.
-	useEffect(() => {
-		if (!persistToLocalStorage || !shareId) return
-		const onMerged = (e: Event): void => {
-			const ev = e as CustomEvent<{ shareId: string }>
-			if (ev.detail?.shareId === shareId) {
-				const raw = loadPersistedSnapshot()
-				if (raw) {
-					try {
-						applyParsedSnapshot(store, JSON.parse(raw) as SnapshotParsed, gridRef)
-					} catch {
-						// ignore parse errors
-					}
-				}
-			}
-		}
-		window.addEventListener(SHARED_PAGE_MERGED_EVENT, onMerged)
-		return () => window.removeEventListener(SHARED_PAGE_MERGED_EVENT, onMerged)
-	}, [store, persistToLocalStorage, shareId])
-
-	// Update URL when switching pages: shared pages show ?p=ID, local pages don't.
-	// No dispatch—avoids view switch so the same Editor stays mounted and page changes work.
-	const prevPageIdRef = useRef<string | null>(null)
-	useEffect(() => {
-		const updateUrlForCurrentPage = (): void => {
-			const inst = store.get(TLINSTANCE_ID) as { currentPageId: string } | undefined
-			if (!inst) return
-			const pageId = inst.currentPageId
-			if (prevPageIdRef.current === pageId) return
-			prevPageIdRef.current = pageId
-			const pageShareId = getShareIdForPage(pageId)
-			if (pageShareId) {
-				setShareIdInUrl(pageShareId)
-			} else {
-				clearShareIdFromUrl()
-				triggerUrlChangeCheck() // Re-render so sync bridge turns off; avoids merging wrong page
-			}
-		}
-		updateUrlForCurrentPage()
-		const unlisten = store.listen(updateUrlForCurrentPage)
-		return () => unlisten()
 	}, [store])
 
-	// Guarantee onMount cleanups (right-click pan, shift-scroll pan) on unmount. Tldraw invokes
-	// onMount's return value; this defends against API changes or unexpected unmount order.
+	// ── Init Supabase in background ──
+	useEffect(() => {
+		void initSupabase().then((client) => {
+			send(client ? { type: 'SUPABASE_READY' } : { type: 'SUPABASE_UNAVAILABLE' })
+		})
+	}, [send])
+
+	// ── Hook: page tracking → machine events ──
+	usePageTracker(store, send)
+
+	// ── Hook: persistence (always active) ──
+	usePersistence(store, gridRef, stateRef)
+
+	// ── Hook: shared page connect (shared.connecting) ──
+	useSharedPageConnect(store, state, send, gridRef)
+
+	// ── Hook: Supabase direct sync (shared.supabaseSync) ──
+	useSupabaseSync(store, stateRef, editorRef, send)
+
+	// ── Log machine state on every transition ──
+	useEffect(() => {
+		const s = typeof state.value === 'string' ? state.value : JSON.stringify(state.value)
+		const { shareId, pageId, supabaseReady } = state.context
+		console.log(`[machine] ${s} | share=${shareId ?? '—'} page=${pageId ?? '—'} supabase=${supabaseReady}`)
+	}, [state])
+
+	// ── Derived state ──
+	const editable = isEditable(state)
+	const syncStatus = getSyncStatus(state)
+	const shared = isSharedPage(state)
+	const serverSyncActive = isServerSynced(state)
+
+	// Server sync bridge: mount when in supabaseSync or serverSync and sync server is configured
+	const needsServerBridge =
+		isSyncServerConfigured() &&
+		(shouldAttemptServerConnection(state) || shouldRunServerSync(state)) &&
+		Boolean(state.context.shareId) &&
+		Boolean(state.context.pageId)
+
+	const syncUri = state.context.shareId ? buildSyncUri(state.context.shareId) : ''
+
+	// Cleanup tldraw onMount callbacks
 	useEffect(() => {
 		return () => {
 			tldrawOnMountCleanupRef.current?.()
@@ -687,82 +806,102 @@ function Editor(props: EditorProps) {
 		}
 	}, [])
 
-	if (loadingState.status === 'loading') {
-		return <LoadingView theme={getCachedTheme() ?? 'dark'} />
-	}
-	if (loadingState.status === 'error') {
-		return (
-			<div className="tldraw__editor" style={{ position: 'fixed', inset: 0 }}>
-				<h2>Error loading document</h2>
-				<p>{loadingState.error}</p>
-			</div>
-		)
-	}
-
 	return (
-		<div style={{ position: 'fixed', inset: 0 }}>
-			<Tldraw
-				store={store}
-				licenseKey={licenseKey}
-				overrides={overrides}
-				components={{
-					MainMenu: CustomMainMenu,
-					ContextMenu: CustomContextMenu,
-					PageMenu: CustomPageMenu,
-					...(componentOverrides ?? {}),
-				}}
-				cameraOptions={{ zoomSpeed: 1.5, wheelBehavior: 'zoom' }}
-				onMount={(editor) => {
-					editorRef.current = editor
-					if (isReadonly) {
-						store.update(TLINSTANCE_ID, (i) => ({ ...i, isReadonly: true }))
-					}
-					const cached = getCachedTheme()
-					if (cached !== null) {
-						editor.user.updateUserPreferences({ colorScheme: cached })
-					} else {
-						const prefs = editor.user.getUserPreferences()
-						if (prefs.colorScheme === undefined) {
-							editor.user.updateUserPreferences({ colorScheme: 'dark' })
-						}
-					}
-					if (shareId) setShareIdForPage(editor.getCurrentPageId(), shareId)
-					const zoomToFitWithLayout = (): void => {
-						requestAnimationFrame(() => {
-							requestAnimationFrame(() => editor.zoomToFit({ animation: { duration: 200 } }))
-						})
-					}
-					zoomToFitWithLayout()
-					let prevPageId = editor.getCurrentPageId()
-					const unlistenPage = store.listen(() => {
-						const inst = store.get(TLINSTANCE_ID) as { currentPageId?: string } | undefined
-						const pageId = (inst?.currentPageId ?? '') as TLPageId
-						if (pageId && pageId !== prevPageId) {
-							prevPageId = pageId
-							zoomToFitWithLayout()
-						}
-					})
-					const rightClickPanCleanup = setupRightClickPan(editor)
-					const shiftScrollPanCleanup = setupShiftScrollPan(editor)
-					const cleanup = () => {
-						editorRef.current = null
-						unlistenPage()
-						shiftScrollPanCleanup()
-						rightClickPanCleanup()
-					}
-					tldrawOnMountCleanupRef.current = cleanup
-					return cleanup
-				}}
+		<MachineCtx.Provider value={{ state, send }}>
+			<ConnectionIndicatorProvider
+				status={syncStatus}
+				onRetry={() => send({ type: 'RETRY' })}
 			>
-				<SyncThemeToDocument />
-				{isUserInteractingRef && onIdleEnd && (
-					<UserInteractionTracker
+				{/* Server sync bridge (headless — outside Tldraw) */}
+				{needsServerBridge && (
+					<ServerSyncBridge
+						key={`${state.context.pageId}-${state.context.shareId}`}
+						persistStore={store}
+						pageId={state.context.pageId!}
+						syncUri={syncUri}
+						send={send}
 						isUserInteractingRef={isUserInteractingRef}
-						onIdleEnd={onIdleEnd}
+						applySyncRef={applySyncRef}
 					/>
 				)}
-			</Tldraw>
-		</div>
+
+				{/* Main editor — always rendered, no loading screen */}
+				<div style={{ position: 'fixed', inset: 0 }}>
+					<Tldraw
+						store={store}
+						licenseKey={licenseKey}
+						overrides={overrides}
+						components={{
+							MainMenu: CustomMainMenu,
+							ContextMenu: CustomContextMenu,
+							PageMenu: CustomPageMenu,
+							...SYNC_PAGE_COMPONENTS,
+						}}
+						cameraOptions={{ zoomSpeed: 1.5, wheelBehavior: 'zoom' }}
+						onMount={(editor) => {
+							editorRef.current = editor
+
+							// Apply theme
+							const cached = getTheme()
+							editor.user.updateUserPreferences({ colorScheme: cached })
+
+							// If on a shared page, apply readonly based on current machine state
+							if (!isEditable(stateRef.current)) {
+								store.update(TLINSTANCE_ID, (i) => ({ ...i, isReadonly: true }))
+							}
+
+							// If URL has shareId, set share map for this page
+							const shareId = state.context.shareId
+							if (shareId) setShareIdForPage(editor.getCurrentPageId(), shareId)
+
+							// Zoom to fit
+							const zoomToFitWithLayout = (): void => {
+								requestAnimationFrame(() => {
+									requestAnimationFrame(() =>
+										editor.zoomToFit({ animation: { duration: 200 } })
+									)
+								})
+							}
+							zoomToFitWithLayout()
+
+							// Zoom to fit on page change
+							let prevPageId = editor.getCurrentPageId()
+							const unlistenPage = store.listen(() => {
+								const inst = store.get(TLINSTANCE_ID) as
+									| { currentPageId?: string }
+									| undefined
+								const pageId = (inst?.currentPageId ?? '') as TLPageId
+								if (pageId && pageId !== prevPageId) {
+									prevPageId = pageId
+									zoomToFitWithLayout()
+								}
+							})
+
+							const rightClickPanCleanup = setupRightClickPan(editor)
+							const shiftScrollPanCleanup = setupShiftScrollPan(editor)
+
+							const cleanup = () => {
+								editorRef.current = null
+								unlistenPage()
+								shiftScrollPanCleanup()
+								rightClickPanCleanup()
+							}
+							tldrawOnMountCleanupRef.current = cleanup
+							return cleanup
+						}}
+					>
+						<SyncThemeToDocument />
+						<ReadonlyTracker editable={editable} />
+						{shared && serverSyncActive && (
+							<UserInteractionTracker
+								isUserInteractingRef={isUserInteractingRef}
+								onIdleEnd={onIdleEnd}
+							/>
+						)}
+					</Tldraw>
+				</div>
+			</ConnectionIndicatorProvider>
+		</MachineCtx.Provider>
 	)
 }
 

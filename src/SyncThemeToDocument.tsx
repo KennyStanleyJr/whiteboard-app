@@ -1,6 +1,6 @@
 import { useEditor, useValue } from 'tldraw'
 import { useEffect } from 'react'
-import { THEME_CACHE_KEY } from './themeUtils'
+import { setTheme } from './persistence'
 
 const DARK_BG = 'hsl(240, 5%, 6.5%)'
 const LIGHT_BG = 'hsl(210, 20%, 98%)'
@@ -11,11 +11,7 @@ function applyThemeToDocument(isDark: boolean) {
 	document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light')
 	const meta = document.querySelector('meta[name="theme-color"]')
 	if (meta) meta.setAttribute('content', bg)
-	try {
-		window.localStorage.setItem(THEME_CACHE_KEY, isDark ? 'dark' : 'light')
-	} catch {
-		// Ignore storage errors (private mode, quota, etc.)
-	}
+	setTheme(isDark ? 'dark' : 'light')
 }
 
 /**

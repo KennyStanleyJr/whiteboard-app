@@ -43,8 +43,12 @@ export default defineConfig({
 			output: {
 				manualChunks(id: string): string | undefined {
 					if (!id.includes('node_modules')) return undefined
-					if (id.includes('tldraw')) return 'tldraw'
-					if (id.includes('react-dom') || id.includes('react/')) return 'react'
+					// tldraw re-exports React hooks; they must share a chunk to avoid circularity
+					if (
+						id.includes('tldraw') ||
+						id.includes('react-dom') ||
+						/[\\/]react[\\/]/.test(id)
+					) return 'vendor'
 					return undefined
 				},
 			},
