@@ -76,6 +76,7 @@ import {
 	remapIdInValue,
 	type ShareSnapshot,
 } from './sharePage'
+import { getIndexAbove, sortByIndex } from '@tldraw/utils'
 import { CustomContextMenu, CustomMainMenu } from './ExportMenu'
 import { CustomPageMenu } from './CustomPageMenu'
 import { useEditor } from '@tldraw/editor'
@@ -442,23 +443,34 @@ function mergeRemotePageIntoStore(
 	const needRemap = Boolean(existingPageId && existingPageId !== remotePageId)
 	const targetPageId = needRemap ? existingPageId : remotePageId
 
-	// Build remapped remote records
-	const remoteRecords: Record<string, unknown> = {}
-	for (const [id, rec] of Object.entries(remoteStore)) {
-		if (needRemap) {
-			const remapped = remapIdInValue(rec, remotePageId, targetPageId) as Record<string, unknown>
-			const newId = id === remotePageId ? targetPageId : id
-			remoteRecords[newId] = { ...remapped, id: newId }
-		} else {
-			remoteRecords[id] = rec
-		}
-	}
-
-	// Merge: keep all local records except the target page's, then add remote
 	const localSnap = store.getStoreSnapshot('document') as {
 		store: Record<string, unknown>
 		schema?: unknown
 	}
+
+	// Place new page at end of list
+	const localPages = (Object.entries(localSnap.store ?? {}) as [string, { typeName?: string; index?: string }][])
+		.filter(([, r]) => r?.typeName === 'page')
+		.map(([id, r]) => ({ id, index: r.index ?? 'a0' }))
+		.sort(sortByIndex)
+	const endIndex = localPages.length > 0 ? getIndexAbove(localPages[localPages.length - 1].index) : getIndexAbove(null)
+
+	const remoteRecords: Record<string, unknown> = {}
+	for (const [id, rec] of Object.entries(remoteStore)) {
+		const base = needRemap
+			? { ...(remapIdInValue(rec, remotePageId, targetPageId) as Record<string, unknown>), id: id === remotePageId ? targetPageId : id }
+			: rec as Record<string, unknown>
+		const newId = id === remotePageId ? targetPageId : id
+		const index =
+			id === remotePageId
+				? needRemap
+					? (localSnap.store?.[targetPageId] as { index?: string })?.index ?? base.index
+					: endIndex
+				: base.index
+		remoteRecords[newId] = id === remotePageId ? { ...base, id: newId, index } : base
+	}
+
+	// Merge: keep all local records except the target page's, then add remote
 	const idsToRemove = new Set(getPageRecordIds(localSnap, targetPageId))
 	const merged: Record<string, unknown> = {}
 	for (const [id, rec] of Object.entries(localSnap.store ?? {})) {
