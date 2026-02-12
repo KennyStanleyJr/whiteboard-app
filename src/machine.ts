@@ -18,6 +18,7 @@
  *   local → ENTER_SHARED → shared.connecting
  *   shared.connecting → SUPABASE_CONNECTED → shared.supabaseSync
  *   shared.connecting → SUPABASE_FAILED   → shared.offline
+ *   shared.connecting → SERVER_CONNECTED  → shared.serverSync  (guard: pageId set)
  *   shared.supabaseSync → SERVER_CONNECTED      → shared.serverSync
  *   shared.supabaseSync → SUPABASE_DISCONNECTED → shared.connecting
  *   shared.serverSync   → SERVER_DISCONNECTED   → shared.supabaseSync
@@ -46,7 +47,6 @@ export type WhiteboardEvent =
 	| { type: 'SUPABASE_CONNECTED'; pageId?: string }
 	| { type: 'SUPABASE_FAILED' }
 	| { type: 'SERVER_CONNECTED' }
-	| { type: 'SERVER_FAILED' }
 	| { type: 'SERVER_DISCONNECTED' }
 	| { type: 'SUPABASE_DISCONNECTED' }
 	| { type: 'RETRY' }
@@ -73,6 +73,9 @@ export const whiteboardMachine = setup({
 		clearShared: assign({ shareId: null, pageId: null }),
 		markSupabaseReady: assign({ supabaseReady: true }),
 		markSupabaseUnavailable: assign({ supabaseReady: false }),
+	},
+	guards: {
+		hasPageId: ({ context }) => Boolean(context.pageId),
 	},
 }).createMachine({
 	id: 'whiteboard',
@@ -111,17 +114,23 @@ export const whiteboardMachine = setup({
 				},
 			},
 			states: {
-				connecting: {
-					on: {
-						SUPABASE_CONNECTED: {
-							target: 'supabaseSync',
-							actions: assign(({ context, event }) => ({
-								pageId: (event as { pageId?: string }).pageId || context.pageId,
-							})),
-						},
-						SUPABASE_FAILED: { target: 'offline' },
+			connecting: {
+				on: {
+					SUPABASE_CONNECTED: {
+						target: 'supabaseSync',
+						actions: assign(({ context, event }) => ({
+							pageId: (event as { pageId?: string }).pageId || context.pageId,
+						})),
+					},
+					SUPABASE_FAILED: { target: 'offline' },
+					// If the server connects before Supabase and we already know the
+					// pageId (revisiting a share), skip supabaseSync entirely.
+					SERVER_CONNECTED: {
+						target: 'serverSync',
+						guard: 'hasPageId',
 					},
 				},
+			},
 
 				supabaseSync: {
 					on: {
@@ -178,9 +187,9 @@ export function shouldRunServerSync(state: MachineState): boolean {
 	return state.matches({ shared: 'serverSync' })
 }
 
-/** Whether we should attempt a sync server connection (to upgrade from supabase). */
+/** Whether we should attempt a sync server connection (during connecting or supabaseSync). */
 export function shouldAttemptServerConnection(state: MachineState): boolean {
-	return state.matches({ shared: 'supabaseSync' })
+	return state.matches({ shared: 'connecting' }) || state.matches({ shared: 'supabaseSync' })
 }
 
 /** Whether we're on a shared page (any shared sub-state). */

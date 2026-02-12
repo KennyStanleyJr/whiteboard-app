@@ -7,6 +7,7 @@ import { importJsonFromText } from './pasteJson'
 import { getContentAsJsonDoc } from './sharePage'
 import { isSupabaseConfigured, createSharedPage } from './supabase'
 import { setShareIdForPage, setShareIdInUrl, buildShareUrl } from './persistence'
+import { useMachineCtx } from './MachineContext'
 import {
 	ArrangeMenuSubmenu,
 	ClipboardMenuGroup,
@@ -124,6 +125,7 @@ function CustomCopyAsMenuGroup() {
 function CreateLinkMenuItem() {
 	const editor = useEditor()
 	const toasts = useToasts()
+	const { send } = useMachineCtx()
 	const onSelect = useCallback(
 		async (_source: TLUiEventSource) => {
 			const loadingId = toasts.addToast({ title: 'Creating link…', severity: 'info', keepOpen: true })
@@ -143,6 +145,7 @@ function CreateLinkMenuItem() {
 				}
 				setShareIdForPage(pageId, result.id)
 				setShareIdInUrl(result.id)
+				send({ type: 'ENTER_SHARED', shareId: result.id, pageId })
 				const url = buildShareUrl(result.id)
 				if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(url)
 				toasts.addToast({ title: 'Link created', severity: 'success' })
@@ -155,7 +158,7 @@ function CreateLinkMenuItem() {
 				})
 			}
 		},
-		[editor, toasts]
+		[editor, toasts, send]
 	)
 	return (
 		<TldrawUiDropdownMenuItem>

@@ -2,12 +2,16 @@
  * Connection indicator — always visible.
  * Shows current sync state: "local", "synced", "connected", "connecting...", or "error".
  * Dot color adjusts for light/dark mode.
+ *
+ * Reads directly from the XState machine context so updates propagate
+ * reliably even through tldraw's component override rendering pipeline.
  */
 
 import { createContext, useContext, useEffect, useState } from 'react'
 import { useEditor, useValue } from '@tldraw/editor'
 import { TldrawUiIcon } from 'tldraw'
-import type { SyncStatus } from './machine'
+import { getSyncStatus, type SyncStatus } from './machine'
+import { useMachineCtx } from './MachineContext'
 
 const INDICATOR_DELAY_MS = 300
 const CONNECTION_TIMEOUT_MS = 10_000
@@ -18,7 +22,6 @@ function isConnecting(status: SyncStatus): boolean {
 }
 
 const ConnectionIndicatorContext = createContext<{
-	status: SyncStatus
 	onRetry?: () => void
 } | null>(null)
 
@@ -73,6 +76,8 @@ function getTooltip(status: SyncStatus): string {
 /** Renders sync status (dot + text). Always visible. Must be inside Tldraw and ConnectionIndicatorProvider. */
 export function ConnectionIndicator() {
 	const ctx = useContext(ConnectionIndicatorContext)
+	const { state } = useMachineCtx()
+	const status = getSyncStatus(state)
 	const editor = useEditor()
 	const isDarkMode = useValue('isDarkMode', () => editor.user.getIsDarkMode(), [editor])
 	const theme = isDarkMode ? 'dark' : 'light'
@@ -84,19 +89,20 @@ export function ConnectionIndicator() {
 		return () => clearTimeout(t)
 	}, [])
 
+	const statusKey = status.status
 	useEffect(() => {
-		if (!ctx || !isConnecting(ctx.status)) {
+		if (statusKey !== 'loading') {
 			setTimedOut(false)
 			return
 		}
 		const t = setTimeout(() => setTimedOut(true), CONNECTION_TIMEOUT_MS)
 		return () => clearTimeout(t)
-	}, [ctx, ctx?.status.status])
+	}, [statusKey])
 
-	if (!ctx || !visible) return null
+	if (!visible) return null
 
 	const effectiveStatus: SyncStatus =
-		timedOut && isConnecting(ctx.status) ? { status: 'error' } : ctx.status
+		timedOut && isConnecting(status) ? { status: 'error' } : status
 	const isError = effectiveStatus.status === 'error'
 	const text = getDisplayText(effectiveStatus)
 	const dotColor = getDotColor(effectiveStatus, isDarkMode)
@@ -138,7 +144,7 @@ export function ConnectionIndicator() {
 			)}
 		</>
 	)
-	if (isError && ctx.onRetry) {
+	if (isError && ctx?.onRetry) {
 		return (
 			<button
 				type="button"
@@ -174,16 +180,14 @@ export function ConnectionIndicator() {
 }
 
 export function ConnectionIndicatorProvider({
-	status,
 	onRetry,
 	children,
 }: {
-	status: SyncStatus
 	onRetry?: () => void
 	children: React.ReactNode
 }) {
 	return (
-		<ConnectionIndicatorContext.Provider value={{ status, onRetry }}>
+		<ConnectionIndicatorContext.Provider value={{ onRetry }}>
 			{children}
 		</ConnectionIndicatorContext.Provider>
 	)

@@ -129,10 +129,15 @@ const rooms = new Map()
 const lastSaveLog = new Map()
 
 /**
- * Returns a room synchronously. Creates with empty storage if needed.
- * Supabase load is deferred and merged in the background.
+ * Returns a room synchronously so handleSocketConnect can run immediately
+ * (delaying it causes useSync on the client to timeout waiting for the
+ * tldraw sync protocol handshake).
+ *
+ * Supabase data is loaded in the background.  A `clientDataReceived` flag
+ * prevents the DB snapshot from overwriting fresher data that a client
+ * has already pushed.
  */
-function getOrCreateRoomSync(roomId) {
+function getOrCreateRoom(roomId) {
 	roomId = sanitizeRoomId(roomId)
 	const existing = rooms.get(roomId)
 	if (existing && !existing.isClosed()) {
@@ -141,9 +146,12 @@ function getOrCreateRoomSync(roomId) {
 	}
 
 	console.log('[sync] Creating room:', roomId)
+	let clientDataReceived = false
+
 	const storage = new InMemorySyncStorage({
 		onChange(arg) {
 			if (arg?.documentClock === undefined) return
+			clientDataReceived = true
 			const snap = storage.getSnapshot()
 			if (snap) void saveToSupabase(roomId, snap)
 		},
@@ -164,17 +172,20 @@ function getOrCreateRoomSync(roomId) {
 
 	rooms.set(roomId, room)
 
-	// Load from Supabase in background; merge into storage when ready
+	// Load from Supabase in background — only apply if no client has pushed yet
 	loadFromSupabase(roomId).then((fromDb) => {
 		if (!fromDb) {
 			console.log('[sync] No snapshot in DB for room:', roomId)
 			return
 		}
+		if (clientDataReceived) {
+			console.log('[sync] Skipping DB load — client already pushed data for room:', roomId)
+			return
+		}
 		console.log('[sync] Loading snapshot from DB for room:', roomId)
-		const initialSnapshot = { store: fromDb.store, schema: fromDb.schema }
 		try {
 			storage.transaction((txn) => {
-				loadSnapshotIntoStorage(txn, schema, initialSnapshot)
+				loadSnapshotIntoStorage(txn, schema, { store: fromDb.store, schema: fromDb.schema })
 			})
 			console.log('[sync] Snapshot loaded for room:', roomId)
 		} catch (err) {
@@ -218,7 +229,7 @@ function handleUpgrade(req, socket, head) {
 	console.log('[sync] Upgrading roomId=%s sessionId=%s', roomId, sessionId)
 	wss.handleUpgrade(req, socket, head, (ws) => {
 		try {
-			const room = getOrCreateRoomSync(roomId)
+			const room = getOrCreateRoom(roomId)
 			const minimalSocket = toWebSocketMinimal(ws)
 			room.handleSocketConnect({ sessionId, socket: minimalSocket })
 			console.log('[sync] Client connected roomId=%s sessionId=%s', roomId, sessionId)

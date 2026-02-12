@@ -70,8 +70,11 @@ export async function saveSharedPage(shareId: string, snapshot: ShareSnapshot): 
 		.update({ snapshot })
 		.eq('id', shareId)
 	if (error) {
-		console.error('[supabase] saveSharedPage failed:', error.message)
-		throw new Error(error.message)
+		const isAbort = error.message?.includes('AbortError') || error.name === 'AbortError'
+		if (!isAbort) console.error('[supabase] saveSharedPage failed:', error.message)
+		throw isAbort
+			? new DOMException(error.message, 'AbortError')
+			: new Error(error.message)
 	}
 }
 

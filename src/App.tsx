@@ -19,6 +19,7 @@ import {
 	useLayoutEffect,
 	useMemo,
 	useRef,
+	useState,
 } from 'react'
 import type { Editor as TldrawEditor } from '@tldraw/editor'
 import type { TLPageId } from '@tldraw/tlschema'
@@ -38,7 +39,6 @@ import 'tldraw/tldraw.css'
 
 import {
 	whiteboardMachine,
-	getSyncStatus,
 	isEditable,
 	isSharedPage,
 	shouldRunSupabaseSync,
@@ -91,6 +91,7 @@ import { MachineCtx } from './MachineContext'
 
 const licenseKey = import.meta.env.VITE_TLDRAW_LICENSE_KEY ?? undefined
 const SYNC_APPLY_IDLE_MS = 400
+const SERVER_RETRY_INTERVAL_MS = 10_000
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -218,47 +219,67 @@ function usePersistence(
 	gridRef: React.MutableRefObject<GridRef>,
 	machineStateRef: React.MutableRefObject<MachineState>
 ) {
-	// Save on every store change.
+	// Save on every store change (throttled).
 	// Skip writes during `connecting` — the store has potentially stale shared-
 	// page data from localStorage and we don't want to broadcast it to other
 	// tabs before the authoritative Supabase fetch completes.
+	// Uses a dirty flag so we never serialize unless the store actually changed.
 	useEffect(() => {
-		let lastJson: string | null = null
-		const throttled = throttle(() => {
+		let dirty = true // true initially so first tick always saves
+		const markDirty = (): void => { dirty = true }
+
+		const persist = (): void => {
+			if (!dirty) return
 			if (machineIsConnecting(machineStateRef.current)) return
 			try {
+				// Sync grid-mode tracking (read-only; update only if page changed)
 				const inst = store.get(TLINSTANCE_ID) as
 					| { currentPageId: string; isGridMode: boolean }
 					| undefined
 				if (inst) syncGridRef(inst, gridRef, store)
 
+				// Single snapshot — 'all' gives us document + session
+				const rawSnapshot = store.getStoreSnapshot('all') as {
+					store: Record<string, unknown>
+					schema: unknown
+				}
+				const storeObj = rawSnapshot.store ?? {}
+
+				// Filter cameras + build session with grid-mode in one pass
+				const filtered: Record<string, unknown> = {}
+				for (const [id, rec] of Object.entries(storeObj)) {
+					if ((rec as { typeName?: string })?.typeName !== 'camera') {
+						filtered[id] = rec
+					}
+				}
+
+				// Build session from the lighter getSnapshot (session only)
 				const snap = getSnapshot(store)
-				const sessionClone = structuredClone(snap.session) ?? {}
-				const pageStates = sessionClone.pageStates ?? []
+				const session = structuredClone(snap.session) ?? {}
+				const pageStates = session.pageStates ?? []
 				for (const ps of pageStates) {
 					const s = ps as { pageId: string; isGridMode?: boolean; camera?: unknown }
 					s.isGridMode = gridRef.current.m.get(s.pageId) ?? false
 					delete s.camera
 				}
-				const rawSnapshot = store.getStoreSnapshot('all')
-				const doc = rawSnapshot as { store: Record<string, unknown>; schema: unknown }
-				const filtered: Record<string, unknown> = {}
-				for (const [id, rec] of Object.entries(doc.store ?? {})) {
-					if ((rec as { typeName?: string })?.typeName !== 'camera') filtered[id] = rec
-				}
-				const documentSnapshot = { store: filtered, schema: doc.schema } as typeof rawSnapshot
-				const toSave = { document: documentSnapshot, session: sessionClone }
-				const json = JSON.stringify(toSave)
-				if (json !== lastJson) {
-					saveStorageSnapshot(json)
-					lastJson = json
-				}
+
+				const documentSnapshot = { store: filtered, schema: rawSnapshot.schema }
+				const json = JSON.stringify({ document: documentSnapshot, session })
+				saveStorageSnapshot(json)
+				dirty = false
 			} catch {
 				/* session not ready */
 			}
-		}, THROTTLE_MS)
+		}
 
-		const unlisten = store.listen(throttled.run)
+		const throttled = throttle(persist, THROTTLE_MS)
+
+		const onStoreChange = (): void => {
+			markDirty()
+			throttled.run()
+		}
+
+		const unlisten = store.listen(onStoreChange)
 		const flush = (): void => throttled.flush()
 		window.addEventListener('beforeunload', flush)
 		window.addEventListener('pagehide', flush)
@@ -461,7 +482,9 @@ function useSupabaseSync(
 				.then(() => {
 					consecutiveFailures = 0
 				})
-				.catch(() => {
+				.catch((err: unknown) => {
+					// Abort errors are expected during state transitions — ignore them
+					if (err instanceof DOMException && err.name === 'AbortError') return
 					consecutiveFailures++
 					if (consecutiveFailures >= SUPABASE_FAILURE_THRESHOLD) {
 						consecutiveFailures = 0
@@ -487,6 +510,7 @@ function ServerSyncBridge({
 	send,
 	isUserInteractingRef,
 	applySyncRef,
+	onRetry,
 }: {
 	persistStore: TLStore
 	pageId: string
@@ -494,27 +518,62 @@ function ServerSyncBridge({
 	send: Send
 	isUserInteractingRef: React.MutableRefObject<boolean>
 	applySyncRef: React.MutableRefObject<(() => void) | null>
+	onRetry: () => void
 }) {
+	// Keep pageId in a ref so the bidirectional sync closures always see the
+	// latest value without requiring a remount (which would kill the WebSocket).
+	const pageIdRef = useRef(pageId)
+	pageIdRef.current = pageId
+
 	const storeWithStatus = useSync({ uri: syncUri, assets: inlineBase64AssetStore })
 	const syncStore =
 		storeWithStatus.status === 'synced-remote' ? storeWithStatus.store : null
 
-	// Report connection status to the machine
+	// Derive a single key that captures both status *and* connectionStatus
+	// changes so one unified effect handles all transitions.
+	const connectionStatus =
+		storeWithStatus.status === 'synced-remote'
+			? storeWithStatus.connectionStatus
+			: storeWithStatus.status
+
+	// Report connection status to the machine.
+	// Uses connectionStatus (which tracks online/offline within synced-remote,
+	// plus top-level status changes) so we catch reconnections that don't change
+	// storeWithStatus.status (it stays 'synced-remote' the whole time).
+	// pageId in deps: re-send SERVER_CONNECTED when pageId arrives so the
+	// machine can transition from connecting/supabaseSync → serverSync.
 	useEffect(() => {
-		if (storeWithStatus.status === 'synced-remote') {
+		if (connectionStatus === 'online') {
 			send({ type: 'SERVER_CONNECTED' })
-		} else if (storeWithStatus.status === 'error') {
-			send({ type: 'SERVER_FAILED' })
+		} else if (connectionStatus === 'offline' || connectionStatus === 'error') {
+			send({ type: 'SERVER_DISCONNECTED' })
 		}
 		// 'loading' → no event (machine stays in current state)
-	}, [storeWithStatus.status, send])
+	}, [connectionStatus, send, pageId])
 
-	// Bidirectional sync between persist store and sync store
+	// Auto-retry: bump parent retry key when stuck in error so the component
+	// remounts with a fresh useSync connection.
 	useEffect(() => {
-		if (!syncStore) return
+		if (storeWithStatus.status !== 'error') return
+		const id = setInterval(() => onRetry(), SERVER_RETRY_INTERVAL_MS)
+		const onVis = (): void => {
+			if (document.visibilityState === 'visible') onRetry()
+		}
+		document.addEventListener('visibilitychange', onVis)
+		return () => {
+			clearInterval(id)
+			document.removeEventListener('visibilitychange', onVis)
+		}
+	}, [storeWithStatus.status, onRetry])
+
+	// Bidirectional sync between persist store and sync store.
+	// Guard: skip if pageId is not yet known (still in connecting state).
+	useEffect(() => {
+		if (!syncStore || !pageIdRef.current) return
 		const applyingFromSyncRef = { current: false }
 		const pushingToSyncRef = { current: false }
 		const pushedHashes = new Set<string>()
+		const MAX_PUSHED_HASHES = 32
 
 		const persistSnapshot = (): { store: Record<string, unknown>; schema?: unknown } =>
 			persistStore.getStoreSnapshot('document') as {
@@ -530,46 +589,76 @@ function ServerSyncBridge({
 		const syncToPersist = (): void => {
 			if (pushingToSyncRef.current) return
 			if (isUserInteractingRef.current) return
-			const persistSnap = persistSnapshot()
-			const syncSnap = syncSnapshot()
-			const syncPageId = getFirstPageIdFromStore(syncSnap)
-			if (!syncPageId) return
-			const syncDoc = getPageDocumentFromStore(syncSnap, syncPageId)
-			if (!syncDoc) return
-			const toLoad =
-				syncPageId !== pageId
-					? remapDocumentPageId(syncDoc, syncPageId, pageId)
-					: syncDoc
-			const receivedHash = docStoreHash(toLoad)
-			if (pushedHashes.has(receivedHash)) {
-				pushedHashes.delete(receivedHash)
-				return
-			}
-			const persistDoc = getPageDocumentFromStore(persistSnap, pageId)
-			if (persistDoc && docContentEqual(persistDoc, toLoad)) return
-
-			applyingFromSyncRef.current = true
 			try {
-				const idsToRemove = new Set(getPageRecordIds(persistSnap, pageId))
-				const merged: Record<string, unknown> = {}
-				for (const [id, rec] of Object.entries(persistSnap.store ?? {})) {
-					if (!idsToRemove.has(id)) merged[id] = rec
+				const persistSnap = persistSnapshot()
+				const syncSnap = syncSnapshot()
+				const syncPageId = getFirstPageIdFromStore(syncSnap)
+				if (!syncPageId) return
+				const syncDoc = getPageDocumentFromStore(syncSnap, syncPageId)
+				if (!syncDoc) return
+
+				// Safety: never apply an empty/near-empty sync page over existing
+				// content — this prevents blank-canvas bugs when the server room
+				// starts empty and the sync protocol hasn't processed our push yet.
+				const syncRecordCount = Object.keys(syncDoc.document?.store ?? {}).length
+				const persistDoc = getPageDocumentFromStore(persistSnap, pageId)
+				const persistRecordCount = Object.keys(persistDoc?.document?.store ?? {}).length
+				if (syncRecordCount <= 1 && persistRecordCount > 1) return
+
+				const toLoad =
+					syncPageId !== pageId
+						? remapDocumentPageId(syncDoc, syncPageId, pageId)
+						: syncDoc
+				const receivedHash = docStoreHash(toLoad)
+				if (pushedHashes.has(receivedHash)) {
+					pushedHashes.delete(receivedHash)
+					return
 				}
-				for (const [id, rec] of Object.entries(toLoad.document?.store ?? {})) {
-					merged[id] = rec
+				if (persistDoc && docContentEqual(persistDoc, toLoad)) return
+
+				// Incremental merge: only touch records that actually changed.
+				// A full loadSnapshot replaces every record, causing tldraw to
+				// unmount/remount all shapes (visual flash).  Incremental put/remove
+				// keeps unchanged shapes stable — no flash on reconnection.
+				applyingFromSyncRef.current = true
+				try {
+					const currentPageIds = new Set(getPageRecordIds(persistSnap, pageId))
+					const incoming = toLoad.document?.store ?? {}
+					const currentStore = persistSnap.store ?? {}
+
+					const toPut: unknown[] = []
+					const toRemoveIds: string[] = []
+
+					// Records to add or update
+					for (const [id, rec] of Object.entries(incoming)) {
+						const existing = currentStore[id]
+						if (!existing || JSON.stringify(existing) !== JSON.stringify(rec)) {
+							toPut.push(rec)
+						}
+					}
+
+					// Records to remove (in current page but not in incoming)
+					for (const id of currentPageIds) {
+						if (!(id in incoming)) toRemoveIds.push(id)
+					}
+
+					if (toPut.length > 0 || toRemoveIds.length > 0) {
+						persistStore.mergeRemoteChanges(() => {
+							if (toRemoveIds.length > 0) {
+								persistStore.remove(
+									toRemoveIds as Parameters<TLStore['remove']>[0]
+								)
+							}
+							if (toPut.length > 0) {
+								persistStore.put(toPut as Parameters<TLStore['put']>[0])
+							}
+						})
+					}
+				} finally {
+					applyingFromSyncRef.current = false
 				}
-				loadSnapshot(
-					persistStore,
-					{
-						document: {
-							store: merged,
-							schema: persistSnap.schema ?? toLoad.document?.schema,
-						},
-					} as SnapshotParsed,
-					{ forceOverwriteSessionState: false }
-				)
-			} finally {
-				applyingFromSyncRef.current = false
+			} catch (err) {
+				console.warn('[sync] syncToPersist error:', (err as Error)?.message)
 			}
 		}
 
@@ -581,43 +670,41 @@ function ServerSyncBridge({
 			try {
 				const doc = getPageDocumentFromStore(persistSnapshot(), pageId)
 				if (doc) {
-					pushedHashes.add(docStoreHash(doc))
+					const hash = docStoreHash(doc)
+					pushedHashes.add(hash)
+					// Evict oldest entries to prevent unbounded growth
+					if (pushedHashes.size > MAX_PUSHED_HASHES) {
+						const first = pushedHashes.values().next().value
+						if (first !== undefined) pushedHashes.delete(first)
+					}
 					loadSnapshot(syncStore, doc as SnapshotParsed, {
 						forceOverwriteSessionState: false,
 					})
 				}
-			} catch {
-				/* ignore merge errors */
+			} catch (err) {
+				console.warn('[sync] persistToSync error:', (err as Error)?.message)
 			} finally {
 				pushingToSyncRef.current = false
 			}
 		}
 
-		persistToSync()
-		syncToPersist()
+		// Set up listeners BEFORE the initial push so any server responses
+		// that arrive after our push are handled by the listeners.
 		const unlistenSync = syncStore.listen(syncToPersist)
 		const unlistenPersist = persistStore.listen(persistToSync)
+
+		// Push local data to the server.  Do NOT call syncToPersist() eagerly —
+		// the sync store may contain an empty room state from the server that
+		// hasn't received our data yet.  The listener will apply any real server
+		// updates that arrive after the protocol processes our push.
+		persistToSync()
+
 		return () => {
 			applySyncRef.current = null
 			unlistenSync()
 			unlistenPersist()
 		}
 	}, [syncStore, persistStore, pageId, isUserInteractingRef, applySyncRef])
-
-	// Report disconnection
-	const connectionStatus =
-		storeWithStatus.status === 'synced-remote'
-			? storeWithStatus.connectionStatus
-			: storeWithStatus.status
-	useEffect(() => {
-		if (
-			storeWithStatus.status === 'synced-remote' &&
-			storeWithStatus.connectionStatus === 'offline'
-		) {
-			send({ type: 'SERVER_DISCONNECTED' })
-		}
-		// eslint-disable-next-line react-hooks/exhaustive-deps -- connectionStatus is derived from storeWithStatus
-	}, [connectionStatus, send])
 
 	return null
 }
@@ -785,18 +872,24 @@ function App() {
 
 	// ── Derived state ──
 	const editable = isEditable(state)
-	const syncStatus = getSyncStatus(state)
 	const shared = isSharedPage(state)
 	const serverSyncActive = isServerSynced(state)
 
-	// Server sync bridge: mount when in supabaseSync or serverSync and sync server is configured
+	// Server sync bridge: mount during connecting, supabaseSync, or serverSync
+	// so the WebSocket connection starts in parallel with the Supabase fetch.
+	// During connecting, pageId may not be set yet — that's OK, the bridge only
+	// needs it once the sync store is ready (by which time SUPABASE_CONNECTED
+	// will have set it).
 	const needsServerBridge =
 		isSyncServerConfigured() &&
 		(shouldAttemptServerConnection(state) || shouldRunServerSync(state)) &&
-		Boolean(state.context.shareId) &&
-		Boolean(state.context.pageId)
+		Boolean(state.context.shareId)
 
 	const syncUri = state.context.shareId ? buildSyncUri(state.context.shareId) : ''
+
+	// Retry key — bumped to force-remount ServerSyncBridge (fresh useSync)
+	const [serverRetryKey, setServerRetryKey] = useState(0)
+	const bumpServerRetry = useCallback(() => setServerRetryKey((k) => k + 1), [])
 
 	// Cleanup tldraw onMount callbacks
 	useEffect(() => {
@@ -809,19 +902,19 @@ function App() {
 	return (
 		<MachineCtx.Provider value={{ state, send }}>
 			<ConnectionIndicatorProvider
-				status={syncStatus}
 				onRetry={() => send({ type: 'RETRY' })}
 			>
 				{/* Server sync bridge (headless — outside Tldraw) */}
 				{needsServerBridge && (
 					<ServerSyncBridge
-						key={`${state.context.pageId}-${state.context.shareId}`}
+						key={`${state.context.shareId}-${serverRetryKey}`}
 						persistStore={store}
-						pageId={state.context.pageId!}
+						pageId={state.context.pageId ?? ''}
 						syncUri={syncUri}
 						send={send}
 						isUserInteractingRef={isUserInteractingRef}
 						applySyncRef={applySyncRef}
+						onRetry={bumpServerRetry}
 					/>
 				)}
 
