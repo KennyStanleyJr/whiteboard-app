@@ -83,6 +83,7 @@ import { CustomPageMenu } from './CustomPageMenu'
 import { useEditor } from '@tldraw/editor'
 import { createPasteActionOverride } from './pasteJson'
 import { setupRightClickPan } from './rightClickPan'
+import { setupWheelInputModeDetection } from './wheelInputModeDetection'
 import { ConnectionIndicator, ConnectionIndicatorProvider } from './ConnectionIndicator'
 import { SyncThemeToDocument } from './SyncThemeToDocument'
 import type { SnapshotFrom } from 'xstate'
@@ -1126,6 +1127,7 @@ function App() {
 							// inputMode is absent or null the user has never chosen, so we
 							// pick a sensible default based on the device.
 							const TLDRAW_PREFS_KEY = 'TLDRAW_USER_DATA_v3'
+							let wheelInputCleanup: (() => void) | null = null
 							try {
 								const raw = localStorage.getItem(TLDRAW_PREFS_KEY)
 								const saved = raw ? (JSON.parse(raw) as { user?: { inputMode?: string | null } }) : null
@@ -1133,16 +1135,31 @@ function App() {
 									saved?.user?.inputMode === 'trackpad' || saved?.user?.inputMode === 'mouse'
 
 								if (!hasExplicitMode) {
-									// Detect trackpad for mobile and Mac; mouse for Windows/Linux.
-									// Avoid maxTouchPoints — unreliable on Windows (touch screens,
-									// laptops report 2 for trackpad even when using mouse).
+									// Mobile: use platform (no wheel events). Mac/Windows: use wheel
+									// event frequency (CodePen smvilar/JNgZqy): trackpad fires >5
+									// events in 66ms; mouse fires discrete clicks.
 									const isMobile = /iPhone|iPad|iPod|Android/i.test(
 										navigator.userAgent
 									)
-									const isMacLike = /Mac|iPod|iPhone|iPad/.test(navigator.platform)
-									const detected: 'trackpad' | 'mouse' =
-										isMobile || isMacLike ? 'trackpad' : 'mouse'
-									editor.user.updateUserPreferences({ inputMode: detected })
+									const lastAutoDetectedRef: { current: 'trackpad' | 'mouse' } = {
+										current: 'mouse',
+									}
+									if (isMobile) {
+										lastAutoDetectedRef.current = 'trackpad'
+										editor.user.updateUserPreferences({ inputMode: 'trackpad' })
+									} else {
+										const isMacLike = /Mac|iPod|iPhone|iPad/.test(
+											navigator.platform
+										)
+										const initial: 'trackpad' | 'mouse' =
+											isMacLike ? 'trackpad' : 'mouse'
+										lastAutoDetectedRef.current = initial
+										editor.user.updateUserPreferences({ inputMode: initial })
+										wheelInputCleanup = setupWheelInputModeDetection(
+											editor,
+											lastAutoDetectedRef
+										)
+									}
 								}
 							} catch {
 								// localStorage unavailable — leave tldraw defaults
@@ -1182,6 +1199,7 @@ function App() {
 								editorRef.current = null
 								unlistenPage()
 								rightClickPanCleanup()
+								wheelInputCleanup?.()
 							}
 							tldrawOnMountCleanupRef.current = cleanup
 							return cleanup
