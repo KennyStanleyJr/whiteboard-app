@@ -177,19 +177,21 @@ function applyParsedSnapshot(
 
 /**
  * Watches the store's current page and synchronises machine events.
- * On mount: checks URL for ?p=shareId and navigates accordingly.
- * On page change: sends ENTER_SHARED / LEAVE_SHARED.
+ *
+ * Two responsibilities, cleanly separated:
+ *   1. useLayoutEffect — on mount, read URL ?p= and send ENTER_SHARED.
+ *   2. useEffect       — on page *change*, update URL and send events.
+ *
+ * The useEffect never re-reads the URL to override the store; it only
+ * reacts to currentPageId changes.  This prevents the race where the
+ * initial check() sees the localStorage page before the merge completes.
  */
-function usePageTracker(
-	store: TLStore,
-	send: Send,
-	machineStateRef: React.MutableRefObject<MachineState>
-) {
+function usePageTracker(store: TLStore, send: Send) {
 	const sendRef = useRef(send)
 	sendRef.current = send
 	const prevShareId = useRef<string | null>(null)
 
-	// Initial URL check (synchronous-ish)
+	// ① Mount: if URL has ?p=shareId, send ENTER_SHARED immediately.
 	useLayoutEffect(() => {
 		const shareIdFromUrl = getShareIdFromUrl()
 		if (!shareIdFromUrl) return
@@ -205,13 +207,16 @@ function usePageTracker(
 		sendRef.current({ type: 'ENTER_SHARED', shareId: shareIdFromUrl, pageId })
 	}, [store])
 
-	// Ongoing page tracking
+	// ② React to page changes in the store.
 	useEffect(() => {
-		const prevPageIdRef = { current: '' }
-		const check = (): void => {
-			const inst = store.get(TLINSTANCE_ID) as { currentPageId?: string } | undefined
-			if (!inst?.currentPageId) return
-			const pageId = inst.currentPageId
+		// Seed with current page so first listener call only fires on a real change.
+		const inst = store.get(TLINSTANCE_ID) as { currentPageId?: string } | undefined
+		const prevPageIdRef = { current: inst?.currentPageId ?? '' }
+
+		const onPageChange = (): void => {
+			const cur = store.get(TLINSTANCE_ID) as { currentPageId?: string } | undefined
+			if (!cur?.currentPageId) return
+			const pageId = cur.currentPageId
 			if (prevPageIdRef.current === pageId) return
 			prevPageIdRef.current = pageId
 
@@ -223,12 +228,6 @@ function usePageTracker(
 					sendRef.current({ type: 'ENTER_SHARED', shareId, pageId })
 				}
 			} else {
-				// Don't leave when shareId is in URL but not in map yet — we're
-				// loading (first visit). stateRef can be stale here since useEffect
-				// runs before the re-render from ENTER_SHARED.
-				const shareIdFromUrl = getShareIdFromUrl()
-				if (shareIdFromUrl && !getPageIdForShareId(shareIdFromUrl)) return
-				if (machineIsConnecting(machineStateRef.current)) return
 				clearShareIdFromUrl()
 				if (prevShareId.current) {
 					prevShareId.current = null
@@ -236,9 +235,14 @@ function usePageTracker(
 				}
 			}
 		}
-		check()
-		return store.listen(check)
-	}, [store, machineStateRef])
+
+		// If useLayoutEffect already handled a URL share, skip the initial sync.
+		// The merge will update currentPageId, which fires the listener.
+		// Otherwise, sync now (e.g. localStorage loaded a shared page with no URL).
+		if (!prevShareId.current) onPageChange()
+
+		return store.listen(onPageChange)
+	}, [store])
 }
 
 /**
@@ -449,7 +453,8 @@ function mergeRemotePageIntoStore(
 		schema?: unknown
 	}
 
-	// Place new page at end of list
+	// Place new page at end only when first adding; keep index when updating existing.
+	const isNewPage = !(targetPageId in (localSnap.store ?? {}))
 	const localPages = (Object.entries(localSnap.store ?? {}) as [string, { typeName?: string; index?: string }][])
 		.filter(([, r]) => r?.typeName === 'page')
 		.map(([id, r]) => ({ id, index: (r.index ?? 'a0') as IndexKey }))
@@ -464,9 +469,9 @@ function mergeRemotePageIntoStore(
 		const newId = id === remotePageId ? targetPageId : id
 		const index =
 			id === remotePageId
-				? needRemap
-					? (localSnap.store?.[targetPageId] as { index?: string })?.index ?? base.index
-					: endIndex
+				? isNewPage
+					? endIndex
+					: (localSnap.store?.[targetPageId] as { index?: string })?.index ?? (base.index as string)
 				: base.index
 		remoteRecords[newId] = id === remotePageId ? { ...base, id: newId, index } : base
 	}
@@ -1024,7 +1029,7 @@ function App() {
 	}, [send])
 
 	// ── Hook: page tracking → machine events ──
-	usePageTracker(store, send, stateRef)
+	usePageTracker(store, send)
 
 	// ── Hook: persistence (always active) ──
 	usePersistence(store, gridRef, stateRef)
