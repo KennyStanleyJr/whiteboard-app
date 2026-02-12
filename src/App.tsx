@@ -1133,11 +1133,15 @@ function App() {
 									saved?.user?.inputMode === 'trackpad' || saved?.user?.inputMode === 'mouse'
 
 								if (!hasExplicitMode) {
-									// Only use platform for detection: maxTouchPoints is unreliable on
-									// Windows (touchpads, touch screens, or bugs report > 0).
+									// Detect trackpad for mobile and Mac; mouse for Windows/Linux.
+									// Avoid maxTouchPoints — unreliable on Windows (touch screens,
+									// laptops report 2 for trackpad even when using mouse).
+									const isMobile = /iPhone|iPad|iPod|Android/i.test(
+										navigator.userAgent
+									)
 									const isMacLike = /Mac|iPod|iPhone|iPad/.test(navigator.platform)
 									const detected: 'trackpad' | 'mouse' =
-										isMacLike ? 'trackpad' : 'mouse'
+										isMobile || isMacLike ? 'trackpad' : 'mouse'
 									editor.user.updateUserPreferences({ inputMode: detected })
 								}
 							} catch {
