@@ -100,6 +100,10 @@ export function getPageIdForShareId(shareId: string): string | undefined {
 
 export function setShareIdForPage(pageId: string, shareId: string): void {
 	const map = loadShareMap()
+	// Remove any stale mapping for this shareId so only one pageId maps to it.
+	for (const [pid, sid] of map) {
+		if (sid === shareId && pid !== pageId) map.delete(pid)
+	}
 	map.set(pageId, shareId)
 	saveShareMap(map)
 }

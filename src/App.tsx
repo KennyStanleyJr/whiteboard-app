@@ -444,6 +444,13 @@ function mergeRemotePageIntoStore(
 	const remotePageId = remotePageEntry?.id
 	if (!remotePageId) return
 
+	// Always resolve from share map to prevent duplicates.
+	// The caller may pass empty pageId on first visit, but the share map
+	// might already have a mapping from a previous session.
+	if (!existingPageId) {
+		existingPageId = getPageIdForShareId(shareId) ?? ''
+	}
+
 	// If we already have a local page for this share, remap remote to that ID
 	const needRemap = Boolean(existingPageId && existingPageId !== remotePageId)
 	const targetPageId = needRemap ? existingPageId : remotePageId
@@ -1140,10 +1147,6 @@ function App() {
 							if (!isEditable(stateRef.current)) {
 								store.update(TLINSTANCE_ID, (i) => ({ ...i, isReadonly: true }))
 							}
-
-							// If URL has shareId, set share map for this page
-							const shareId = state.context.shareId
-							if (shareId) setShareIdForPage(editor.getCurrentPageId(), shareId)
 
 							// Zoom to fit
 							const zoomToFitWithLayout = (): void => {
