@@ -147,8 +147,22 @@ function CreateLinkMenuItem() {
 				setShareIdInUrl(result.id)
 				send({ type: 'ENTER_SHARED', shareId: result.id, pageId })
 				const url = buildShareUrl(result.id)
-				if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(url)
-				toasts.addToast({ title: 'Link created', severity: 'success' })
+
+				// Clipboard write may fail on Safari (user-gesture timeout after
+				// awaits) — treat it as non-fatal since the share itself succeeded.
+				let clipboardOk = false
+				if (navigator.clipboard?.writeText) {
+					try {
+						await navigator.clipboard.writeText(url)
+						clipboardOk = true
+					} catch {
+						// Safari NotAllowedError — silently ignore
+					}
+				}
+				toasts.addToast({
+					title: clipboardOk ? 'Link created' : 'Link created — copy the URL from the address bar',
+					severity: 'success',
+				})
 			} catch (err) {
 				toasts.removeToast(loadingId)
 				toasts.addToast({

@@ -89,9 +89,15 @@ function SharePageButton({ pageId }: { pageId: string }) {
 			if (!shareId) return
 			const url = buildShareUrl(shareId)
 			if (navigator.clipboard?.writeText) {
-				void navigator.clipboard.writeText(url).then(() => {
-					toasts.addToast({ title: 'Link copied', severity: 'success' })
-				})
+				void navigator.clipboard.writeText(url).then(
+					() => {
+						toasts.addToast({ title: 'Link copied', severity: 'success' })
+					},
+					() => {
+						// Safari may deny clipboard outside direct user gesture
+						toasts.addToast({ title: 'Could not copy link', severity: 'warning' })
+					}
+				)
 			}
 		},
 		[shareId, toasts]
