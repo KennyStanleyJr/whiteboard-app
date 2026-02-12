@@ -92,6 +92,7 @@ import { MachineCtx } from './MachineContext'
 const licenseKey = import.meta.env.VITE_TLDRAW_LICENSE_KEY ?? undefined
 const SYNC_APPLY_IDLE_MS = 400
 const SERVER_RETRY_INTERVAL_MS = 10_000
+const SUPABASE_POLL_MS = 3_000
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -459,8 +460,13 @@ function mergeRemotePageIntoStore(
 const SUPABASE_FAILURE_THRESHOLD = 3
 
 /**
- * Supabase direct sync — pushes store changes to Supabase.
+ * Supabase direct sync — pushes store changes to Supabase AND polls for
+ * remote changes written by other clients (e.g. the sync server).
  * Only active when machine is in shared.supabaseSync.
+ *
+ * Write path: throttled push on every store change.
+ * Poll path:  periodic fetch + incremental merge (skipped while we're
+ *             actively writing to avoid echo / stale-read conflicts).
  */
 function useSupabaseSync(
 	store: TLStore,
@@ -468,6 +474,11 @@ function useSupabaseSync(
 	editorRef: React.MutableRefObject<TldrawEditor | null>,
 	send: Send
 ) {
+	// Timestamp of our last successful Supabase write — used by the poll
+	// to skip fetches that would only return our own data.
+	const lastWriteTimeRef = useRef(0)
+
+	// ── Write: push store changes to Supabase (throttled) ──────────────
 	useEffect(() => {
 		let consecutiveFailures = 0
 
@@ -481,6 +492,7 @@ function useSupabaseSync(
 				.then((doc) => (doc ? saveSharedPage(shareId, doc) : undefined))
 				.then(() => {
 					consecutiveFailures = 0
+					lastWriteTimeRef.current = Date.now()
 				})
 				.catch((err: unknown) => {
 					// Abort errors are expected during state transitions — ignore them
@@ -499,6 +511,97 @@ function useSupabaseSync(
 			unlisten()
 		}
 	}, [store, stateRef, editorRef, send])
+
+	// ── Poll: fetch remote changes from Supabase and merge ─────────────
+	useEffect(() => {
+		let active = true
+
+		const poll = async (): Promise<void> => {
+			const st = stateRef.current
+			if (!shouldRunSupabaseSync(st)) return
+			const shareId = st.context.shareId
+			const pageId = st.context.pageId
+			if (!shareId || !pageId) return
+
+			// Skip if we wrote recently — avoids echoing our own writes and
+			// prevents merging stale data over not-yet-pushed local edits.
+			if (Date.now() - lastWriteTimeRef.current < SUPABASE_POLL_MS) return
+
+			try {
+				const remote = await loadSharedPage(shareId)
+				if (!active || !remote?.document?.store) return
+
+				// Re-check state after async gap (may have transitioned away)
+				if (!shouldRunSupabaseSync(stateRef.current)) return
+
+				// Find the page record in the remote snapshot
+				const remotePageEntry = Object.values(remote.document.store).find(
+					(r): r is { typeName: string; id: string } =>
+						typeof r === 'object' &&
+						r !== null &&
+						'typeName' in r &&
+						(r as { typeName: string }).typeName === 'page'
+				)
+				const remotePageId = remotePageEntry?.id
+				if (!remotePageId) return
+
+				// Remap remote page ID to local page ID if needed
+				const incoming =
+					remotePageId !== pageId
+						? remapDocumentPageId(remote, remotePageId, pageId)
+						: remote
+
+				// Compare with local page document — skip if identical
+				const persistSnap = store.getStoreSnapshot('document') as {
+					store: Record<string, unknown>
+					schema?: unknown
+				}
+				const localDoc = getPageDocumentFromStore(persistSnap, pageId)
+				if (localDoc && docContentEqual(localDoc, incoming)) return
+
+				// Incremental merge: only touch records that actually changed.
+				// Uses mergeRemoteChanges so tldraw keeps unchanged shapes stable.
+				const currentPageIds = new Set(getPageRecordIds(persistSnap, pageId))
+				const incomingStore = incoming.document?.store ?? {}
+				const currentStore = persistSnap.store ?? {}
+
+				const toPut: unknown[] = []
+				const toRemoveIds: string[] = []
+
+				for (const [id, rec] of Object.entries(incomingStore)) {
+					const existing = currentStore[id]
+					if (!existing || JSON.stringify(existing) !== JSON.stringify(rec)) {
+						toPut.push(rec)
+					}
+				}
+
+				for (const id of currentPageIds) {
+					if (!(id in incomingStore)) toRemoveIds.push(id)
+				}
+
+				if (toPut.length > 0 || toRemoveIds.length > 0) {
+					store.mergeRemoteChanges(() => {
+						if (toRemoveIds.length > 0) {
+							store.remove(
+								toRemoveIds as Parameters<TLStore['remove']>[0]
+							)
+						}
+						if (toPut.length > 0) {
+							store.put(toPut as Parameters<TLStore['put']>[0])
+						}
+					})
+				}
+			} catch (err) {
+				console.warn('[supabase-poll] Error polling for changes:', (err as Error)?.message)
+			}
+		}
+
+		const id = setInterval(() => void poll(), SUPABASE_POLL_MS)
+		return () => {
+			active = false
+			clearInterval(id)
+		}
+	}, [store, stateRef])
 }
 
 // ── Server sync bridge (component — uses useSync hook) ─────────────────────────
