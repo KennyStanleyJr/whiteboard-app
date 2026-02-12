@@ -221,9 +221,11 @@ function usePageTracker(
 					sendRef.current({ type: 'ENTER_SHARED', shareId, pageId })
 				}
 			} else {
-				// Don't leave while connecting — we're loading shared page from URL.
-				// The merge will add the page and set currentPageId; leave logic
-				// would run prematurely before useSharedPageConnect completes.
+				// Don't leave when shareId is in URL but not in map yet — we're
+				// loading (first visit). stateRef can be stale here since useEffect
+				// runs before the re-render from ENTER_SHARED.
+				const shareIdFromUrl = getShareIdFromUrl()
+				if (shareIdFromUrl && !getPageIdForShareId(shareIdFromUrl)) return
 				if (machineIsConnecting(machineStateRef.current)) return
 				clearShareIdFromUrl()
 				if (prevShareId.current) {
