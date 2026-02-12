@@ -81,7 +81,6 @@ import { CustomPageMenu } from './CustomPageMenu'
 import { useEditor } from '@tldraw/editor'
 import { createPasteActionOverride } from './pasteJson'
 import { setupRightClickPan } from './rightClickPan'
-import { setupShiftScrollPan } from './shiftScrollPan'
 import { ConnectionIndicator, ConnectionIndicatorProvider } from './ConnectionIndicator'
 import { SyncThemeToDocument } from './SyncThemeToDocument'
 import type { SnapshotFrom } from 'xstate'
@@ -1053,18 +1052,34 @@ function App() {
 							PageMenu: CustomPageMenu,
 							...SYNC_PAGE_COMPONENTS,
 						}}
-						cameraOptions={{ zoomSpeed: 1.5, wheelBehavior: 'zoom' }}
 						onMount={(editor) => {
 							editorRef.current = editor
 
-							// Apply theme; force inputMode to null so the configured
-							// wheelBehavior ('zoom') is always used — tldraw overrides
-							// wheelBehavior to 'pan' when inputMode is 'trackpad'.
+							// Apply theme
 							const cached = getTheme()
-							editor.user.updateUserPreferences({
-								colorScheme: cached,
-								inputMode: null,
-							})
+							editor.user.updateUserPreferences({ colorScheme: cached })
+
+							// Auto-detect input mode if the user hasn't explicitly set one.
+							// tldraw persists preferences under TLDRAW_USER_DATA_v3; when
+							// inputMode is absent or null the user has never chosen, so we
+							// pick a sensible default based on the device.
+							const TLDRAW_PREFS_KEY = 'TLDRAW_USER_DATA_v3'
+							try {
+								const raw = localStorage.getItem(TLDRAW_PREFS_KEY)
+								const saved = raw ? (JSON.parse(raw) as { user?: { inputMode?: string | null } }) : null
+								const hasExplicitMode =
+									saved?.user?.inputMode === 'trackpad' || saved?.user?.inputMode === 'mouse'
+
+								if (!hasExplicitMode) {
+									const isMacLike = /Mac|iPod|iPhone|iPad/.test(navigator.platform)
+									const hasTouchPoints = navigator.maxTouchPoints > 0
+									const detected: 'trackpad' | 'mouse' =
+										isMacLike || hasTouchPoints ? 'trackpad' : 'mouse'
+									editor.user.updateUserPreferences({ inputMode: detected })
+								}
+							} catch {
+								// localStorage unavailable — leave tldraw defaults
+							}
 
 							// If on a shared page, apply readonly based on current machine state
 							if (!isEditable(stateRef.current)) {
@@ -1099,12 +1114,10 @@ function App() {
 							})
 
 							const rightClickPanCleanup = setupRightClickPan(editor)
-							const shiftScrollPanCleanup = setupShiftScrollPan(editor)
 
 							const cleanup = () => {
 								editorRef.current = null
 								unlistenPage()
-								shiftScrollPanCleanup()
 								rightClickPanCleanup()
 							}
 							tldrawOnMountCleanupRef.current = cleanup
