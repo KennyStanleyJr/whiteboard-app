@@ -89,10 +89,11 @@ export function usePageTracker(
 					sendEnterShared(sendRef, prevShareId, shareId)
 				}
 			} else {
-				// Page not in share map. If we came from shared, leave and keep URL for read-only.
+				// Page not in share map. If we came from shared, leave and clear URL.
 				if (prevShareId.current) {
 					prevShareId.current = null
 					sendRef.current({ type: 'LEAVE_SHARED' })
+					clearShareIdFromUrl()
 				} else {
 					const shareIdFromUrl = getShareIdFromUrl()
 					if (shareIdFromUrl) {
