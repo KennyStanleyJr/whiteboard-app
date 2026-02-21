@@ -19,7 +19,7 @@ import {
 import { syncGridRef, applyParsedSnapshot } from '../lib/gridSnapshot'
 import type { GridRef } from '../lib/gridSnapshot'
 import type { SnapshotParsed } from '../lib/gridSnapshot'
-import { isServerSynced, isConnecting as machineIsConnecting } from '../machine'
+import { isSharedPage, isConnecting as machineIsConnecting } from '../machine'
 import type { SnapshotFrom } from 'xstate'
 import { whiteboardMachine } from '../machine'
 
@@ -99,7 +99,7 @@ export function usePersistence(
 
 		const applyFromStorage = (): void => {
 			const ms = machineStateRef.current
-			if (isServerSynced(ms) || machineIsConnecting(ms)) return
+			if (isSharedPage(ms)) return
 			const raw = loadStorageSnapshot()
 			if (!raw) return
 			try {

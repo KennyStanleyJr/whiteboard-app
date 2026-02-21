@@ -63,10 +63,12 @@ export function usePageTracker(store: TLStore, send: Send): void {
 					sendRef.current({ type: 'ENTER_SHARED', shareId, pageId })
 				}
 			} else {
-				clearShareIdFromUrl()
 				if (prevShareId.current) {
 					prevShareId.current = null
 					sendRef.current({ type: 'LEAVE_SHARED' })
+					// Keep URL with shareId so we can detect stale local state and enforce read-only
+				} else {
+					clearShareIdFromUrl()
 				}
 			}
 		}

@@ -21,6 +21,7 @@ import {
 	loadSnapshot as loadStorageSnapshot,
 } from '../persistence'
 import { buildSyncUri, isSyncServerConfigured } from '../sharePage'
+import { getShareIdFromUrl } from '../persistence'
 import { applyParsedSnapshot, type GridRef, type SnapshotParsed } from '../lib/gridSnapshot'
 import { usePageTracker } from './usePageTracker'
 import { usePersistence } from './usePersistence'
@@ -95,7 +96,9 @@ export function useWhiteboardOrchestration(): WhiteboardOrchestrationResult {
 		console.log(`[machine] ${s} | share=${shareId ?? '—'} page=${pageId ?? '—'} supabase=${supabaseReady}`)
 	}, [state])
 
-	const editable = isEditable(state)
+	const editable =
+		isEditable(state) &&
+		!(state.matches('local') && getShareIdFromUrl())
 	const shared = isSharedPage(state)
 	const serverSyncActive = isServerSynced(state)
 
