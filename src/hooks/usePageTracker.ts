@@ -73,8 +73,7 @@ export function usePageTracker(
 	}, [stateRef])
 
 	useEffect(() => {
-		const inst = store.get(TLINSTANCE_ID) as { currentPageId?: string } | undefined
-		const prevPageIdRef = { current: inst?.currentPageId ?? '' }
+		const prevPageIdRef = { current: '' }
 
 		const onPageChange = (): void => {
 			const cur = store.get(TLINSTANCE_ID) as { currentPageId?: string } | undefined
@@ -91,12 +90,19 @@ export function usePageTracker(
 				}
 			} else {
 				// Page not in share map. If we came from shared, leave and keep URL for read-only.
-				// If URL has shareId, don't clear — we may be loading that page and share map isn't ready.
 				if (prevShareId.current) {
 					prevShareId.current = null
 					sendRef.current({ type: 'LEAVE_SHARED' })
-				} else if (!getShareIdFromUrl()) {
-					clearShareIdFromUrl()
+				} else {
+					const shareIdFromUrl = getShareIdFromUrl()
+					if (shareIdFromUrl) {
+						// URL has shareId but current page isn't in share map — we may be loading
+						// that shared page (e.g. current page in localStorage matches it). Send
+						// ENTER_SHARED to fetch and sync.
+						sendEnterShared(sendRef, prevShareId, shareIdFromUrl)
+					} else {
+						clearShareIdFromUrl()
+					}
 				}
 			}
 		}
