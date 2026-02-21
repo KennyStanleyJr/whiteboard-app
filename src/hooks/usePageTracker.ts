@@ -1,11 +1,12 @@
 /**
  * Watches the store's current page and synchronizes machine events.
  *
- * Two responsibilities, cleanly separated:
+ * Three responsibilities:
  *   1. useLayoutEffect — on mount, read URL and send ENTER_SHARED.
- *   2. useEffect       — on page *change*, update URL and send events.
+ *   2. useEffect       — deferred fallback: if still local with share URL, send ENTER_SHARED.
+ *   3. useEffect       — on page *change*, update URL and send events.
  *
- * The useEffect never re-reads the URL to override the store; it only
+ * The page-change effect never re-reads the URL to override the store; it only
  * reacts to currentPageId changes.  This prevents the race where the
  * initial check() sees the localStorage page before the merge completes.
  */
@@ -21,10 +22,27 @@ import {
 	getPageIdForShareId,
 } from '../persistence'
 import type { WhiteboardEvent } from '../machine'
+import type { SnapshotFrom } from 'xstate'
+import type { whiteboardMachine } from '../machine'
 
 type Send = (event: WhiteboardEvent) => void
+type MachineState = SnapshotFrom<typeof whiteboardMachine>
 
-export function usePageTracker(store: TLStore, send: Send): void {
+function sendEnterShared(
+	sendRef: React.MutableRefObject<Send>,
+	prevShareIdRef: React.MutableRefObject<string | null>,
+	shareId: string
+): void {
+	const pageId = getPageIdForShareId(shareId) ?? ''
+	prevShareIdRef.current = shareId
+	sendRef.current({ type: 'ENTER_SHARED', shareId, pageId })
+}
+
+export function usePageTracker(
+	store: TLStore,
+	send: Send,
+	stateRef: React.MutableRefObject<MachineState>
+): void {
 	const sendRef = useRef(send)
 	sendRef.current = send
 	const prevShareId = useRef<string | null>(null)
@@ -40,9 +58,19 @@ export function usePageTracker(store: TLStore, send: Send): void {
 				/* page may not exist in store yet */
 			}
 		}
-		prevShareId.current = shareIdFromUrl
-		sendRef.current({ type: 'ENTER_SHARED', shareId: shareIdFromUrl, pageId })
+		sendEnterShared(sendRef, prevShareId, shareIdFromUrl)
 	}, [store])
+
+	useEffect(() => {
+		// Run after paint so the URL is stable; catches cases where useLayoutEffect ran too early.
+		const id = setTimeout(() => {
+			if (!stateRef.current.matches('local')) return
+			const shareId = getShareIdFromUrl()
+			if (!shareId) return
+			sendEnterShared(sendRef, prevShareId, shareId)
+		}, 0)
+		return () => clearTimeout(id)
+	}, [stateRef])
 
 	useEffect(() => {
 		const inst = store.get(TLINSTANCE_ID) as { currentPageId?: string } | undefined
@@ -59,15 +87,15 @@ export function usePageTracker(store: TLStore, send: Send): void {
 			if (shareId) {
 				setShareIdInUrl(shareId)
 				if (prevShareId.current !== shareId) {
-					prevShareId.current = shareId
-					sendRef.current({ type: 'ENTER_SHARED', shareId, pageId })
+					sendEnterShared(sendRef, prevShareId, shareId)
 				}
 			} else {
+				// Page not in share map. If we came from shared, leave and keep URL for read-only.
+				// If URL has shareId, don't clear — we may be loading that page and share map isn't ready.
 				if (prevShareId.current) {
 					prevShareId.current = null
 					sendRef.current({ type: 'LEAVE_SHARED' })
-					// Keep URL with shareId so we can detect stale local state and enforce read-only
-				} else {
+				} else if (!getShareIdFromUrl()) {
 					clearShareIdFromUrl()
 				}
 			}

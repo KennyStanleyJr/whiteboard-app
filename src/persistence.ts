@@ -140,31 +140,37 @@ export function setTheme(theme: 'dark' | 'light'): void {
 // ── URL utilities ──────────────────────────────────────────────────────────────
 // Shared pages use path-based URLs: /id (e.g. /abc123) instead of ?p=id.
 
+function getBasePath(): string {
+	return (import.meta.env?.BASE_URL ?? '/').replace(/\/$/, '') || ''
+}
+
 export function getShareIdFromUrl(): string | null {
 	if (typeof window === 'undefined') return null
 	const pathname = window.location.pathname || '/'
-	// Single segment path like /abc123 → share id
-	const segment = pathname.replace(/^\/+|\/+$/g, '').split('/')[0]
+	const base = getBasePath()
+	const pathWithoutBase =
+		base && pathname.startsWith(base) ? pathname.slice(base.length) || '/' : pathname
+	const segment = pathWithoutBase.replace(/^\/+|\/+$/g, '').split('/')[0]
 	return segment?.trim() || null
 }
 
 export function setShareIdInUrl(id: string): void {
 	if (typeof window === 'undefined') return
-	const base = (import.meta.env?.BASE_URL ?? '/').replace(/\/$/, '') || ''
+	const base = getBasePath()
 	const path = `${base}/${encodeURIComponent(id)}`
 	window.history.replaceState({}, '', `${window.location.origin}${path}`)
 }
 
 export function clearShareIdFromUrl(): void {
 	if (typeof window === 'undefined') return
-	const base = (import.meta.env?.BASE_URL ?? '/').replace(/\/$/, '') || ''
+	const base = getBasePath()
 	const path = base || '/'
 	window.history.replaceState({}, '', `${window.location.origin}${path}`)
 }
 
 export function buildShareUrl(id: string): string {
 	if (typeof window === 'undefined') return `/${encodeURIComponent(id)}`
-	const base = (import.meta.env?.BASE_URL ?? '/').replace(/\/$/, '') || ''
+	const base = getBasePath()
 	return `${window.location.origin}${base}/${encodeURIComponent(id)}`
 }
 

@@ -31,6 +31,11 @@ import type { SnapshotFrom } from 'xstate'
 
 type MachineState = SnapshotFrom<typeof whiteboardMachine>
 
+/** Local state but URL has shareId — stale after shared→local transition; enforce read-only. */
+function isStaleLocalState(state: MachineState): boolean {
+	return state.matches('local') && Boolean(getShareIdFromUrl())
+}
+
 export interface WhiteboardOrchestrationResult {
 	store: ReturnType<typeof createTLStore>
 	state: MachineState
@@ -85,20 +90,12 @@ export function useWhiteboardOrchestration(): WhiteboardOrchestrationResult {
 		})
 	}, [send])
 
-	usePageTracker(store, send)
+	usePageTracker(store, send, stateRef)
 	usePersistence(store, gridRef, stateRef)
 	useSharedPageConnect(store, state, send, gridRef)
 	useSupabaseSync(store, stateRef, editorRef, send)
 
-	useEffect(() => {
-		const s = typeof state.value === 'string' ? state.value : JSON.stringify(state.value)
-		const { shareId, pageId, supabaseReady } = state.context
-		console.log(`[machine] ${s} | share=${shareId ?? '—'} page=${pageId ?? '—'} supabase=${supabaseReady}`)
-	}, [state])
-
-	const editable =
-		isEditable(state) &&
-		!(state.matches('local') && getShareIdFromUrl())
+	const editable = isEditable(state) && !isStaleLocalState(state)
 	const shared = isSharedPage(state)
 	const serverSyncActive = isServerSynced(state)
 
