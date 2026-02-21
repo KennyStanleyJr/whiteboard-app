@@ -2,26 +2,12 @@
  * Page menu with share icon for pages linked to a shared URL.
  */
 
-import type { IndexKey } from '@tldraw/utils'
-import {
-	getIndexAbove,
-	getIndexBelow,
-	getIndexBetween,
-} from '@tldraw/utils'
-import {
-	PageRecordType,
-	TLPageId,
-	releasePointerCapture,
-	setPointerCapture,
-	stopEventPropagation,
-	tlenv,
-	useEditor,
-	useValue,
-} from '@tldraw/editor'
-import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import type { TLPageId } from '@tldraw/tlschema'
+import { stopEventPropagation, tlenv, useEditor, useValue } from '@tldraw/editor'
+import { memo, useCallback, useEffect, useState } from 'react'
 import {
 	PageItemInput,
-	PageItemSubmenu,
+	PageRecordType,
 	PORTRAIT_BREAKPOINT,
 	TldrawUiButton,
 	TldrawUiButtonCheck,
@@ -33,90 +19,15 @@ import {
 	useBreakpoint,
 	useMenuIsOpen,
 	useReadonly,
-	useToasts,
 	useTranslation,
 	useUiEvents,
 } from 'tldraw'
-import { buildShareUrl, getShareIdForPage } from './persistence'
-
-function buildSortablePositions(
-	pages: Array<{ id: string }>,
-	itemHeight: number,
-	isSelected = false
-): Record<string, { y: number; offsetY: number; isSelected: boolean }> {
-	return Object.fromEntries(
-		pages.map((page, i) => [
-			page.id,
-			{ y: i * itemHeight, offsetY: 0, isSelected },
-		])
-	)
-}
-
-function onMovePage(
-	editor: ReturnType<typeof useEditor>,
-	id: TLPageId,
-	from: number,
-	to: number,
-	trackEvent: ReturnType<typeof useUiEvents>
-): void {
-	const pages = editor.getPages()
-	const below = from > to ? pages[to - 1] : pages[to]
-	const above = from > to ? pages[to] : pages[to + 1]
-	let index: IndexKey
-	if (below && !above) {
-		index = getIndexAbove(below.index)
-	} else if (!below && above) {
-		index = getIndexBelow(pages[0].index)
-	} else if (below && above) {
-		index = getIndexBetween(below.index, above.index)
-	} else {
-		index = getIndexAbove(null)
-	}
-	if (index !== pages[from].index) {
-		editor.markHistoryStoppingPoint('moving page')
-		editor.updatePage({ id, index })
-		trackEvent('move-page', { source: 'page-menu' })
-	}
-}
-
-/** Clickable share button: copies share URL to clipboard. Renders only when page is shared. */
-function SharePageButton({ pageId }: { pageId: string }) {
-	const shareId = getShareIdForPage(pageId)
-	const toasts = useToasts()
-	const handleClick = useCallback(
-		(e: React.MouseEvent) => {
-			e.stopPropagation()
-			if (!shareId) return
-			const url = buildShareUrl(shareId)
-			if (navigator.clipboard?.writeText) {
-				void navigator.clipboard.writeText(url).then(
-					() => {
-						toasts.addToast({ title: 'Link copied', severity: 'success' })
-					},
-					() => {
-						// Safari may deny clipboard outside direct user gesture
-						toasts.addToast({ title: 'Could not copy link', severity: 'warning' })
-					}
-				)
-			}
-		},
-		[shareId, toasts]
-	)
-
-	if (!shareId) return null
-
-	return (
-		<TldrawUiButton
-			type="icon"
-			className="tlui-page_menu__item__share"
-			onClick={handleClick}
-			data-testid="page-menu.copy-share-link"
-			title="Copy share link"
-		>
-			<TldrawUiButtonIcon icon="link" small />
-		</TldrawUiButton>
-	)
-}
+import { useSortablePages } from './hooks/useSortablePages'
+import {
+	OpenSharedLinkPopover,
+	SharePageButton,
+	CustomPageItemSubmenu,
+} from './components/page-menu'
 
 export const CustomPageMenu = memo(function CustomPageMenu() {
 	const editor = useEditor()
@@ -130,8 +41,6 @@ export const CustomPageMenu = memo(function CustomPageMenu() {
 	const [isOpen, onOpenChange] = useMenuIsOpen('page-menu', handleOpenChange)
 
 	const ITEM_HEIGHT = 36
-
-	const rSortableContainer = useRef<HTMLDivElement>(null)
 
 	const pages = useValue('pages', () => editor.getPages(), [editor])
 	const currentPage = useValue('currentPage', () => editor.getCurrentPage(), [editor])
@@ -173,22 +82,14 @@ export const CustomPageMenu = memo(function CustomPageMenu() {
 		setIsEditing((s) => !s)
 	}, [isReadonlyMode])
 
-	const rMutables = useRef({
-		isPointing: false,
-		status: 'idle' as 'idle' | 'pointing' | 'dragging',
-		pointing: null as { id: string; index: number } | null,
-		startY: 0,
-		startIndex: 0,
-		dragIndex: 0,
-	})
-
-	const [sortablePositionItems, setSortablePositionItems] = useState(() =>
-		buildSortablePositions(pages, ITEM_HEIGHT)
-	)
-
-	useLayoutEffect(() => {
-		setSortablePositionItems(buildSortablePositions(pages, ITEM_HEIGHT))
-	}, [ITEM_HEIGHT, pages])
+	const {
+		sortablePositionItems,
+		rSortableContainer,
+		handlePointerDown,
+		handlePointerMove,
+		handlePointerUp,
+		handleKeyDown,
+	} = useSortablePages(pages, ITEM_HEIGHT, editor, trackEvent as (name: string, data?: unknown) => void)
 
 	useEffect(() => {
 		if (!isOpen) return
@@ -213,125 +114,7 @@ export const CustomPageMenu = memo(function CustomPageMenu() {
 				}
 			}
 		})
-	}, [ITEM_HEIGHT, currentPageId, isOpen, editor])
-
-	const handlePointerDown = useCallback(
-		(e: React.PointerEvent<HTMLButtonElement>) => {
-			const { clientY, currentTarget } = e
-			const {
-				dataset: { id, index },
-			} = currentTarget
-
-			if (!id || !index) return
-
-			const mut = rMutables.current
-
-			setPointerCapture(e.currentTarget, e)
-
-			mut.status = 'pointing'
-			mut.pointing = { id, index: +index }
-			const current = sortablePositionItems[id]
-			const dragY = current.y
-
-			mut.startY = clientY
-			mut.startIndex = Math.max(0, Math.min(Math.round(dragY / ITEM_HEIGHT), pages.length - 1))
-		},
-		[ITEM_HEIGHT, pages.length, sortablePositionItems]
-	)
-
-	const handlePointerMove = useCallback(
-		(e: React.PointerEvent<HTMLButtonElement>) => {
-			const mut = rMutables.current
-			if (mut.status === 'pointing') {
-				const { clientY } = e
-				const offset = clientY - mut.startY
-				if (Math.abs(offset) > 5) {
-					mut.status = 'dragging'
-				}
-			}
-
-			if (mut.status === 'dragging') {
-				const { clientY } = e
-				const offsetY = clientY - mut.startY
-				const current = sortablePositionItems[mut.pointing!.id]
-
-				const { startIndex, pointing } = mut
-				const dragY = current.y + offsetY
-				const dragIndex = Math.max(0, Math.min(Math.round(dragY / ITEM_HEIGHT), pages.length - 1))
-
-				const next = { ...sortablePositionItems }
-				next[pointing!.id] = {
-					y: current.y,
-					offsetY,
-					isSelected: true,
-				}
-
-				if (dragIndex !== mut.dragIndex) {
-					mut.dragIndex = dragIndex
-
-					for (let i = 0; i < pages.length; i++) {
-						const item = pages[i]
-						if (item.id === mut.pointing!.id) {
-							continue
-						}
-
-						let { y } = next[item.id]
-
-						if (dragIndex === startIndex) {
-							y = i * ITEM_HEIGHT
-						} else if (dragIndex < startIndex) {
-							if (dragIndex <= i && i < startIndex) {
-								y = (i + 1) * ITEM_HEIGHT
-							} else {
-								y = i * ITEM_HEIGHT
-							}
-						} else if (dragIndex > startIndex) {
-							if (dragIndex >= i && i > startIndex) {
-								y = (i - 1) * ITEM_HEIGHT
-							} else {
-								y = i * ITEM_HEIGHT
-							}
-						}
-
-						if (y !== next[item.id].y) {
-							next[item.id] = { y, offsetY: 0, isSelected: true }
-						}
-					}
-				}
-
-				setSortablePositionItems(next)
-			}
-		},
-		[ITEM_HEIGHT, pages, sortablePositionItems]
-	)
-
-	const handlePointerUp = useCallback(
-		(e: React.PointerEvent<HTMLButtonElement>) => {
-			const mut = rMutables.current
-
-			if (mut.status === 'dragging') {
-				const { id, index } = mut.pointing!
-				onMovePage(editor, id as TLPageId, index, mut.dragIndex, trackEvent)
-			}
-
-			releasePointerCapture(e.currentTarget, e)
-			mut.status = 'idle'
-		},
-		[editor, trackEvent]
-	)
-
-	const handleKeyDown = useCallback(
-		(e: React.KeyboardEvent<HTMLButtonElement>) => {
-			const mut = rMutables.current
-			if (e.key === 'Escape') {
-				if (mut.status === 'dragging') {
-					setSortablePositionItems(buildSortablePositions(pages, ITEM_HEIGHT))
-				}
-				mut.status = 'idle'
-			}
-		},
-		[ITEM_HEIGHT, pages]
-	)
+	}, [ITEM_HEIGHT, currentPageId, isOpen, editor, rSortableContainer])
 
 	const handleCreatePageClick = useCallback(() => {
 		if (isReadonlyMode) return
@@ -480,19 +263,21 @@ export const CustomPageMenu = memo(function CustomPageMenu() {
 												id={page.id}
 												name={page.name}
 												isCurrentPage={page.id === currentPage.id}
-												onComplete={() => {
-													setIsEditing(false)
-												}}
-												onCancel={() => {
-													setIsEditing(false)
-												}}
+												onComplete={() => setIsEditing(false)}
+												onCancel={() => setIsEditing(false)}
 											/>
 										</div>
 									)}
 									<SharePageButton pageId={page.id} />
 									{!isReadonlyMode && (
 										<div className="tlui-page_menu__item__submenu" data-isediting={isEditing}>
-											<PageItemSubmenu index={index} item={page} listSize={pages.length} />
+											<CustomPageItemSubmenu
+												index={index}
+												item={page}
+												listSize={pages.length}
+												pages={pages}
+												trackEvent={trackEvent as (name: string, data?: unknown) => void}
+											/>
 										</div>
 									)}
 								</div>
@@ -524,10 +309,11 @@ export const CustomPageMenu = memo(function CustomPageMenu() {
 									<SharePageButton pageId={page.id} />
 									{!isReadonlyMode && (
 										<div className="tlui-page_menu__item__submenu">
-											<PageItemSubmenu
+											<CustomPageItemSubmenu
 												index={index}
 												item={page}
 												listSize={pages.length}
+												pages={pages}
 												onRename={() => {
 													if (tlenv.isIos) {
 														const name = window.prompt('Rename page', page.name)
@@ -541,12 +327,16 @@ export const CustomPageMenu = memo(function CustomPageMenu() {
 														}
 													}
 												}}
+												trackEvent={trackEvent as (name: string, data?: unknown) => void}
 											/>
 										</div>
 									)}
 								</div>
 							)
 						})}
+					</div>
+					<div className="tlui-page-menu__footer">
+						<OpenSharedLinkPopover />
 					</div>
 				</div>
 			</TldrawUiPopoverContent>

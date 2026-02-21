@@ -94,6 +94,19 @@ export async function createSharedPage(snapshot: ShareSnapshot): Promise<{ id: s
 	return { id }
 }
 
+/** Delete a shared page from the database. Returns true on success. */
+export async function deleteSharedPage(shareId: string): Promise<boolean> {
+	if (!shareId.trim()) return false
+	const sb = client ?? (await initSupabase())
+	if (!sb) return false
+	const { error } = await sb.from(SHARE_TABLE).delete().eq('id', shareId)
+	if (error) {
+		console.error('[supabase] deleteSharedPage failed:', error.message)
+		return false
+	}
+	return true
+}
+
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
 function generateShareId(): string {

@@ -65,24 +65,33 @@ export function saveSnapshot(json: string): void {
 
 // ── Share map (pageId → shareId) ───────────────────────────────────────────────
 
+let shareMapCache: Map<string, string> | null = null
+
 function loadShareMap(): Map<string, string> {
+	if (shareMapCache !== null) return shareMapCache
 	try {
 		const raw = localStorage.getItem(SHARE_MAP_KEY)
-		if (!raw) return new Map()
+		if (!raw) {
+			shareMapCache = new Map()
+			return shareMapCache
+		}
 		const obj = JSON.parse(raw) as Record<string, unknown>
 		const map = new Map<string, string>()
 		for (const [k, v] of Object.entries(obj)) {
 			if (typeof v === 'string') map.set(k, v)
 		}
-		return map
+		shareMapCache = map
+		return shareMapCache
 	} catch {
-		return new Map()
+		shareMapCache = new Map()
+		return shareMapCache
 	}
 }
 
 function saveShareMap(map: Map<string, string>): void {
 	try {
 		localStorage.setItem(SHARE_MAP_KEY, JSON.stringify(Object.fromEntries(map)))
+		shareMapCache = map
 	} catch { /* ignore */ }
 }
 
@@ -100,12 +109,17 @@ export function getPageIdForShareId(shareId: string): string | undefined {
 
 export function setShareIdForPage(pageId: string, shareId: string): void {
 	const map = loadShareMap()
-	// Remove any stale mapping for this shareId so only one pageId maps to it.
 	for (const [pid, sid] of map) {
 		if (sid === shareId && pid !== pageId) map.delete(pid)
 	}
 	map.set(pageId, shareId)
 	saveShareMap(map)
+}
+
+/** Remove a page from the share map (e.g. when deleting a page). */
+export function removeShareIdForPage(pageId: string): void {
+	const map = loadShareMap()
+	if (map.delete(pageId)) saveShareMap(map)
 }
 
 // ── Theme / user preferences ───────────────────────────────────────────────────
@@ -124,28 +138,53 @@ export function setTheme(theme: 'dark' | 'light'): void {
 }
 
 // ── URL utilities ──────────────────────────────────────────────────────────────
+// Shared pages use path-based URLs: /id (e.g. /abc123) instead of ?p=id.
 
 export function getShareIdFromUrl(): string | null {
 	if (typeof window === 'undefined') return null
-	const id = new URLSearchParams(window.location.search).get('p')
-	return id?.trim() || null
+	const pathname = window.location.pathname || '/'
+	// Single segment path like /abc123 → share id
+	const segment = pathname.replace(/^\/+|\/+$/g, '').split('/')[0]
+	return segment?.trim() || null
 }
 
 export function setShareIdInUrl(id: string): void {
 	if (typeof window === 'undefined') return
-	const url = new URL(window.location.href)
-	url.searchParams.set('p', id)
-	window.history.replaceState({}, '', url.toString())
+	const base = (import.meta.env?.BASE_URL ?? '/').replace(/\/$/, '') || ''
+	const path = `${base}/${encodeURIComponent(id)}`
+	window.history.replaceState({}, '', `${window.location.origin}${path}`)
 }
 
 export function clearShareIdFromUrl(): void {
 	if (typeof window === 'undefined') return
-	const url = new URL(window.location.href)
-	url.searchParams.delete('p')
-	window.history.replaceState({}, '', url.toString())
+	const base = (import.meta.env?.BASE_URL ?? '/').replace(/\/$/, '') || ''
+	const path = base || '/'
+	window.history.replaceState({}, '', `${window.location.origin}${path}`)
 }
 
 export function buildShareUrl(id: string): string {
-	if (typeof window === 'undefined') return `?p=${encodeURIComponent(id)}`
-	return `${window.location.origin}${window.location.pathname || '/'}?p=${encodeURIComponent(id)}`
+	if (typeof window === 'undefined') return `/${encodeURIComponent(id)}`
+	const base = (import.meta.env?.BASE_URL ?? '/').replace(/\/$/, '') || ''
+	return `${window.location.origin}${base}/${encodeURIComponent(id)}`
+}
+
+/**
+ * Extract share ID from pasted text (full URL, hash URL, or plain ID).
+ * Returns null if no valid share ID found.
+ */
+export function parseShareIdFromPastedText(text: string): string | null {
+	const trimmed = text.trim()
+	if (!trimmed) return null
+
+	try {
+		// Full URL: https://example.com/abc123 or https://example.com/#abc123
+		const url = new URL(trimmed)
+		const hash = url.hash.replace(/^#+/, '')
+		if (hash) return hash.trim() || null
+		const segment = url.pathname.replace(/^\/+|\/+$/g, '').split('/')[0]
+		return segment?.trim() || null
+	} catch {
+		// Plain ID (e.g. abc123)
+		return trimmed
+	}
 }

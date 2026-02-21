@@ -131,27 +131,24 @@ export const whiteboardMachine = setup({
 					},
 				},
 			},
-
-				supabaseSync: {
-					on: {
-						SERVER_CONNECTED: { target: 'serverSync' },
-						// Consecutive Supabase write failures → re-fetch from source
-						SUPABASE_DISCONNECTED: { target: 'connecting' },
-					},
-				},
-
-				serverSync: {
-					on: {
-						SERVER_DISCONNECTED: { target: 'supabaseSync' },
-					},
-				},
-
-				offline: {
-					on: {
-						RETRY: { target: 'connecting' },
-					},
+			supabaseSync: {
+				on: {
+					SERVER_CONNECTED: { target: 'serverSync' },
+					// Consecutive Supabase write failures → re-fetch from source
+					SUPABASE_DISCONNECTED: { target: 'connecting' },
 				},
 			},
+			serverSync: {
+				on: {
+					SERVER_DISCONNECTED: { target: 'supabaseSync' },
+				},
+			},
+			offline: {
+				on: {
+					RETRY: { target: 'connecting' },
+				},
+			},
+		},
 		},
 	},
 })
