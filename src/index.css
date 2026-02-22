@@ -45,17 +45,13 @@ body {
 }
 
 /* Page menu: prevent outer scrollbar; list scrolls when many pages */
-.tlui-page-menu__wrapper {
-	overflow: hidden;
-	display: flex;
-	flex-direction: column;
-	max-height: min(70vh, 420px);
+.tlui-page-menu__wrapper.tlui-page-menu__wrapper {
+	max-height: none;
 }
 
-.tlui-page-menu__list {
-	flex: 1 1 auto;
-	min-height: 0;
-	overflow-y: auto;
+.tlui-page-menu__list.tlui-page-menu__list {
+	overflow-y: visible;
+	max-height: none;
 }
 
 /* Open shared link: footer of page menu */
