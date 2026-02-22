@@ -44,21 +44,15 @@ body {
 	}
 }
 
-/* Page menu: prevent outer scrollbar; list scrolls when many pages */
+/* Page menu: expand with content, no scrollbar */
 .tlui-page-menu__wrapper.tlui-page-menu__wrapper {
 	max-height: none;
+	overflow: visible;
 }
 
 .tlui-page-menu__list.tlui-page-menu__list {
-	overflow-y: visible;
+	overflow: visible;
 	max-height: none;
-.tlui-page-menu__wrapper {
-	display: flex;
-	flex-direction: column;
-}
-
-.tlui-page-menu__list {
-	flex: 1 1 auto;
 }
 
 /* Open shared link: footer of page menu */
@@ -229,5 +223,4 @@ body {
 	flex: 1;
 	min-width: 0;
 	padding-right: var(--tl-space-4, 12px);
-}
 }
