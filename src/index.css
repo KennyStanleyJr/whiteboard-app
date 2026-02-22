@@ -52,6 +52,13 @@ body {
 .tlui-page-menu__list.tlui-page-menu__list {
 	overflow-y: visible;
 	max-height: none;
+.tlui-page-menu__wrapper {
+	display: flex;
+	flex-direction: column;
+}
+
+.tlui-page-menu__list {
+	flex: 1 1 auto;
 }
 
 /* Open shared link: footer of page menu */
@@ -222,4 +229,5 @@ body {
 	flex: 1;
 	min-width: 0;
 	padding-right: var(--tl-space-4, 12px);
+}
 }
